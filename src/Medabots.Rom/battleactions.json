@@ -1,0 +1,656 @@
+{
+  "opcodes": {
+    "01": {
+      "name": "StartBattleSceneSubroutine",
+      "handlerName": "Fight_HandleActionScriptOpcode01_StartBattleSceneSubroutine",
+      "summary": "Starts a battle scene subroutine and transfers control into a separate battle-state path.",
+      "inlineArgumentCount": 0
+    },
+    "02": {
+      "name": "WaitForActionScriptByteMatch",
+      "handlerName": "Fight_WaitForActionScriptByteMatch",
+      "summary": "Reads one inline match byte, then scans forward through the script until the current script byte matches it.",
+      "inlineArgumentCount": 1
+    },
+    "03": {
+      "name": "WaitForActionScriptChoiceByteMatch",
+      "handlerName": "Fight_WaitForActionScriptChoiceByteMatch",
+      "summary": "Reads inline result bytes, then scans forward through the script until the current script byte matches the selected action result slot.",
+      "inlineArgumentCount": 4
+    },
+    "04": {
+      "name": "AdvanceCursor",
+      "handlerName": "Fight_HandleActionScriptOpcode04_AdvanceCursor",
+      "summary": "Runs a small helper and advances the action script when the current step has completed.",
+      "inlineArgumentCount": 0
+    },
+    "05": {
+      "name": "DispatchPrimaryActionFamilyTable",
+      "handlerName": "Fight_HandleActionScriptOpcode05_DispatchPrimaryActionFamilyTable",
+      "summary": "Dispatches the primary action-family table used by the common direct-attack script and related early family gates.",
+      "inlineArgumentCount": 0
+    },
+    "06": {
+      "name": "EnsureSelectedActionMetadata",
+      "handlerName": "Fight_EnsureSelectedActionMetadata",
+      "summary": "Ensures selected action metadata is present before later action steps run.",
+      "inlineArgumentCount": 0
+    },
+    "07": {
+      "name": "DispatchSecondaryActionFamilyTable",
+      "handlerName": "Fight_HandleActionScriptOpcode07_DispatchSecondaryActionFamilyTable",
+      "summary": "Dispatches the secondary action-family table used by later offensive and utility family stages.",
+      "inlineArgumentCount": 0
+    },
+    "08": {
+      "name": "DispatchSupportRecoveryAndFollowupFamilyTable",
+      "handlerName": "Fight_HandleActionScriptOpcode08_DispatchSupportRecoveryAndFollowupFamilyTable",
+      "summary": "Dispatches the support, recovery, and follow-up family table.",
+      "inlineArgumentCount": 0
+    },
+    "09": {
+      "name": "DispatchFollowupSourceSequence",
+      "handlerName": "Fight_HandleActionScriptOpcode09_DispatchFollowupSourceSequence",
+      "summary": "Dispatches the follow-up source sequence used by counter/support-style flows.",
+      "inlineArgumentCount": 0
+    },
+    "0D": {
+      "name": "HandleDefenderFollowupFlags",
+      "handlerName": "Fight_HandleActionScriptOpcode0D_HandleDefenderFollowupFlags",
+      "summary": "Promotes current defender-side follow-up flags before later result-dependent branches.",
+      "inlineArgumentCount": 0
+    },
+    "11": {
+      "name": "SetAttackerAffinityResultFromSelectedAction",
+      "handlerName": "Fight_HandleActionScriptOpcode11_SetAttackerAffinityResultFromSelectedAction",
+      "summary": "Stores the attacker affinity/result classification from the selected action.",
+      "inlineArgumentCount": 0
+    },
+    "12": {
+      "name": "SetDefenderAffinityResultFromSelectedAction",
+      "handlerName": "Fight_HandleActionScriptOpcode12_SetDefenderAffinityResultFromSelectedAction",
+      "summary": "Stores the defender affinity/result classification from the selected action.",
+      "inlineArgumentCount": 0
+    },
+    "13": {
+      "name": "ComputeTotalRosPhase",
+      "handlerName": "Fight_ComputeTotalRosPhase",
+      "summary": "Computes total ROS for the current action and stores it in combat resolution scratch.",
+      "inlineArgumentCount": 0
+    },
+    "14": {
+      "name": "ResolveDefenderRosReductionsPhase",
+      "handlerName": "Fight_ResolveDefenderRosReductionsPhase",
+      "summary": "Applies defender evasion and defense ROS reductions, including critical-hit bypass handling.",
+      "inlineArgumentCount": 0
+    },
+    "15": {
+      "name": "UpdateActionArgSelectorPhase",
+      "handlerName": "Fight_UpdateActionArgSelectorPhase",
+      "summary": "Updates the current action argument selector from defender state before later conditional checks.",
+      "inlineArgumentCount": 0
+    },
+    "16": {
+      "name": "SeedPreDamageFromTotalRos",
+      "handlerName": "Fight_SeedPreDamageFromTotalRos",
+      "summary": "Seeds pre-damage from total ROS by computing total_ros >> 2.",
+      "inlineArgumentCount": 0
+    },
+    "17": {
+      "name": "AccumulateBaseDamage",
+      "handlerName": "Fight_AccumulateBaseDamage",
+      "summary": "Builds accumulated damage from pre-damage, part power, range bonuses, Berserk/Laser branches, and defender reductions.",
+      "inlineArgumentCount": 0
+    },
+    "18": {
+      "name": "HandleActionScriptOpcode1C",
+      "handlerName": "Fight_HandleActionScriptOpcode1C",
+      "summary": "Checks current follow-up/result state and stores a small action result code.",
+      "inlineArgumentCount": 0
+    },
+    "19": {
+      "name": "HandleActionScriptOpcode1D",
+      "handlerName": "Fight_HandleActionScriptOpcode1D",
+      "summary": "Uses current damage and threshold scratch to set an action-script result code.",
+      "inlineArgumentCount": 0
+    },
+    "1A": {
+      "name": "DispatchLateSupportRecoveryAndUtilityFamilyTable",
+      "handlerName": "Fight_HandleActionScriptOpcode1A_DispatchLateSupportRecoveryAndUtilityFamilyTable",
+      "summary": "Dispatches a later family table used by support, recovery, and utility action branches.",
+      "inlineArgumentCount": 0
+    },
+    "1C": {
+      "name": "HandleActionScriptOpcode1C",
+      "handlerName": "Fight_HandleActionScriptOpcode1C",
+      "summary": "Checks current follow-up/result state and stores a small action result code.",
+      "inlineArgumentCount": 0
+    },
+    "1D": {
+      "name": "HandleActionScriptOpcode1D",
+      "handlerName": "Fight_HandleActionScriptOpcode1D",
+      "summary": "Uses current damage/threshold scratch to set an action-script result code.",
+      "inlineArgumentCount": 0
+    },
+    "1E": {
+      "name": "ScaleDamageByPartScalar",
+      "handlerName": "Fight_HandleActionScriptOpcode1E_ScaleDamageByPartScalar",
+      "summary": "Applies the selected part's damage scalar to the current damage scratch.",
+      "inlineArgumentCount": 0
+    },
+    "1F": {
+      "name": "DispatchSequenceTable4",
+      "handlerName": "Fight_HandleActionScriptOpcode1F_DispatchSequenceTable4",
+      "summary": "Dispatches a later-stage outer action-sequence table.",
+      "inlineArgumentCount": 0
+    },
+    "24": {
+      "name": "RunPreviewSequenceUntilComplete",
+      "handlerName": "Fight_HandleActionScriptOpcode24_RunPreviewSequenceUntilComplete",
+      "summary": "Runs the left/right preview sequence until it marks completion.",
+      "inlineArgumentCount": 0
+    },
+    "25": {
+      "name": "ApplyDamageAndAdvancePreview",
+      "handlerName": "Fight_HandleActionScriptOpcode25_ApplyDamageAndAdvancePreview",
+      "summary": "Applies part damage during a preview/state step and advances the script.",
+      "inlineArgumentCount": 0
+    }
+  },
+  "actions": {
+    "00": {
+      "familyHandler": "ActionFamily_SwordHammer_Handler",
+      "familySummary": "Shared direct-attack family gate used by sword-style attacks.",
+      "familySubsequence": null,
+      "sharedScriptName": "gSharedDirectAttackActionScript",
+      "sharedScriptSummary": "Shared direct-attack bytecode used by action ids 0x00..0x09. This is the real script for Sword, Hammer, Rifle, Chain Gun, Laser, Beam, Missile, Napalm, Break, and Press.",
+      "knownOpcodeSequence": [ "05", "06", "07", "08", "1E", "1F" ],
+      "actualFlow": [
+        "Primary family gate via ActionFamily_SwordHammer_Handler",
+        "Ensure selected target metadata",
+        "Compute total ROS",
+        "Resolve defender ROS reductions",
+        "Seed pre-damage from total ROS",
+        "Accumulate base damage",
+        "Scale damage by part scalar",
+        "Check threshold/result scratch",
+        "Dispatch late support/recovery/utility family table when the script branches there",
+        "Continue into end-of-action dispatch and preview/result phases"
+      ],
+      "notes": [
+        "Uses the shared direct-attack pipeline after the family gate.",
+        "Damage and overflow logic is mostly shared later."
+      ]
+    },
+    "01": {
+      "familyHandler": "ActionFamily_SwordHammer_Handler",
+      "familySummary": "Shared direct-attack family gate used by hammer-style attacks.",
+      "familySubsequence": null,
+      "sharedScriptName": "gSharedDirectAttackActionScript",
+      "sharedScriptSummary": "Hammer shares the same direct-attack script as Sword through Press. The script itself is a branchy opcode stream: 0x04 setup/validation dispatch, 0x05 primary family gate, 0x06 metadata ensure, 0x07 secondary family gate, 0x08 support/recovery gate, 0x0B..0x17 combat math, 0x1E part-scalar damage scale, and later 0x1F end-of-action dispatch. Distinct Hammer behavior comes from the family gate and the Berserk damage branch, not a unique action script.",
+      "knownOpcodeSequence": [ "05", "06", "07", "08", "1E", "1F" ],
+      "actualFlow": [
+        "Fight_AdvanceActionScriptCursor resets the current opcode substate byte to 0 before each new opcode",
+        "Opcode 0x04 dispatches an early validation/setup substate table keyed by the opcode substate byte",
+        "Primary family gate via ActionFamily_SwordHammer_Handler",
+        "Ensure selected target metadata",
+        "Secondary/support family dispatch opcodes branch by matching inline label bytes >= 0x80",
+        "Compute total ROS",
+        "Resolve defender ROS reductions",
+        "Seed pre-damage from total ROS",
+        "Accumulate base damage with the Berserk addend",
+        "Scale damage by part scalar",
+        "Set action-script result from current damage/threshold state",
+        "Continue into late family dispatch and end-of-action handling"
+      ],
+      "notes": [
+        "Berserk-family damage bonus is applied later in shared damage accumulation."
+      ]
+    },
+    "02": {
+      "familyHandler": "ActionFamily_StatusCheckFamily_Handler",
+      "familySummary": "Shared ranged direct-attack family that feeds the normal attack, ROS, and damage pipeline.",
+      "familySubsequence": null,
+      "sharedScriptName": "gSharedDirectAttackActionScript",
+      "sharedScriptSummary": "Rifle shares the same direct-attack bytecode group as Sword and Hammer.",
+      "knownOpcodeSequence": [ "05", "06", "07", "08", "1E", "1F" ],
+      "actualFlow": [],
+      "notes": [
+        "Rifle uses the common direct-attack sequence after its early family gate."
+      ]
+    },
+    "03": {
+      "familyHandler": "ActionFamily_ImmediateAdvance_Handler",
+      "familySummary": "Rapid-fire attack family that advances quickly into the shared direct-attack sequence.",
+      "familySubsequence": null,
+      "sharedScriptName": "gSharedDirectAttackActionScript",
+      "sharedScriptSummary": "Chain Gun shares the direct-attack script with the other basic offensive actions.",
+      "knownOpcodeSequence": [ "05", "06", "07", "08", "1E", "1F" ],
+      "actualFlow": [],
+      "notes": [
+        "Chain Gun still resolves through the common attack formula after the family-specific front-end step."
+      ]
+    },
+    "04": {
+      "familyHandler": "NoOpActionHandler",
+      "familySummary": "Offensive family with no bespoke early handler; real behavior diverges later through shared attack logic.",
+      "familySubsequence": null,
+      "sharedScriptName": "gSharedDirectAttackActionScript",
+      "sharedScriptSummary": "Laser shares the common direct-attack bytecode script with Sword through Press.",
+      "knownOpcodeSequence": [ "05", "06", "07", "08", "1E", "1F" ],
+      "actualFlow": [],
+      "notes": [
+        "Laser gets an extra power-side addend later in Fight_AccumulateBaseDamage."
+      ]
+    },
+    "05": {
+      "familyHandler": "NoOpActionHandler",
+      "familySummary": "Offensive family with no bespoke early handler; real behavior diverges later through shared attack logic.",
+      "familySubsequence": null,
+      "sharedScriptName": "gSharedDirectAttackActionScript",
+      "sharedScriptSummary": "Beam shares the common direct-attack bytecode script with Sword through Press.",
+      "knownOpcodeSequence": [ "05", "06", "07", "08", "1E", "1F" ],
+      "actualFlow": [],
+      "notes": [
+        "Beam shares the same later extra-damage branch as Laser."
+      ]
+    },
+    "06": {
+      "familyHandler": "NoOpActionHandler",
+      "familySummary": "Projectile attack family staged through the common direct-damage sequence.",
+      "familySubsequence": null,
+      "sharedScriptName": "gSharedDirectAttackActionScript",
+      "sharedScriptSummary": "Missile shares the common direct-attack bytecode script with Sword through Press.",
+      "knownOpcodeSequence": [ "05", "06", "07", "08", "1E", "1F" ],
+      "actualFlow": [],
+      "notes": [
+        "Missile does not have a dedicated early family handler in the first action table."
+      ]
+    },
+    "07": {
+      "familyHandler": "NoOpActionHandler",
+      "familySummary": "Projectile attack family staged through the common direct-damage sequence.",
+      "familySubsequence": null,
+      "sharedScriptName": "gSharedDirectAttackActionScript",
+      "sharedScriptSummary": "Napalm shares the common direct-attack bytecode script with Sword through Press.",
+      "knownOpcodeSequence": [ "05", "06", "07", "08", "1E", "1F" ],
+      "actualFlow": [],
+      "notes": [
+        "Napalm currently appears to share the generic attack script route."
+      ]
+    },
+    "08": {
+      "familyHandler": "NoOpActionHandler",
+      "familySummary": "Direct attack family whose unique behavior is expressed later in shared ROS and damage branches.",
+      "familySubsequence": null,
+      "sharedScriptName": "gSharedDirectAttackActionScript",
+      "sharedScriptSummary": "Break shares the common direct-attack bytecode script with Sword through Press.",
+      "knownOpcodeSequence": [ "05", "06", "07", "08", "1E", "1F" ],
+      "actualFlow": [],
+      "notes": [
+        "Break gains an extra success-side branch in Fight_ComputeTotalRos."
+      ]
+    },
+    "09": {
+      "familyHandler": "ActionFamily_Press_Handler",
+      "familySummary": "Direct attack family with later shared ROS/damage branches.",
+      "familySubsequence": null,
+      "sharedScriptName": "gSharedDirectAttackActionScript",
+      "sharedScriptSummary": "Press shares the common direct-attack bytecode script with Sword through Break.",
+      "knownOpcodeSequence": [ "05", "06", "07", "08", "1E", "1F" ],
+      "actualFlow": [],
+      "notes": [
+        "Press shares the extra success-side branch with Break in Fight_ComputeTotalRos."
+      ]
+    },
+    "0A": {
+      "familyHandler": "ActionFamily_TrapFamily_Handler",
+      "familySummary": "Trap family that stages control/damage behavior before handing off into shared routing.",
+      "familySubsequence": null,
+      "sharedScriptName": null,
+      "sharedScriptSummary": null,
+      "knownOpcodeSequence": [ "05", "1C", "1D", "1F" ],
+      "actualFlow": [],
+      "notes": [
+        "Grap Trap is not a plain direct-damage family despite reusing shared resolution helpers."
+      ]
+    },
+    "0B": {
+      "familyHandler": "ActionFamily_StatusCheckFamily_Handler",
+      "familySummary": "Trap/status-check family that routes through shared result and pending-effect logic.",
+      "familySubsequence": null,
+      "sharedScriptName": null,
+      "sharedScriptSummary": null,
+      "knownOpcodeSequence": [ "05", "1C", "1D", "1F" ],
+      "actualFlow": [],
+      "notes": [
+        "Shot Trap reuses the status/result opcode cluster instead of the plain direct-attack path."
+      ]
+    },
+    "0D": {
+      "familyHandler": "NoOpActionHandler",
+      "familySummary": "Primary pending-effect family whose gameplay difference is driven by shared ROS/status logic.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1C", "1D", "1F" ],
+      "notes": [
+        "Bug commits a ROS penalty effect rather than a custom family-specific damage formula."
+      ]
+    },
+    "0E": {
+      "familyHandler": "NoOpActionHandler",
+      "familySummary": "Primary pending-effect family whose gameplay difference is driven by shared ROS/status logic.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1C", "1D", "1F" ],
+      "notes": [
+        "Virus shares the generic ROS penalty path with Bug."
+      ]
+    },
+    "0F": {
+      "familyHandler": "NoOpActionHandler",
+      "familySummary": "Primary pending-effect family whose gameplay difference is driven by shared defender-bypass logic.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1C", "1D", "1F" ],
+      "notes": [
+        "Thunder forces defender bypass flags through the shared pending-effect path."
+      ]
+    },
+    "10": {
+      "familyHandler": "NoOpActionHandler",
+      "familySummary": "Primary pending-effect family whose gameplay difference is driven by shared defender-bypass logic.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1C", "1D", "1F" ],
+      "notes": [
+        "Freeze shares the defender-bypass effect behavior with Thunder."
+      ]
+    },
+    "11": {
+      "familyHandler": "ActionFamily_Wave_Handler",
+      "familySummary": "Control/status family that commits a pending effect and later uses shared action-script routing.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1C", "1D", "1F" ],
+      "notes": [
+        "Wave/Hold style actions are represented through pending-effect behavior rather than only a dedicated formula path."
+      ]
+    },
+    "12": {
+      "familyHandler": "ActionFamily_Wave_Handler",
+      "familySummary": "Control/status family that commits a pending effect and later uses shared action-script routing.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1C", "1D", "1F" ],
+      "notes": [
+        "Hold appears to share the same shared control/result opcode route as Wave."
+      ]
+    },
+    "13": {
+      "familyHandler": "NoOpActionHandler",
+      "familySummary": "Damage-over-time status family committed through the shared primary effect block.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1C", "1D", "1F" ],
+      "notes": [
+        "Fire is later processed by the shared pending-effect tick path across intact parts."
+      ]
+    },
+    "14": {
+      "familyHandler": "NoOpActionHandler",
+      "familySummary": "Damage-over-time status family committed through the shared primary effect block.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1C", "1D", "1F" ],
+      "notes": [
+        "Melt shares the same ongoing part-damage effect path as Fire."
+      ]
+    },
+    "1B": {
+      "familyHandler": "Fight_PrepareFollowupSourceDisplay",
+      "familySummary": "Defensive family that stages follow-up source presentation instead of entering a direct attack route.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "1F", "24" ],
+      "notes": [
+        "Defense is a committed effect family, but its exact runtime consumer is still being traced."
+      ]
+    },
+    "1C": {
+      "familyHandler": "Fight_AnimateFollowupSourceIntro",
+      "familySummary": "Defensive family that stages a block-style source animation before later shared resolution.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "1F", "24" ],
+      "notes": [
+        "Full Block is confirmed as a committed effect family but still needs final downstream consumer mapping."
+      ]
+    },
+    "1D": {
+      "familyHandler": "Fight_AdvanceFollowupSourceApproach",
+      "familySummary": "Defensive family that stages a block-style source approach before later shared resolution.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "1F", "24" ],
+      "notes": [
+        "Half Block is confirmed as a committed effect family but still needs final downstream consumer mapping."
+      ]
+    },
+    "1E": {
+      "familyHandler": "ActionFamily_Recovery_Handler",
+      "familySummary": "Recovery family with staged presentation before the common repair/recovery back-end.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "07", "08", "1F", "24", "25" ],
+      "notes": [
+        "Recovery is not a direct damage family even though it eventually reuses shared resolution helpers."
+      ]
+    },
+    "1F": {
+      "familyHandler": "ActionFamily_AutoRecover_Handler",
+      "familySummary": "Long-lived repair-over-time family backed by the secondary effect block.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1F", "24", "25" ],
+      "notes": [
+        "AutoRecover writes secondary effect kind 0x1F and is later ticked by the repair-over-time path."
+      ]
+    },
+    "20": {
+      "familyHandler": "ActionFamily_Repair_Handler",
+      "familySummary": "Repair family with indicator/presentation setup before repair resolution.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "07", "08", "1F", "24", "25" ],
+      "notes": [
+        "Repair uses missing-armor resolution rather than damage overflow."
+      ]
+    },
+    "21": {
+      "familyHandler": "ActionFamily_Reactivate_Handler",
+      "familySummary": "Utility family that restores broken functionality through a later staged sequence.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1F", "24" ],
+      "notes": [
+        "Reactivate is routed through utility/state presentation rather than attack damage flow."
+      ]
+    },
+    "22": {
+      "familyHandler": "ActionFamily_AntiAir_Handler",
+      "familySummary": "Presentation-heavy family that shows chained/follow-up part text before later resolution.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "06", "07", "08", "1F" ],
+      "notes": [
+        "Anti-Air also has a direct ROS bonus branch in Fight_ComputeTotalRos against air targets."
+      ]
+    },
+    "23": {
+      "familyHandler": "ActionFamily_StatusCheckFamily_Handler",
+      "familySummary": "Direct-attack family with an additional sea-target ROS bonus in shared combat logic.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "06", "07", "08", "1F" ],
+      "notes": [
+        "Anti-Sea appears to share the broader status-check family front-end while diverging later in Fight_ComputeTotalRos."
+      ]
+    },
+    "24": {
+      "familyHandler": "ActionFamily_Scout_Handler",
+      "familySummary": "Scout-style support family using support selection UI and later shared support bonus routing.",
+      "familySubsequence": "Fight_RunActionFamilySubsequenceA",
+      "knownOpcodeSequence": [ "05", "06", "07", "08", "1F" ],
+      "notes": [
+        "Scout commits support-source plumbing through ActionFamily_Scout_Handler.",
+        "The current team's support bonus later feeds Fight_ComputeTotalRos as scout_ros_bonus."
+      ]
+    },
+    "25": {
+      "familyHandler": "NoOpActionHandler",
+      "familySummary": "Support/status family whose behavior appears to live in shared support or concealment logic.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1F" ],
+      "notes": [
+        "Conceal remains unresolved, but it does not currently appear to use the primary or secondary effect blocks in the same way as Scout or AutoRecover."
+      ]
+    },
+    "26": {
+      "familyHandler": "NoOpActionHandler",
+      "familySummary": "Long-lived charge-support family backed by the secondary effect block.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1F" ],
+      "notes": [
+        "Boost Chrg writes secondary effect kind 0x26 and later feeds charge-meter ticking."
+      ]
+    },
+    "29": {
+      "familyHandler": "ActionFamily_DrainCharge_Handler",
+      "familySummary": "Charge-drain family that commits both primary and secondary effect state.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1F" ],
+      "notes": [
+        "Drain Charge writes both primary and secondary effect blocks in the runtime model."
+      ]
+    },
+    "2A": {
+      "familyHandler": "ActionFamily_StatusCheckFamily_Handler",
+      "familySummary": "Utility/control family that appears to share the broader status-check front-end.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1C", "1D", "1F" ],
+      "notes": [
+        "Pushover is still being refined, but it is grouped with the same early family cluster as Rifle, Shot Trap, Scout, and Anti-Sea."
+      ]
+    },
+    "2B": {
+      "familyHandler": "ActionFamily_Impair_Handler",
+      "familySummary": "Part-slot-targeted control family that quickly hands off to later shared logic.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1F" ],
+      "notes": [
+        "Impair is represented as a pending-effect style action lock rather than a custom damage formula."
+      ]
+    },
+    "2C": {
+      "familyHandler": "NoOpActionHandler",
+      "familySummary": "Control-disruption family whose gameplay difference is driven by shared action-selection override logic.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1F", "24" ],
+      "notes": [
+        "Confusion later uses a named later-stage handler, but its early routing still appears to be a shared/no-op front-end."
+      ]
+    },
+    "2E": {
+      "familyHandler": "NoOpActionHandler",
+      "familySummary": "Primary pending-effect family whose gameplay difference is driven by shared defender-bypass logic.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1C", "1D", "1F" ],
+      "notes": [
+        "No Escape forces BYPASS_EVASION through the primary effect block."
+      ]
+    },
+    "2F": {
+      "familyHandler": "NoOpActionHandler",
+      "familySummary": "Primary pending-effect family whose gameplay difference is driven by shared defender-bypass logic.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1C", "1D", "1F" ],
+      "notes": [
+        "No Defense forces BYPASS_DEFENSE through the primary effect block."
+      ]
+    },
+    "31": {
+      "familyHandler": "ActionFamily_Sacrifice_Handler",
+      "familySummary": "Self-damaging utility family that later hands off into shared resolution and presentation logic.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1F", "24", "25" ],
+      "notes": [
+        "Sacrifice has a dedicated front-end family handler even though later damage display and resolution remain shared."
+      ]
+    },
+    "33": {
+      "familyHandler": "Fight_EnsureMirroredSupportSummaryMatchesCurrentAction",
+      "familySummary": "Team-form support family that primarily manipulates mirrored support summary slots.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "07", "08", "1F", "24", "25" ],
+      "notes": [
+        "Team Form appears to be a support-summary family rather than a direct damage family."
+      ]
+    },
+    "34": {
+      "familyHandler": "ActionFamily_TeamAttack_Handler",
+      "familySummary": "Team-form/team-attack family that uses mirrored support summary slots and later shared damage logic.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "07", "08", "1F", "24", "25" ],
+      "notes": [
+        "Uses support summary bytes in FightSupportBonusState, not only raw damage scratch."
+      ]
+    },
+    "35": {
+      "familyHandler": "ActionFamily_Strengthen_Handler",
+      "familySummary": "Support family that feeds later shared ROS and damage bonuses.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "05", "1F", "24" ],
+      "notes": [
+        "Strengthen modifies shared bonus terms rather than replacing the base attack formula."
+      ]
+    },
+    "36": {
+      "familyHandler": "ActionFamily_Counterattack_Handler",
+      "familySummary": "Counterattack family that stages dedicated preview/presentation assets before later shared resolution.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "1F", "24" ],
+      "notes": [
+        "The visible family-specific logic is mostly presentation and state progression."
+      ]
+    },
+    "37": {
+      "familyHandler": "ActionFamily_Change_Handler",
+      "familySummary": "Change-family action using later presentation/state handlers.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "1F", "24" ],
+      "notes": [
+        "Change actions are mostly staged through later sequence handlers rather than unique formula code."
+      ]
+    },
+    "38": {
+      "familyHandler": "ActionFamily_InterruptChange_Handler_V2",
+      "familySummary": "Interrupt-change family that appears to be implemented primarily in later sequence handlers.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "1F", "24" ],
+      "notes": [
+        "Interrupt Change is a state/presentation-heavy family rather than a direct damage formula family."
+      ]
+    },
+    "39": {
+      "familyHandler": "ActionFamily_AttackChange_Handler",
+      "familySummary": "Attack-change family handled largely through later staged indicator and state logic.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "1F", "24" ],
+      "notes": [
+        "Attack Change creates temporary indicator objects rather than entering the normal direct-attack path immediately."
+      ]
+    },
+    "3A": {
+      "familyHandler": "ActionFamily_DefenseChange_Handler",
+      "familySummary": "Defense-change family handled largely through later staged timers and state logic.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "1F", "24" ],
+      "notes": [
+        "Defense Change waits on helper-driven conditions rather than doing immediate damage work."
+      ]
+    },
+    "3B": {
+      "familyHandler": "ActionFamily_HealChange_Handler",
+      "familySummary": "Heal-change family handled largely through later staged timers and state logic.",
+      "familySubsequence": null,
+      "knownOpcodeSequence": [ "1F", "24" ],
+      "notes": [
+        "Heal Change is presentation/state heavy before its eventual shared back-end resolution."
+      ]
+    }
+  }
+}

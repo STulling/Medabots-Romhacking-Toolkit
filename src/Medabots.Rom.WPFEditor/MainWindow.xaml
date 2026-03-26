@@ -1,0 +1,706 @@
+﻿<Window x:Class="Medabots.Rom.WPFEditor.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:localModels="clr-namespace:Medabots.Rom.WPFEditor.Models"
+        mc:Ignorable="d"
+        Title="Medabots ROM WPF Editor"
+        Height="980"
+        Width="1540"
+        MinHeight="760"
+        MinWidth="1200"
+        Background="#FFF3F4F6">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+        <localModels:ColorToBrushConverter x:Key="ColorToBrushConverter" />
+        <Style TargetType="TextBox">
+            <Setter Property="Margin" Value="0,0,0,0" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="Margin" Value="0" />
+        </Style>
+        <Style x:Key="PanelBorderStyle" TargetType="Border">
+            <Setter Property="BorderBrush" Value="#FFD1D5DB" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="Padding" Value="12" />
+            <Setter Property="CornerRadius" Value="2" />
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+        <Grid DockPanel.Dock="Top" Visibility="Collapsed" Height="0">
+            <TextBox x:Name="ProjectPathEntry" />
+            <TextBox x:Name="RomPathEntry" />
+        </Grid>
+
+        <Menu DockPanel.Dock="Top" Background="#FFF8F8F8">
+            <MenuItem Header="_File">
+                <MenuItem x:Name="OpenRomCommandButton" Header="Open ROM..." Click="OnOpenRomClicked" />
+                <MenuItem x:Name="OpenProjectCommandButton" Header="Open Project..." Click="OnLoadProjectClicked" />
+                <Separator />
+                <MenuItem x:Name="SaveProjectCommandButton" Header="Save Project" Click="OnSaveProjectClicked" />
+                <MenuItem x:Name="ExportRomCommandButton" Header="Export ROM" Click="OnSaveCopyClicked" />
+                <Separator />
+                <MenuItem Header="E_xit" Click="OnExitClicked" />
+            </MenuItem>
+        </Menu>
+
+        <Border DockPanel.Dock="Top" Style="{StaticResource PanelBorderStyle}" Margin="12,12,12,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*" />
+                    <ColumnDefinition Width="3*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="Medabots ROM Toolkit" FontSize="22" FontWeight="SemiBold" Foreground="#FF111827" />
+                    <TextBlock Text="WPF editor workspace" Margin="0,4,0,0" Foreground="#FF6B7280" />
+                </StackPanel>
+                <StackPanel Grid.Column="1">
+                    <TextBlock x:Name="ProjectNameLabel" Foreground="#FF111827" TextWrapping="Wrap" />
+                    <TextBlock x:Name="ProfileStatusLabel" Margin="0,4,0,0" Foreground="#FF111827" TextWrapping="Wrap" />
+                    <TextBlock x:Name="SessionStatusLabel" Margin="0,4,0,0" Foreground="#FF111827" TextWrapping="Wrap" />
+                    <TextBlock x:Name="RomSizeLabel" Margin="0,4,0,0" Foreground="#FF111827" TextWrapping="Wrap" />
+                    <TextBlock x:Name="PatchCountLabel" Margin="0,4,0,0" Foreground="#FF111827" TextWrapping="Wrap" />
+                    <TextBlock x:Name="LoadingStatusLabel" Margin="0,4,0,0" Foreground="#FF2563EB" Visibility="Collapsed" />
+                    <ProgressBar x:Name="LoadingProgressBar" Margin="0,6,0,0" Height="14" Minimum="0" Maximum="100" Visibility="Collapsed" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem Width="420">
+                <TextBlock x:Name="FooterProjectLabel" TextTrimming="CharacterEllipsis" />
+            </StatusBarItem>
+            <Separator />
+            <StatusBarItem Width="540">
+                <TextBlock x:Name="FooterChangesLabel" TextTrimming="CharacterEllipsis" />
+            </StatusBarItem>
+            <Separator />
+            <StatusBarItem>
+                <TextBlock x:Name="FooterPathLabel" TextTrimming="CharacterEllipsis" />
+            </StatusBarItem>
+        </StatusBar>
+
+        <TabControl x:Name="EditorTabControl" Margin="12">
+            <TabItem x:Name="MessagesSection" Header="Messages">
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="340" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="MessageFilterEntry" Grid.Column="0" TextChanged="OnMessageFilterChanged" />
+                                <Button Grid.Column="1" Margin="8,0,0,0" Click="OnAddPatchClicked">Add</Button>
+                            </Grid>
+                            <ListBox x:Name="PatchCollectionView" Grid.Row="1" SelectionChanged="OnPatchSelectionChanged" DisplayMemberPath="DisplayName" />
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <TextBlock Text="Message Details" FontWeight="SemiBold" FontSize="14" />
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="120" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="120" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center">Bank</TextBlock>
+                                    <TextBox x:Name="BankEntry" Grid.Column="1" />
+                                    <TextBlock Grid.Column="2" Margin="16,0,8,0" VerticalAlignment="Center">Index</TextBlock>
+                                    <TextBox x:Name="IndexEntry" Grid.Column="3" />
+                                </Grid>
+                                <TextBox x:Name="MessageTextEditor" Margin="0,12,0,0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" MinHeight="560" />
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                    <Button Margin="0,0,8,0" Click="OnSavePatchChangesClicked">Save Patch</Button>
+                                    <Button Click="OnRemovePatchClicked">Remove Patch</Button>
+                                </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem x:Name="EventsSection" Header="Events">
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="340" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <TextBox x:Name="EventFilterEntry" TextChanged="OnEventFilterChanged" />
+                            <Grid Grid.Row="1" Margin="0,10,0,8" Background="#FFF3F4F6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="60" />
+                                    <ColumnDefinition Width="70" />
+                                    <ColumnDefinition Width="70" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Margin="8,6" FontWeight="SemiBold">Id</TextBlock>
+                                <TextBlock Grid.Column="1" Margin="8,6" FontWeight="SemiBold">Cache</TextBlock>
+                                <TextBlock Grid.Column="2" Margin="8,6" FontWeight="SemiBold">Patch</TextBlock>
+                                <TextBlock Grid.Column="3" Margin="8,6" FontWeight="SemiBold">Summary</TextBlock>
+                            </Grid>
+                            <ListBox x:Name="EventCollectionView" Grid.Row="2" SelectionChanged="OnEventSelectionChanged">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Padding="6" Tag="{Binding}">
+                                            <Border.ContextMenu>
+                                                <ContextMenu>
+                                                    <MenuItem Header="Revert Event Patch" Click="OnRevertEventPatchMenuClicked" CommandParameter="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                </ContextMenu>
+                                            </Border.ContextMenu>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="60" />
+                                                    <ColumnDefinition Width="70" />
+                                                    <ColumnDefinition Width="70" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding Id, StringFormat=D4}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding CacheStatus}" />
+                                                <TextBlock Grid.Column="2" Text="{Binding PatchStatus}" Foreground="#FF1D4ED8" />
+                                                <TextBlock Grid.Column="3" Text="{Binding Summary}" TextTrimming="CharacterEllipsis" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="Event Flow" FontWeight="SemiBold" FontSize="14" />
+                            <Grid Grid.Row="1" Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1.7*" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="1*" />
+                                </Grid.ColumnDefinitions>
+                                <ListBox x:Name="EventInstructionCollectionView" Grid.Column="0" SelectionChanged="OnEventInstructionSelectionChanged">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Padding="8" BorderBrush="#FFE5E7EB" BorderThickness="0,0,0,1" Tag="{Binding}">
+                                                <Border.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="Rename Label" Click="OnRenameEventLabelMenuClicked" CommandParameter="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                        <MenuItem Header="Insert Selected Operation Before" Click="OnInsertSelectedOperationBeforeMenuClicked" CommandParameter="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                        <MenuItem Header="Insert Selected Operation After" Click="OnInsertSelectedOperationAfterMenuClicked" CommandParameter="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                        <MenuItem Header="Insert Nop Before" Click="OnInsertEventNopBeforeMenuClicked" CommandParameter="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                        <MenuItem Header="Insert Nop After" Click="OnInsertEventNopAfterMenuClicked" CommandParameter="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                        <MenuItem Header="Delete Instruction" Click="OnDeleteEventInstructionMenuClicked" CommandParameter="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                    </ContextMenu>
+                                                </Border.ContextMenu>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="4" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Border Grid.Column="0" Background="{Binding AccentColor}" />
+                                                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                                        <DockPanel>
+                                                            <Border Background="{Binding CategoryBackgroundColor}" Padding="7,2" CornerRadius="2" DockPanel.Dock="Left" Margin="0,0,8,0" Visibility="{Binding HasCategory, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                                <TextBlock Text="{Binding Category}" Foreground="{Binding CategoryTextColor}" FontSize="10" FontWeight="SemiBold" />
+                                                            </Border>
+                                                            <TextBlock Text="{Binding LabelDisplay, StringFormat={}{0}:}" Foreground="#FF2563EB" FontSize="11" FontWeight="SemiBold" />
+                                                        </DockPanel>
+                                                        <TextBlock Margin="0,4,0,0" Text="{Binding Summary}" TextWrapping="Wrap" Foreground="#FF111827" />
+                                                        <TextBlock Margin="0,4,0,0" Text="{Binding Detail}" TextWrapping="Wrap" Foreground="#FF6B7280" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+
+                                <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="*" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Text="Selected Action" FontWeight="SemiBold" />
+                                        <TextBlock x:Name="EventActionTitleLabel" Grid.Row="1" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                        <TextBlock x:Name="EventActionHintLabel" Grid.Row="2" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#FF6B7280" />
+                                        <StackPanel Grid.Row="3" Margin="0,8,0,0">
+                                            <TextBlock Text="Known Labels" FontWeight="SemiBold" Foreground="#FF6B7280" />
+                                            <TextBlock x:Name="EventKnownLabelsLabel" Margin="0,4,0,0" TextWrapping="Wrap" Foreground="#FF2563EB" />
+                                        </StackPanel>
+                                        <Grid Grid.Row="4" Margin="0,10,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <ComboBox x:Name="EventOperationPicker" SelectionChanged="OnEventOperationSelectionChanged" />
+                                            <Button Grid.Column="1" Margin="8,0,0,0">Tools
+                                                <Button.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="Edit Selected Label" Click="OnEditSelectedEventLabelClicked" />
+                                                        <MenuItem Header="Revert Event Patch" Click="OnRevertEventPatchClicked" />
+                                                    </ContextMenu>
+                                                </Button.ContextMenu>
+                                            </Button>
+                                        </Grid>
+                                        <TextBlock Grid.Row="5" Margin="0,8,0,0" Text="Labels can be used directly in jump arguments." Foreground="#FF6B7280" TextWrapping="Wrap" />
+                                        <ListBox x:Name="EventArgumentCollectionView" Grid.Row="6" Margin="0,10,0,0">
+                                            <ListBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Margin="0,0,0,10">
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                        <TextBlock Text="{Binding TypeName}" Foreground="#FF6B7280" FontSize="11" />
+                                                        <TextBox Margin="0,4,0,0" Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding IsPlainValueEditor, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                        <ComboBox Margin="0,4,0,0" ItemsSource="{Binding EnumOptions}" SelectedIndex="{Binding SelectedEnumIndex}" Visibility="{Binding IsEnumEditor, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                        <Grid Margin="0,4,0,0" Visibility="{Binding IsMoveEditor, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="8" />
+                                                                <ColumnDefinition Width="*" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <ComboBox Grid.Column="0" ItemsSource="{Binding EnumOptions}" SelectedIndex="{Binding MoveDirectionIndex}" />
+                                                            <TextBox Grid.Column="2" Text="{Binding MoveDistanceText, UpdateSourceTrigger=PropertyChanged}" />
+                                                        </Grid>
+                                                        <Grid Margin="0,4,0,0" Visibility="{Binding IsPackedTrackedObjectIdEditor, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="8" />
+                                                                <ColumnDefinition Width="*" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBox Grid.Column="0" Text="{Binding TrackedObjectSlotText, UpdateSourceTrigger=PropertyChanged}" />
+                                                            <TextBox Grid.Column="2" Text="{Binding PackedFlagsText, UpdateSourceTrigger=PropertyChanged}" />
+                                                        </Grid>
+                                                        <StackPanel Margin="0,4,0,0" Visibility="{Binding IsJumpTargetEditor, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                            <ComboBox ItemsSource="{Binding JumpTargetOptions}" SelectedIndex="{Binding SelectedJumpTargetIndex}" />
+                                                            <TextBlock Margin="0,4,0,0" Text="{Binding HelpText}" FontSize="11" Foreground="#FF6B7280" TextWrapping="Wrap" />
+                                                        </StackPanel>
+                                                        <TextBlock Margin="0,4,0,0" Text="{Binding HelpText}" FontSize="11" Foreground="#FF6B7280" TextWrapping="Wrap" Visibility="{Binding ShowStandardHelpText, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ListBox.ItemTemplate>
+                                        </ListBox>
+                                        <Button Grid.Row="7" Margin="0,10,0,0" HorizontalAlignment="Left" Click="OnApplyEventActionClicked">Apply Action Changes</Button>
+                                        <TextBlock x:Name="EventPatchStatusLabel" Grid.Row="8" Margin="0,8,0,0" Foreground="#FF6B7280" TextWrapping="Wrap" />
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem x:Name="BattlesSection" Header="Battles">
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="340" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}">
+                        <StackPanel>
+                            <TextBox x:Name="BattleFilterEntry" TextChanged="OnBattleFilterChanged" />
+                            <ListBox x:Name="BattleCollectionView" Margin="0,10,0,0" SelectionChanged="OnBattleSelectionChanged" DisplayMemberPath="Title" />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <TextBlock Text="Battle Details" FontWeight="SemiBold" FontSize="14" />
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="120" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="120" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center">Character</TextBlock>
+                                    <TextBox x:Name="BattleCharacterEntry" Grid.Column="1" />
+                                    <TextBlock Grid.Column="2" Margin="16,0,0,0" VerticalAlignment="Center">Bots</TextBlock>
+                                    <TextBox x:Name="BattleBotCountEntry" Grid.Column="3" />
+                                </Grid>
+                                <UniformGrid Margin="0,12,0,0" Columns="2">
+                                    <StackPanel Margin="0,0,8,0">
+                                        <TextBlock Text="Bot 1" FontWeight="SemiBold" />
+                                        <TextBox x:Name="BattleBot1HeadEntry" Margin="0,8,0,0" />
+                                        <TextBox x:Name="BattleBot1RightEntry" Margin="0,8,0,0" />
+                                        <TextBox x:Name="BattleBot1LeftEntry" Margin="0,8,0,0" />
+                                        <TextBox x:Name="BattleBot1LegsEntry" Margin="0,8,0,0" />
+                                        <TextBox x:Name="BattleBot1MedalEntry" Margin="0,8,0,0" />
+                                        <TextBox x:Name="BattleBot1LevelEntry" Margin="0,8,0,0" />
+                                    </StackPanel>
+                                    <StackPanel Margin="8,0,0,0">
+                                        <TextBlock Text="Bot 2" FontWeight="SemiBold" />
+                                        <TextBox x:Name="BattleBot2HeadEntry" Margin="0,8,0,0" />
+                                        <TextBox x:Name="BattleBot2RightEntry" Margin="0,8,0,0" />
+                                        <TextBox x:Name="BattleBot2LeftEntry" Margin="0,8,0,0" />
+                                        <TextBox x:Name="BattleBot2LegsEntry" Margin="0,8,0,0" />
+                                        <TextBox x:Name="BattleBot2MedalEntry" Margin="0,8,0,0" />
+                                        <TextBox x:Name="BattleBot2LevelEntry" Margin="0,8,0,0" />
+                                    </StackPanel>
+                                </UniformGrid>
+                                <TextBlock Margin="0,12,0,0" Text="Bot 3" FontWeight="SemiBold" />
+                                <UniformGrid Margin="0,8,0,0" Columns="3">
+                                    <TextBox x:Name="BattleBot3HeadEntry" Margin="0,0,8,0" />
+                                    <TextBox x:Name="BattleBot3RightEntry" Margin="0,0,8,0" />
+                                    <TextBox x:Name="BattleBot3LeftEntry" />
+                                </UniformGrid>
+                                <UniformGrid Margin="0,8,0,0" Columns="3">
+                                    <TextBox x:Name="BattleBot3LegsEntry" Margin="0,0,8,0" />
+                                    <TextBox x:Name="BattleBot3MedalEntry" Margin="0,0,8,0" />
+                                    <TextBox x:Name="BattleBot3LevelEntry" />
+                                </UniformGrid>
+                                <Button Margin="0,12,0,0" HorizontalAlignment="Left" Click="OnApplyBattleClicked">Apply Battle Changes</Button>
+                                <TextBox x:Name="BattleEditor" Margin="0,12,0,0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" MinHeight="150" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem x:Name="PartsSection" Header="Parts">
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="340" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}">
+                        <StackPanel>
+                            <TextBox x:Name="PartFilterEntry" TextChanged="OnPartFilterChanged" />
+                            <ListBox x:Name="PartCollectionView" Margin="0,10,0,0" SelectionChanged="OnPartSelectionChanged" DisplayMemberPath="Title" />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1.35*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="1*" />
+                            </Grid.ColumnDefinitions>
+                            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
+                                <StackPanel>
+                                    <TextBlock Text="Part Details" FontWeight="SemiBold" FontSize="14" />
+                                    <UniformGrid Margin="0,12,0,0" Columns="4">
+                                        <TextBlock VerticalAlignment="Center">Medal</TextBlock>
+                                        <TextBox x:Name="PartMedalCompatibilityEntry" Margin="0,0,16,0" />
+                                        <TextBlock VerticalAlignment="Center">Speciality</TextBlock>
+                                        <TextBox x:Name="PartSpecialityEntry" />
+                                    </UniformGrid>
+                                    <UniformGrid Margin="0,8,0,0" Columns="4">
+                                        <TextBlock VerticalAlignment="Center">Gender</TextBlock>
+                                        <TextBox x:Name="PartGenderEntry" Margin="0,0,16,0" />
+                                        <TextBlock VerticalAlignment="Center">Armor</TextBlock>
+                                        <TextBox x:Name="PartArmorEntry" />
+                                    </UniformGrid>
+                                    <UniformGrid Margin="0,8,0,0" Columns="4">
+                                        <TextBlock x:Name="PartValue1Label" VerticalAlignment="Center" />
+                                        <TextBox x:Name="PartValue1Entry" Margin="0,0,16,0" />
+                                        <TextBlock x:Name="PartValue2Label" VerticalAlignment="Center" />
+                                        <TextBox x:Name="PartValue2Entry" />
+                                    </UniformGrid>
+                                    <UniformGrid Margin="0,8,0,0" Columns="4">
+                                        <TextBlock x:Name="PartValue3Label" VerticalAlignment="Center" />
+                                        <TextBox x:Name="PartValue3Entry" Margin="0,0,16,0" />
+                                        <TextBlock x:Name="PartValue4Label" VerticalAlignment="Center" />
+                                        <TextBox x:Name="PartValue4Entry" />
+                                    </UniformGrid>
+                                    <UniformGrid Margin="0,8,0,0" Columns="4">
+                                        <TextBlock x:Name="PartValue5Label" VerticalAlignment="Center" />
+                                        <TextBox x:Name="PartValue5Entry" Margin="0,0,16,0" />
+                                        <TextBlock VerticalAlignment="Center">Unknown2</TextBlock>
+                                        <TextBox x:Name="PartUnknown2Entry" />
+                                    </UniformGrid>
+                                    <UniformGrid Margin="0,8,0,0" Columns="6">
+                                        <TextBlock VerticalAlignment="Center">Unknown3</TextBlock>
+                                        <TextBox x:Name="PartUnknown3Entry" Margin="0,0,8,0" />
+                                        <TextBlock VerticalAlignment="Center">Unknown4</TextBlock>
+                                        <TextBox x:Name="PartUnknown4Entry" Margin="0,0,8,0" />
+                                        <TextBlock VerticalAlignment="Center">Unknown5</TextBlock>
+                                        <TextBox x:Name="PartUnknown5Entry" />
+                                    </UniformGrid>
+                                    <UniformGrid Margin="0,8,0,0" Columns="4">
+                                        <TextBlock VerticalAlignment="Center">Unknown6</TextBlock>
+                                        <TextBox x:Name="PartUnknown6Entry" Margin="0,0,16,0" />
+                                        <TextBlock VerticalAlignment="Center">Unknown7</TextBlock>
+                                        <TextBox x:Name="PartUnknown7Entry" />
+                                    </UniformGrid>
+                                    <UniformGrid Margin="0,8,0,0" Columns="2">
+                                        <TextBlock VerticalAlignment="Center">Unknown8</TextBlock>
+                                        <TextBox x:Name="PartUnknown8Entry" />
+                                    </UniformGrid>
+                                    <Button Margin="0,12,0,0" HorizontalAlignment="Left" Click="OnApplyPartClicked">Apply Part Changes</Button>
+                                    <TextBlock Margin="0,12,0,0" Text="Part Summary" FontWeight="SemiBold" />
+                                    <TextBox x:Name="PartEditor" Margin="0,8,0,0" AcceptsReturn="True" TextWrapping="Wrap" IsReadOnly="True" MinHeight="130" VerticalScrollBarVisibility="Auto" />
+                                </StackPanel>
+                            </ScrollViewer>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Action Route" FontWeight="SemiBold" FontSize="14" />
+                                <TextBox x:Name="PartActionAnalysisEditor" Margin="0,12,0,0" AcceptsReturn="True" TextWrapping="Wrap" IsReadOnly="True" VerticalScrollBarVisibility="Auto" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem x:Name="SpritesSection" Header="Sprites">
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="340" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <TextBox x:Name="SpriteFilterEntry" TextChanged="OnSpriteFilterChanged" />
+                            <TreeView x:Name="SpriteTreeView" Grid.Row="1" Margin="0,10,0,0" SelectedItemChanged="OnSpriteSelectionChanged">
+                                <TreeView.Resources>
+                                    <HierarchicalDataTemplate DataType="{x:Type localModels:SpriteBrowserNode}" ItemsSource="{Binding Children}">
+                                        <TextBlock Text="{Binding Title}" />
+                                    </HierarchicalDataTemplate>
+                                </TreeView.Resources>
+                            </TreeView>
+                        </Grid>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="300" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Sprite Preview" FontWeight="SemiBold" FontSize="14" />
+                                <Border Margin="0,12,0,0" BorderBrush="#FFD1D5DB" BorderThickness="1" Background="#FFF9FAFB" Padding="8">
+                                    <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                                  VerticalScrollBarVisibility="Auto"
+                                                  PreviewMouseWheel="OnSpritePreviewMouseWheel">
+                                        <Grid>
+                                            <Image x:Name="SpritePreviewImage"
+                                                   Stretch="Fill"
+                                                   HorizontalAlignment="Left"
+                                                   VerticalAlignment="Top"
+                                                   SnapsToDevicePixels="True"
+                                                   RenderOptions.BitmapScalingMode="NearestNeighbor"
+                                                   MouseLeftButtonDown="OnSpritePreviewMouseLeftButtonDown"
+                                                   MouseLeftButtonUp="OnSpritePreviewMouseLeftButtonUp"
+                                                   MouseMove="OnSpritePreviewMouseMove" />
+                                            <Canvas x:Name="SpriteGridCanvas"
+                                                    HorizontalAlignment="Left"
+                                                    VerticalAlignment="Top"
+                                                    IsHitTestVisible="False" />
+                                        </Grid>
+                                    </ScrollViewer>
+                                </Border>
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                    <ToggleButton x:Name="SpriteToolPencilButton" IsChecked="True" Click="OnSpriteToolPencilClicked">Pencil</ToggleButton>
+                                    <ToggleButton x:Name="SpriteToolEraserButton" Margin="8,0,0,0" Click="OnSpriteToolEraserClicked">Eraser</ToggleButton>
+                                    <ToggleButton x:Name="SpriteToolPickerButton" Margin="8,0,0,0" Click="OnSpriteToolPickerClicked">Picker</ToggleButton>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0" VerticalAlignment="Center">
+                                    <TextBlock VerticalAlignment="Center" Text="Zoom" />
+                                    <Slider x:Name="SpriteZoomSlider"
+                                            Margin="8,0,0,0"
+                                            Width="160"
+                                            Minimum="1"
+                                            Maximum="24"
+                                            Value="4"
+                                            TickFrequency="1"
+                                            IsSnapToTickEnabled="True"
+                                            ValueChanged="OnSpriteZoomChanged" />
+                                    <TextBlock x:Name="SpriteZoomValueLabel" Margin="8,0,0,0" VerticalAlignment="Center" Text="4x" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                    <Button Click="OnExportSpritePngClicked">Export PNG</Button>
+                                    <Button Margin="8,0,0,0" Click="OnImportSpritePngClicked">Import PNG</Button>
+                                    <Button Margin="8,0,0,0" Click="OnApplySpriteChangesClicked">Apply Changes</Button>
+                                    <Button Margin="8,0,0,0" Click="OnUndoSpriteEditClicked">Undo</Button>
+                                    <Button Margin="8,0,0,0" Click="OnRevertSelectedSpriteChangesClicked">Reset Asset</Button>
+                                    <Button Margin="8,0,0,0" Click="OnRevertAllSpriteChangesClicked">Reset All</Button>
+                                </StackPanel>
+                                <TextBlock x:Name="SpritePatchStatusLabel" Margin="0,8,0,0" Foreground="#FF6B7280" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                                <StackPanel>
+                                    <TextBlock Text="Sprite Details" FontWeight="SemiBold" FontSize="14" />
+                                    <TextBlock x:Name="SpriteSummaryLabel" Margin="0,12,0,0" TextWrapping="Wrap" />
+                                    <TextBlock Margin="0,16,0,0" Text="Palette" FontWeight="SemiBold" />
+                                    <ItemsControl x:Name="SpritePaletteItemsControl" Margin="0,8,0,0">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Width="72" Margin="0,0,8,8">
+                                                    <Button Padding="0"
+                                                            Width="48"
+                                                            Height="28"
+                                                            HorizontalAlignment="Left"
+                                                            VerticalAlignment="Top"
+                                                            Background="{Binding Color, Converter={StaticResource ColorToBrushConverter}}"
+                                                            Click="OnSpritePaletteSwatchClicked"
+                                                            Tag="{Binding Index}">
+                                                        <Button.Style>
+                                                            <Style TargetType="Button">
+                                                                <Setter Property="BorderBrush" Value="#FF9CA3AF" />
+                                                                <Setter Property="BorderThickness" Value="1" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                        <Setter Property="BorderBrush" Value="#FF2563EB" />
+                                                                        <Setter Property="BorderThickness" Value="2" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Button.Style>
+                                                        <Border Background="{Binding Color, Converter={StaticResource ColorToBrushConverter}}" />
+                                                    </Button>
+                                                    <TextBlock Margin="0,4,0,0" FontSize="11" Text="{Binding Hex}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock x:Name="SpritePaletteSummaryLabel" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#FF6B7280" />
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem x:Name="EncountersSection" Header="Encounters">
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="340" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}">
+                        <StackPanel>
+                            <TextBox x:Name="EncounterFilterEntry" TextChanged="OnEncounterFilterChanged" />
+                            <ListBox x:Name="EncounterCollectionView" Margin="0,10,0,0" SelectionChanged="OnEncounterSelectionChanged" DisplayMemberPath="Title" />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}">
+                        <StackPanel>
+                            <TextBlock Text="Encounter Details" FontWeight="SemiBold" FontSize="14" />
+                            <UniformGrid Margin="0,12,0,0" Columns="4">
+                                <TextBlock VerticalAlignment="Center">Battle 1</TextBlock>
+                                <TextBox x:Name="EncounterBattle1Entry" Margin="0,0,16,0" />
+                                <TextBlock VerticalAlignment="Center">Battle 2</TextBlock>
+                                <TextBox x:Name="EncounterBattle2Entry" />
+                            </UniformGrid>
+                            <UniformGrid Margin="0,8,0,0" Columns="4">
+                                <TextBlock VerticalAlignment="Center">Battle 3</TextBlock>
+                                <TextBox x:Name="EncounterBattle3Entry" Margin="0,0,16,0" />
+                                <TextBlock VerticalAlignment="Center">Battle 4</TextBlock>
+                                <TextBox x:Name="EncounterBattle4Entry" />
+                            </UniformGrid>
+                            <Button Margin="0,12,0,0" HorizontalAlignment="Left" Click="OnApplyEncounterClicked">Apply Encounter Changes</Button>
+                            <TextBox x:Name="EncounterEditor" Margin="0,12,0,0" AcceptsReturn="True" TextWrapping="Wrap" IsReadOnly="True" MinHeight="130" VerticalScrollBarVisibility="Auto" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem x:Name="ShopsSection" Header="Shops">
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="340" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}">
+                        <StackPanel>
+                            <TextBox x:Name="ShopFilterEntry" TextChanged="OnShopFilterChanged" />
+                            <UniformGrid Margin="0,10,0,0" Columns="2">
+                                <TextBox x:Name="ShopEntryLengthEntry" Margin="0,0,8,0" Text="6" />
+                                <TextBox x:Name="ShopCountEntry" Text="64" />
+                            </UniformGrid>
+                            <Button Margin="0,10,0,0" HorizontalAlignment="Left" Click="OnLoadShopListClicked">Load Shop List</Button>
+                            <ListBox x:Name="ShopCollectionView" Margin="0,10,0,0" SelectionChanged="OnShopSelectionChanged" DisplayMemberPath="Title" />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}">
+                        <StackPanel>
+                            <TextBlock Text="Shop Details" FontWeight="SemiBold" FontSize="14" />
+                            <TextBox x:Name="ShopContentsEditor" Margin="0,12,0,0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" MinHeight="220" />
+                            <Button Margin="0,12,0,0" HorizontalAlignment="Left" Click="OnApplyShopClicked">Apply Shop Changes</Button>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem x:Name="StarterSection" Header="Starter">
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="340" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}">
+                        <StackPanel>
+                            <TextBlock Text="Starter Data" FontWeight="SemiBold" FontSize="14" />
+                            <Button Margin="0,12,0,0" HorizontalAlignment="Left" Click="OnLoadStarterClicked">Load Starter Data</Button>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}">
+                        <StackPanel>
+                            <TextBlock Text="Starter Details" FontWeight="SemiBold" FontSize="14" />
+                            <UniformGrid Margin="0,12,0,0" Columns="4">
+                                <TextBlock VerticalAlignment="Center">Part</TextBlock>
+                                <TextBox x:Name="StarterPartEntry" Margin="0,0,16,0" />
+                                <TextBlock VerticalAlignment="Center">Medal</TextBlock>
+                                <TextBox x:Name="StarterMedalEntry" />
+                            </UniformGrid>
+                            <CheckBox x:Name="StarterIsFemaleSwitch" Margin="0,12,0,0" Content="Female" />
+                            <Button Margin="0,12,0,0" HorizontalAlignment="Left" Click="OnApplyStarterClicked">Apply Starter Changes</Button>
+                            <TextBox x:Name="StarterEditor" Margin="0,12,0,0" AcceptsReturn="True" TextWrapping="Wrap" IsReadOnly="True" MinHeight="130" VerticalScrollBarVisibility="Auto" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

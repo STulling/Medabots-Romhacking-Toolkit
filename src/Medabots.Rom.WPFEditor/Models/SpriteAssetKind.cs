@@ -1,0 +1,8 @@
+namespace Medabots.Rom.WPFEditor.Models;
+
+public enum SpriteAssetKind
+{
+    Group = 0,
+    OverworldEventObject = 1,
+    Portrait = 2
+}
