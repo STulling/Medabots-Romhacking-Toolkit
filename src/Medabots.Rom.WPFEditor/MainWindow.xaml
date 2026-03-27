@@ -485,6 +485,8 @@
                         <ColumnDefinition Width="340" />
                         <ColumnDefinition Width="12" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="320" />
                     </Grid.ColumnDefinitions>
 
                     <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}">
@@ -514,15 +516,35 @@
 
                                 <TextBlock x:Name="MapTilesetSummaryLabel" Margin="0,8,0,0" Foreground="#FF6B7280" TextWrapping="Wrap" />
 
-                                <TextBlock Margin="0,18,0,0" Text="Composite Preview" FontWeight="SemiBold" />
+                                <TextBlock Margin="0,18,0,0" Text="Editing Layer" FontWeight="SemiBold" />
+                                <ComboBox x:Name="MapEditLayerComboBox"
+                                          Margin="0,8,0,0"
+                                          SelectionChanged="OnMapEditLayerSelectionChanged" />
+
+                                <TextBlock Margin="0,16,0,0" Text="Visible Layers" FontWeight="SemiBold" />
                                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                     <CheckBox x:Name="MapLayer1VisibilityCheckBox" Content="Layer 1" IsChecked="True" Checked="OnMapLayerVisibilityChanged" Unchecked="OnMapLayerVisibilityChanged" />
                                     <CheckBox x:Name="MapLayer2VisibilityCheckBox" Margin="16,0,0,0" Content="Layer 2" IsChecked="True" Checked="OnMapLayerVisibilityChanged" Unchecked="OnMapLayerVisibilityChanged" />
                                     <CheckBox x:Name="MapLayer3VisibilityCheckBox" Margin="16,0,0,0" Content="Layer 3" IsChecked="True" Checked="OnMapLayerVisibilityChanged" Unchecked="OnMapLayerVisibilityChanged" />
                                 </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <CheckBox x:Name="MapEventsVisibilityCheckBox" Content="Events" Checked="OnMapLayerVisibilityChanged" Unchecked="OnMapLayerVisibilityChanged" />
+                                    <CheckBox x:Name="MapWarpsVisibilityCheckBox" Margin="16,0,0,0" Content="Warps" Checked="OnMapLayerVisibilityChanged" Unchecked="OnMapLayerVisibilityChanged" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <TextBlock Text="Event Chapter Filter" VerticalAlignment="Center" />
+                                    <ComboBox x:Name="MapEventChapterFilterComboBox"
+                                              Margin="12,0,0,0"
+                                              MinWidth="180"
+                                              SelectionChanged="OnMapEventChapterFilterChanged" />
+                                </StackPanel>
+                                <TextBlock x:Name="MapOverlayStatusLabel" Margin="0,8,0,0" Foreground="#FF6B7280" TextWrapping="Wrap" />
+
+                                <TextBlock Margin="0,18,0,0" Text="Composite Preview" FontWeight="SemiBold" />
                                 <Border Margin="0,8,0,0" BorderBrush="#FFD1D5DB" BorderThickness="1" Background="#FFF9FAFB" Padding="8">
                                     <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                                         <Image x:Name="MapCompositePreviewImage"
+                                               MouseLeftButtonDown="OnMapCompositePreviewMouseLeftButtonDown"
                                                HorizontalAlignment="Left"
                                                VerticalAlignment="Top"
                                                Stretch="None"
@@ -531,44 +553,44 @@
                                     </ScrollViewer>
                                 </Border>
 
-                                <TextBlock Margin="0,18,0,0" Text="Layer 1" FontWeight="SemiBold" />
-                                <Border Margin="0,8,0,0" BorderBrush="#FFD1D5DB" BorderThickness="1" Background="#FFF9FAFB" Padding="8">
-                                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                                        <Image x:Name="MapLayer1PreviewImage"
-                                               HorizontalAlignment="Left"
-                                               VerticalAlignment="Top"
-                                               Stretch="None"
-                                               SnapsToDevicePixels="True"
-                                               RenderOptions.BitmapScalingMode="NearestNeighbor" />
-                                    </ScrollViewer>
-                                </Border>
-                                <TextBlock x:Name="MapLayer1SummaryLabel" Margin="0,8,0,0" Foreground="#FF6B7280" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
 
-                                <TextBlock Margin="0,18,0,0" Text="Layer 2" FontWeight="SemiBold" />
-                                <Border Margin="0,8,0,0" BorderBrush="#FFD1D5DB" BorderThickness="1" Background="#FFF9FAFB" Padding="8">
-                                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                                        <Image x:Name="MapLayer2PreviewImage"
-                                               HorizontalAlignment="Left"
-                                               VerticalAlignment="Top"
-                                               Stretch="None"
-                                               SnapsToDevicePixels="True"
-                                               RenderOptions.BitmapScalingMode="NearestNeighbor" />
-                                    </ScrollViewer>
-                                </Border>
-                                <TextBlock x:Name="MapLayer2SummaryLabel" Margin="0,8,0,0" Foreground="#FF6B7280" TextWrapping="Wrap" />
+                    <Border Grid.Column="4" Style="{StaticResource PanelBorderStyle}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <TextBlock x:Name="MapEditorTitleLabel" Text="Layer Editor" FontWeight="SemiBold" FontSize="14" />
 
-                                <TextBlock Margin="0,18,0,0" Text="Layer 3" FontWeight="SemiBold" />
-                                <Border Margin="0,8,0,0" BorderBrush="#FFD1D5DB" BorderThickness="1" Background="#FFF9FAFB" Padding="8">
-                                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                                        <Image x:Name="MapLayer3PreviewImage"
-                                               HorizontalAlignment="Left"
-                                               VerticalAlignment="Top"
-                                               Stretch="None"
-                                               SnapsToDevicePixels="True"
-                                               RenderOptions.BitmapScalingMode="NearestNeighbor" />
-                                    </ScrollViewer>
-                                </Border>
-                                <TextBlock x:Name="MapLayer3SummaryLabel" Margin="0,8,0,0" Foreground="#FF6B7280" TextWrapping="Wrap" />
+                                <StackPanel x:Name="MapTileEditorPanel" Margin="0,12,0,0">
+                                    <TextBlock Text="Tilemap Layer" FontWeight="SemiBold" Foreground="#FF111827" />
+                                    <TextBlock x:Name="MapTileEditorStatusLabel" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#FF6B7280" />
+                                </StackPanel>
+
+                                <StackPanel x:Name="MapOverlayEditorPanel" Margin="0,12,0,0" Visibility="Collapsed">
+                                    <TextBlock Text="Selected Overlay" FontWeight="SemiBold" Foreground="#FF111827" />
+                                    <Border x:Name="MapOverlayPreviewBorder"
+                                            Margin="0,10,0,0"
+                                            Padding="8"
+                                            BorderBrush="#FFD1D5DB"
+                                            BorderThickness="1"
+                                            Background="#FFF9FAFB"
+                                            Visibility="Collapsed">
+                                        <StackPanel>
+                                            <TextBlock x:Name="MapOverlayPreviewLabel"
+                                                       Margin="0,0,0,8"
+                                                       Foreground="#FF6B7280"
+                                                       TextWrapping="Wrap" />
+                                            <Image x:Name="MapOverlayPreviewImage"
+                                                   HorizontalAlignment="Left"
+                                                   VerticalAlignment="Top"
+                                                   Stretch="None"
+                                                   SnapsToDevicePixels="True"
+                                                   RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock x:Name="MapOverlayEditorStatusLabel" Margin="0,10,0,0" TextWrapping="Wrap" Foreground="#FF6B7280" />
+                                </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
                     </Border>

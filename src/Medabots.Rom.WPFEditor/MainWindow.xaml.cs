@@ -24,6 +24,7 @@ using Medabots.Rom.Editor;
 using Medabots.Rom.Encounters;
 using Medabots.Rom.Events;
 using Medabots.Rom.Images;
+using Medabots.Rom.Maps;
 using Medabots.Rom.Metadata;
 using Medabots.Rom.Parts;
 using Medabots.Rom.Projects;
@@ -72,6 +73,7 @@ public partial class MainWindow : Window
     private readonly PartPatcher _partPatcher = new();
     private readonly ImageAssetRepository _imageAssetRepository = new();
     private readonly ImageAssetPatcher _imageAssetPatcher = new();
+    private readonly MapOverlayRepository _mapOverlayRepository = new();
     private readonly EncounterTableReader _encounterTableReader = new();
     private readonly EncounterPatcher _encounterPatcher = new();
     private readonly ShopTableReader _shopTableReader = new();
@@ -93,6 +95,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<(int PartId, int VariantSelector), LargePartDisplayAsset> _largePartDisplayAssetCache = [];
     private readonly Dictionary<(int PartId, int VariantSelector), LargePartDisplayAsset> _editedLargePartDisplayAssets = [];
     private readonly Dictionary<int, Medabots.Rom.Maps.MapTilesetAsset> _mapTilesetCache = [];
+    private readonly Dictionary<int, MapOverlayAsset> _mapOverlayCache = [];
     private readonly Dictionary<string, SpriteEditHistory> _spriteEditHistories = [];
     private readonly Dictionary<(int EntryLength, int ShopId), ShopDefinition> _shopCache = [];
     private readonly List<EventOperationOption> _eventOperationOptions = [];

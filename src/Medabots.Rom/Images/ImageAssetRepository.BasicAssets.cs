@@ -47,13 +47,15 @@ public sealed partial class ImageAssetRepository
             ?? throw new InvalidDataException($"Sprite {spriteId} does not contain valid LZ77 image data.");
         var unpacked = TileImageCodec.Split4BppTiles(compressed);
         var palette = romFile.ReadBytes(paletteOffset, PaletteSize).ToArray();
+        const int tileWidth = 2;
+        var tileCount = Math.Max(1, unpacked.Length / 0x40);
         return new SpriteAsset(
             spriteId,
             imagePointerOffset,
             palettePointerOffset,
             imageOffset,
             paletteOffset,
-            new IndexedImage(2, unpacked.Length / 0x40, unpacked, palette));
+            new IndexedImage(tileWidth, Math.Max(1, tileCount / tileWidth), unpacked, palette));
     }
 
     public BattleCompositeSpriteComponentAsset ReadBattleCompositeSpriteComponent(RomFile romFile, int medabotId, int componentIndex)

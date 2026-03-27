@@ -23,6 +23,7 @@ public static class MedabotsRomSchema
     public const int EncounterCount = 192;
     public const int MapCount = 192;
     public const int MapLayerCount = 3;
+    public const int MapChapterCount = 16;
     public const int MapPaletteSize = 0x200;
     public const int MapTilemapHeaderSize = 0x10;
     public const int MapTilesetSheetTileWidth = 16;
@@ -31,6 +32,9 @@ public static class MedabotsRomSchema
     public const int MapColorAttributePointerTableOffset = 0x3F8DA0;
     public const int MapLayerTilemapPointerTableOffset = 0x3F90A0;
     public const int MapTilesetPalettePointerTableOffset = 0x3F99A0;
+    public const int MapWarpPointerTableOffset = 0x412E80;
+    public const int MapEventObjectResourcePointerTableOffset = 0x413180;
+    public const int MapEntitySpawnPointerTableOffset = 0x483254;
 
     public const byte EventConditionalMultiJumpOpcode = 0x2F;
     public const byte EventEndOpcode = 0x06;
