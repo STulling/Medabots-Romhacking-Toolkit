@@ -44,6 +44,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<EventArgumentEditorItem> _visibleEventArgumentEditors = [];
     private readonly ObservableCollection<BrowserItem> _visibleBattleItems = [];
     private readonly ObservableCollection<BrowserItem> _visiblePartItems = [];
+    private readonly ObservableCollection<BrowserItem> _visibleMapItems = [];
     private readonly ObservableCollection<SpriteBrowserNode> _visibleSpriteNodes = [];
     private readonly ObservableCollection<BrowserItem> _visibleEncounterItems = [];
     private readonly ObservableCollection<BrowserItem> _visibleShopItems = [];
@@ -52,6 +53,7 @@ public partial class MainWindow : Window
     private readonly List<EventBrowserItem> _allEventItems = [];
     private readonly List<BrowserItem> _allBattleItems = [];
     private readonly List<BrowserItem> _allPartItems = [];
+    private readonly List<BrowserItem> _allMapItems = [];
     private readonly List<SpriteBrowserNode> _allSpriteNodes = [];
     private readonly List<BrowserItem> _allEncounterItems = [];
     private readonly List<BrowserItem> _allShopItems = [];
@@ -90,6 +92,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<(int PartId, int ComponentIndex), BattleCompositeSpriteComponentAsset> _battleCompositeComponentCache = [];
     private readonly Dictionary<(int PartId, int VariantSelector), LargePartDisplayAsset> _largePartDisplayAssetCache = [];
     private readonly Dictionary<(int PartId, int VariantSelector), LargePartDisplayAsset> _editedLargePartDisplayAssets = [];
+    private readonly Dictionary<int, Medabots.Rom.Maps.MapTilesetAsset> _mapTilesetCache = [];
     private readonly Dictionary<string, SpriteEditHistory> _spriteEditHistories = [];
     private readonly Dictionary<(int EntryLength, int ShopId), ShopDefinition> _shopCache = [];
     private readonly List<EventOperationOption> _eventOperationOptions = [];
@@ -109,6 +112,7 @@ public partial class MainWindow : Window
     private bool _hasCapturedUndoForCurrentStroke;
     private bool _isPanningSpritePreview;
     private bool _isUpdatingSpritePaletteFamilyUi;
+    private bool _isWindowFullyInitialized;
     private WpfPoint _spritePanStartPoint;
     private double _spritePanStartHorizontalOffset;
     private double _spritePanStartVerticalOffset;
@@ -123,6 +127,7 @@ public partial class MainWindow : Window
     private BattleDefinition? _loadedBattle;
     private PartDefinition? _loadedPart;
     private EncounterDefinition? _loadedEncounter;
+    private Medabots.Rom.Maps.MapTilesetAsset? _loadedMapTileset;
     private ShopDefinition? _loadedShop;
     private StarterDefinition? _loadedStarter;
 
@@ -135,6 +140,7 @@ public partial class MainWindow : Window
         EventArgumentCollectionView.ItemsSource = _visibleEventArgumentEditors;
         BattleCollectionView.ItemsSource = _visibleBattleItems;
         PartCollectionView.ItemsSource = _visiblePartItems;
+        MapCollectionView.ItemsSource = _visibleMapItems;
         SpriteTreeView.ItemsSource = _visibleSpriteNodes;
         EncounterCollectionView.ItemsSource = _visibleEncounterItems;
         ShopCollectionView.ItemsSource = _visibleShopItems;
@@ -152,6 +158,7 @@ public partial class MainWindow : Window
         ClearPartEditor();
         SetActiveSection("Messages");
         UpdateStatus();
+        _isWindowFullyInitialized = true;
     }
 
     private void OnExitClicked(object? sender, RoutedEventArgs e) => Close();
@@ -160,6 +167,7 @@ public partial class MainWindow : Window
     private void OnEventsTabClicked(object? sender, EventArgs e) => SetActiveSection("Events");
     private void OnBattlesTabClicked(object? sender, EventArgs e) => SetActiveSection("Battles");
     private void OnPartsTabClicked(object? sender, EventArgs e) => SetActiveSection("Parts");
+    private void OnMapsTabClicked(object? sender, EventArgs e) => SetActiveSection("Maps");
     private void OnSpritesTabClicked(object? sender, EventArgs e) => SetActiveSection("Sprites");
     private void OnEncountersTabClicked(object? sender, EventArgs e) => SetActiveSection("Encounters");
     private void OnShopsTabClicked(object? sender, EventArgs e) => SetActiveSection("Shops");
@@ -291,9 +299,11 @@ public partial class MainWindow : Window
         _loadedParts = _partTableReader.ReadAll(_session.RomFile);
         _loadedEncounters = _encounterTableReader.ReadAll(_session.RomFile);
         _loadedPart = null;
+        _loadedMapTileset = null;
         _spritePreviewCache.Clear();
         _battleCompositeComponentCache.Clear();
         _largePartDisplayAssetCache.Clear();
+        _mapTilesetCache.Clear();
         _editedOverworldSpriteAssets.Clear();
         _editedPortraitAssets.Clear();
         _editedBattleCompositeComponentAssets.Clear();
@@ -307,6 +317,8 @@ public partial class MainWindow : Window
         _allBattleItems.AddRange(_loadedBattles.Select(battle => new BrowserItem(battle.Id, $"{battle.Id:D3}  {_metadata.GetCharacterName(battle.CharacterId)}")));
         _allPartItems.Clear();
         _allPartItems.AddRange(_loadedParts.Select(part => new BrowserItem(part.Id, $"{part.Id:D3}  {_metadata.GetPartName(part.Id)}  ({part.Kind})")));
+        _allMapItems.Clear();
+        _allMapItems.AddRange(Enumerable.Range(0, Math.Min(MedabotsRomSchema.MapCount, _metadata.Catalog.Maps.Count)).Select(mapId => new BrowserItem(mapId, $"{mapId:D3}  {_metadata.GetMapName(mapId)}")));
         _allSpriteNodes.Clear();
         _allSpriteNodes.AddRange(BuildSpriteTreeNodes());
         _allEncounterItems.Clear();
@@ -318,12 +330,15 @@ public partial class MainWindow : Window
         RefreshMessageFilter();
         RefreshBattleFilter();
         RefreshPartFilter();
+        RefreshMapFilter();
         RefreshSpriteFilter();
         RefreshEncounterFilter();
         RefreshEventFilter();
         LoadShopList();
         PartCollectionView.SelectedItem = null;
         ClearPartEditor();
+        MapCollectionView.SelectedItem = null;
+        ClearMapPreview();
         ClearSpritePreview();
 
         _loadedStarter = _starterReader.Read(_session.RomFile, profile);
@@ -368,6 +383,7 @@ public partial class MainWindow : Window
     private void OnEventFilterChanged(object? sender, TextChangedEventArgs e) => RefreshEventFilter();
     private void OnBattleFilterChanged(object? sender, TextChangedEventArgs e) => RefreshBattleFilter();
     private void OnPartFilterChanged(object? sender, TextChangedEventArgs e) => RefreshPartFilter();
+    private void OnMapFilterChanged(object? sender, TextChangedEventArgs e) => RefreshMapFilter();
     private void OnSpriteFilterChanged(object? sender, TextChangedEventArgs e) => RefreshSpriteFilter();
     private void OnEncounterFilterChanged(object? sender, TextChangedEventArgs e) => RefreshEncounterFilter();
     private void OnShopFilterChanged(object? sender, TextChangedEventArgs e) => RefreshShopFilter();
@@ -376,6 +392,7 @@ public partial class MainWindow : Window
     private void RefreshEventFilter() => RefreshCollection(_visibleEventItems, _allEventItems.Where(item => MatchesFilter(item.FilterText, EventFilterEntry.Text)));
     private void RefreshBattleFilter() => RefreshCollection(_visibleBattleItems, _allBattleItems.Where(item => MatchesFilter(item.FilterText, BattleFilterEntry.Text)));
     private void RefreshPartFilter() => RefreshCollection(_visiblePartItems, _allPartItems.Where(item => MatchesFilter(item.FilterText, PartFilterEntry.Text)));
+    private void RefreshMapFilter() => RefreshCollection(_visibleMapItems, _allMapItems.Where(item => MatchesFilter(item.FilterText, MapFilterEntry.Text)));
     private void RefreshSpriteFilter()
     {
         _visibleSpriteNodes.Clear();

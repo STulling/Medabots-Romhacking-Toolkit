@@ -6,5 +6,6 @@ public enum SpriteAssetKind
     OverworldEventObject = 1,
     Portrait = 2,
     BattleCompositePartComponent = 3,
-    PartCompositePreview = 4
+    PartCompositePreview = 4,
+    MapTileset = 5
 }

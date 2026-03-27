@@ -7,3 +7,4 @@ docs/
 python/
 *.gba
 *.sav
+.tmp*

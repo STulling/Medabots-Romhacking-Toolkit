@@ -2,7 +2,7 @@ using Medabots.Rom.Metadata;
 
 namespace Medabots.Rom.Projects;
 
-public sealed class RomHackProjectApplicator
+public sealed partial class RomHackProjectApplicator
 {
     private readonly Text.MedabotsTextPatcher _textPatcher;
     private readonly Events.EventInstructionPatcher _eventInstructionPatcher;
@@ -18,24 +18,20 @@ public sealed class RomHackProjectApplicator
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(session);
 
-        session.ApplyPatches(project.PendingActions);
+        ApplyPendingActions(project, session);
+        var profile = ResolveTextProfile(project);
+        ApplyMessagePatches(project, session, profile);
+        ApplyEventScriptPatches(project, session, profile);
+    }
 
-        if (project.MessagePatches.Count == 0)
+    private MedabotsRomTextProfile? ResolveTextProfile(RomHackProject project)
+    {
+        if (string.IsNullOrWhiteSpace(project.TextProfileId))
         {
-            return;
+            return null;
         }
 
-        var profile = MedabotsRomTextProfiles.FindById(project.TextProfileId)
+        return MedabotsRomTextProfiles.FindById(project.TextProfileId)
             ?? throw new InvalidOperationException("The project does not define a known text profile.");
-
-        if (project.MessagePatches.Count > 0)
-        {
-            _textPatcher.Apply(session, profile.TextPointerTableOffset, profile.TextDumpOffset, project.MessagePatches);
-        }
-
-        foreach (var patch in project.EventScriptPatches)
-        {
-            _eventInstructionPatcher.RewriteEvent(session, profile, patch.EventId, patch.ScriptBytes, $"Apply project event patch {patch.EventId}");
-        }
     }
 }

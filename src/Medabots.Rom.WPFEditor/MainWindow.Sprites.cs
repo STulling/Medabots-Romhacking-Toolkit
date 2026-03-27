@@ -23,6 +23,7 @@ using Medabots.Rom.Editor;
 using Medabots.Rom.Encounters;
 using Medabots.Rom.Events;
 using Medabots.Rom.Images;
+using Medabots.Rom.Maps;
 using Medabots.Rom.Metadata;
 using Medabots.Rom.Parts;
 using Medabots.Rom.Projects;
@@ -50,7 +51,7 @@ public partial class MainWindow : Window
         SpriteGridCanvas.Children.Clear();
         SpriteGridCanvas.Width = 0;
         SpriteGridCanvas.Height = 0;
-        SpriteSummaryLabel.Text = "Select an overworld sheet, portrait, Medabot composite sprite, or individual part preview to inspect its decoded image and palette data.";
+        SpriteSummaryLabel.Text = "Select an overworld sheet, portrait, map tileset, Medabot composite sprite, or individual part preview to inspect its decoded image and palette data.";
         SpritePaletteSummaryLabel.Text = string.Empty;
         SpritePaletteItemsControl.ItemsSource = null;
         SpritePaletteFamilyEditorPanel.Visibility = Visibility.Collapsed;
@@ -61,348 +62,20 @@ public partial class MainWindow : Window
         _hasCapturedUndoForCurrentStroke = false;
     }
 
-    private List<SpriteBrowserNode> BuildSpriteTreeNodes()
-    {
-        var nodes = new List<SpriteBrowserNode>();
-        nodes.Add(BuildOverworldSpriteRoot());
-        nodes.Add(BuildPortraitRoot());
-        nodes.Add(BuildMedabotPartRoot());
-        return nodes;
-    }
-
-    private SpriteBrowserNode BuildOverworldSpriteRoot()
-    {
-        const int groupSize = 32;
-        const int characterSpriteLimit = 88;
-        var root = new SpriteBrowserNode
-        {
-            Title = "Overworld Event Object Sheets",
-            FilterText = "Overworld Event Object Sheets"
-        };
-        root.Children.Add(BuildOverworldSpriteSubgroup("Character Sheets", Enumerable.Range(0, characterSpriteLimit), groupSize));
-        var validOtherIds = GetValidOverworldSheetIds(characterSpriteLimit, MedabotsRomSchema.SpriteCount - 1).ToArray();
-        if (validOtherIds.Length > 0)
-        {
-            root.Children.Add(BuildOverworldSpriteSubgroup("Other Event Object Sheets", validOtherIds, groupSize));
-        }
-        return root;
-    }
-
-    private static SpriteBrowserNode BuildOverworldSpriteSubgroup(string title, IEnumerable<int> spriteIds, int groupSize)
-    {
-        var root = new SpriteBrowserNode
-        {
-            Title = title,
-            FilterText = title
-        };
-        var ids = spriteIds.OrderBy(id => id).ToArray();
-        for (var blockStart = 0; blockStart < ids.Length; blockStart += groupSize)
-        {
-            var block = ids.Skip(blockStart).Take(groupSize).ToArray();
-            var start = block.First();
-            var end = block.Last();
-            var group = new SpriteBrowserNode
-            {
-                Title = $"Sheets {start:D3}-{end:D3}",
-                FilterText = $"{title} {start:D3} {end:D3}"
-            };
-
-            foreach (var spriteId in block)
-            {
-                group.Children.Add(new SpriteBrowserNode
-                {
-                    Title = $"Sheet {spriteId:D3}",
-                    FilterText = $"{title} {spriteId:D3} Overworld Sheet",
-                    AssetKind = SpriteAssetKind.OverworldEventObject,
-                    PrimaryId = spriteId
-                });
-            }
-
-            root.Children.Add(group);
-        }
-
-        return root;
-    }
-
-    private IEnumerable<int> GetValidOverworldSheetIds(int firstId, int lastId)
-    {
-        if (_session is null)
-        {
-            yield break;
-        }
-
-        for (var spriteId = firstId; spriteId <= lastId; spriteId++)
-        {
-            if (HasValidOverworldSheetPointers(_session.RomFile, spriteId))
-            {
-                yield return spriteId;
-            }
-        }
-    }
-
-    private static bool HasValidOverworldSheetPointers(RomFile romFile, int spriteId)
-    {
-        var imagePointerOffset = MedabotsRomSchema.SpritePointerTableOffset + (spriteId * sizeof(uint));
-        var palettePointerOffset = MedabotsRomSchema.SpritePaletteTableOffset + (spriteId * sizeof(uint));
-        return GbaPointer.TryReadFileOffset(romFile.Data, imagePointerOffset, out var imageOffset) &&
-               GbaPointer.TryReadFileOffset(romFile.Data, palettePointerOffset, out var paletteOffset) &&
-               imageOffset > 0 &&
-               paletteOffset > 0 &&
-               imageOffset < romFile.Length &&
-               paletteOffset + MedabotsRomSchema.PaletteSize <= romFile.Length;
-    }
-
-    private static SpriteBrowserNode BuildPortraitRoot()
-    {
-        const int groupSize = 16;
-        var root = new SpriteBrowserNode
-        {
-            Title = "Portraits",
-            FilterText = "Portraits"
-        };
-        for (var start = 0; start < MedabotsRomSchema.PortraitCharacterCount; start += groupSize)
-        {
-            var end = Math.Min(start + groupSize - 1, MedabotsRomSchema.PortraitCharacterCount - 1);
-            var group = new SpriteBrowserNode
-            {
-                Title = $"Characters {start:D3}-{end:D3}",
-                FilterText = $"Portrait Character {start:D3} {end:D3}"
-            };
-
-            for (var characterId = start; characterId <= end; characterId++)
-            {
-                var character = new SpriteBrowserNode
-                {
-                    Title = $"Character {characterId:D3}",
-                    FilterText = $"Portrait Character {characterId:D3}"
-                };
-                for (var portraitIndex = 0; portraitIndex < MedabotsRomSchema.PortraitsPerCharacter; portraitIndex++)
-                {
-                    character.Children.Add(new SpriteBrowserNode
-                    {
-                        Title = $"Portrait {portraitIndex}",
-                        FilterText = $"Portrait Character {characterId:D3} Portrait {portraitIndex}",
-                        AssetKind = SpriteAssetKind.Portrait,
-                        PrimaryId = characterId,
-                        SecondaryId = portraitIndex
-                    });
-                }
-
-                group.Children.Add(character);
-            }
-
-            root.Children.Add(group);
-        }
-
-        return root;
-    }
-
-    private SpriteBrowserNode BuildBattleCompositeMedabotRoot()
-    {
-        const int groupSize = 16;
-        var componentNames = GetBattleCompositeComponentNames();
-        var root = new SpriteBrowserNode
-        {
-            Title = "Medabot Sprite Families",
-            FilterText = "Medabot Sprite Families"
-        };
-
-        for (var start = 0; start < MedabotsRomSchema.CompositeBattleSpritePartCount; start += groupSize)
-        {
-            var end = Math.Min(start + groupSize - 1, MedabotsRomSchema.CompositeBattleSpritePartCount - 1);
-            var group = new SpriteBrowserNode
-            {
-                Title = $"Medabots {start:D3}-{end:D3}",
-                FilterText = $"Medabot Sprite Families {start:D3} {end:D3}"
-            };
-
-            for (var medabotId = start; medabotId <= end; medabotId++)
-            {
-                var medabotNode = new SpriteBrowserNode
-                {
-                    Title = $"Medabot {medabotId:D3}  {_metadata.GetBotName(medabotId)}",
-                    FilterText = $"Medabot Sprite Family {medabotId:D3} {_metadata.GetBotName(medabotId)}"
-                };
-
-                for (var componentIndex = 0; componentIndex < MedabotsRomSchema.CompositeBattleSpritePointersPerPart; componentIndex++)
-                {
-                    medabotNode.Children.Add(new SpriteBrowserNode
-                    {
-                        Title = componentNames[componentIndex],
-                        FilterText = $"Battle Composite Medabot {medabotId:D3} {_metadata.GetBotName(medabotId)} {componentNames[componentIndex]}",
-                        AssetKind = SpriteAssetKind.BattleCompositePartComponent,
-                        PrimaryId = medabotId,
-                        SecondaryId = componentIndex
-                    });
-                }
-
-                group.Children.Add(medabotNode);
-            }
-
-            root.Children.Add(group);
-        }
-
-        return root;
-    }
-
-    private SpriteBrowserNode BuildMedabotPartRoot()
-    {
-        var root = new SpriteBrowserNode
-        {
-            Title = "Medabots",
-            FilterText = "Medabots Parts"
-        };
-
-        var groupedByMedabot = _loadedParts
-            .GroupBy(part => part.MedabotId)
-            .OrderBy(group => group.Key)
-            .ToArray();
-
-        foreach (var medabotGroup in groupedByMedabot)
-        {
-            var medabotNode = new SpriteBrowserNode
-            {
-                Title = $"{medabotGroup.Key:D3}  {_metadata.GetBotName(medabotGroup.Key)}",
-                FilterText = $"Medabot {medabotGroup.Key:D3} {_metadata.GetBotName(medabotGroup.Key)}"
-            };
-
-            foreach (var part in medabotGroup.OrderBy(part => part.Kind).ThenBy(part => part.Id))
-            {
-                var partNode = new SpriteBrowserNode
-                {
-                    Title = $"{FormatPartKind(part.Kind)}  {part.Id:D3}  {_metadata.GetPartName(part.Id)}",
-                    FilterText = $"Part {part.Id:D3} {_metadata.GetPartName(part.Id)} Medabot {_metadata.GetBotName(part.MedabotId)} {FormatPartKind(part.Kind)}"
-                };
-
-                foreach (var (componentIndex, title) in GetPreviewComponentEntriesForPartKind(part.Kind))
-                {
-                    partNode.Children.Add(new SpriteBrowserNode
-                    {
-                        Title = title,
-                        FilterText = $"{title} Part {part.Id:D3} {_metadata.GetPartName(part.Id)} Medabot {_metadata.GetBotName(part.MedabotId)} {FormatPartKind(part.Kind)}",
-                        AssetKind = SpriteAssetKind.BattleCompositePartComponent,
-                        PrimaryId = part.MedabotId,
-                        SecondaryId = componentIndex
-                    });
-                }
-
-                partNode.Children.Add(new SpriteBrowserNode
-                {
-                    Title = "Large Display",
-                    FilterText = $"Large Display Part {part.Id:D3} {_metadata.GetPartName(part.Id)} Medabot {_metadata.GetBotName(part.MedabotId)} {FormatPartKind(part.Kind)}",
-                    AssetKind = SpriteAssetKind.PartCompositePreview,
-                    PrimaryId = part.Id,
-                    SecondaryId = GetPreviewComponentEntriesForPartKind(part.Kind).First().ComponentIndex
-                });
-
-                if (part.Kind is PartKind.RightArm or PartKind.LeftArm)
-                {
-                    partNode.Children.Clear();
-                    foreach (var (componentIndex, title) in GetPreviewComponentEntriesForPartKind(part.Kind))
-                    {
-                        partNode.Children.Add(new SpriteBrowserNode
-                        {
-                            Title = title,
-                            FilterText = $"{title} Part {part.Id:D3} {_metadata.GetPartName(part.Id)} Medabot {_metadata.GetBotName(part.MedabotId)} {FormatPartKind(part.Kind)}",
-                            AssetKind = SpriteAssetKind.BattleCompositePartComponent,
-                            PrimaryId = part.MedabotId,
-                            SecondaryId = componentIndex
-                        });
-                        partNode.Children.Add(new SpriteBrowserNode
-                        {
-                            Title = title.Replace("Battle Display", "Large Display"),
-                            FilterText = $"{title.Replace("Battle Display", "Large Display")} Part {part.Id:D3} {_metadata.GetPartName(part.Id)} Medabot {_metadata.GetBotName(part.MedabotId)} {FormatPartKind(part.Kind)}",
-                            AssetKind = SpriteAssetKind.PartCompositePreview,
-                            PrimaryId = part.Id,
-                            SecondaryId = componentIndex
-                        });
-                    }
-
-                    if (AreLargeDisplayVariantsIdentical(part) && !ShouldForceSplitLargeDisplay(part.Id))
-                    {
-                        var largeNodes = partNode.Children
-                            .Where(child => child.AssetKind == SpriteAssetKind.PartCompositePreview)
-                            .ToArray();
-                        foreach (var duplicate in largeNodes)
-                        {
-                            partNode.Children.Remove(duplicate);
-                        }
-
-                        partNode.Children.Add(new SpriteBrowserNode
-                        {
-                            Title = "Large Display",
-                            FilterText = $"Large Display Part {part.Id:D3} {_metadata.GetPartName(part.Id)} Medabot {_metadata.GetBotName(part.MedabotId)} {FormatPartKind(part.Kind)}",
-                            AssetKind = SpriteAssetKind.PartCompositePreview,
-                            PrimaryId = part.Id,
-                            SecondaryId = GetPreviewComponentEntriesForPartKind(part.Kind).First().ComponentIndex
-                        });
-                    }
-                }
-
-                medabotNode.Children.Add(partNode);
-            }
-
-            root.Children.Add(medabotNode);
-        }
-
-        return root;
-    }
+    private List<SpriteBrowserNode> BuildSpriteTreeNodes() =>
+        new SpriteBrowserTreeBuilder(_session?.RomFile, _loadedParts, _metadata, _project, _imageAssetRepository, _mapTilesetRepository).BuildTreeNodes();
 
     private bool ShouldForceSplitLargeDisplay(int partId)
     {
         return _project.SplitLargeDisplayPartIds.Contains(partId);
     }
 
-    private bool AreLargeDisplayVariantsIdentical(PartDefinition part)
-    {
-        if (_session is null || part.Kind is not PartKind.RightArm and not PartKind.LeftArm)
-        {
-            return false;
-        }
-
-        var variantEntries = GetPreviewComponentEntriesForPartKind(part.Kind);
-        if (variantEntries.Count < 2)
-        {
-            return false;
-        }
-
-        var assetA = _imageAssetRepository.ReadLargePartDisplay(_session.RomFile, part, GetLargeDisplayVariantSelectorForComponent(part.Kind, variantEntries[0].ComponentIndex));
-        var assetB = _imageAssetRepository.ReadLargePartDisplay(_session.RomFile, part, GetLargeDisplayVariantSelectorForComponent(part.Kind, variantEntries[1].ComponentIndex));
-        return AreEquivalentLargeDisplayAssets(assetA, assetB);
-    }
-
-    private static bool AreEquivalentLargeDisplayAssets(LargePartDisplayAsset left, LargePartDisplayAsset right)
-    {
-        if (left.RootDescriptorId != right.RootDescriptorId || left.Pieces.Count != right.Pieces.Count)
-        {
-            return false;
-        }
-
-        for (var index = 0; index < left.Pieces.Count; index++)
-        {
-            var a = left.Pieces[index];
-            var b = right.Pieces[index];
-            if (a.DescriptorId != b.DescriptorId ||
-                a.ImageOffset != b.ImageOffset ||
-                a.PaletteOffset != b.PaletteOffset ||
-                a.PaletteBank != b.PaletteBank ||
-                a.LoadedTileCount != b.LoadedTileCount)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
+    private bool AreLargeDisplayVariantsIdentical(PartDefinition part) =>
+        new SpriteBrowserTreeBuilder(_session?.RomFile, _loadedParts, _metadata, _project, _imageAssetRepository).AreLargeDisplayVariantsIdentical(part);
 
     private async void OnSplitLargeDisplayMenuClicked(object? sender, RoutedEventArgs e)
     {
-        if (sender is not WpfMenuItem menuItem || menuItem.CommandParameter is not SpriteBrowserNode node)
-        {
-            return;
-        }
-
-        if (!TryGetSplitEligibleLargeDisplayPart(node, out var part))
+        if (sender is not WpfMenuItem { CommandParameter: SpriteBrowserNode node } || !TryGetSplitEligibleLargeDisplayPart(node, out var part))
         {
             return;
         }
@@ -419,12 +92,7 @@ public partial class MainWindow : Window
 
     private async void OnMergeLargeDisplayMenuClicked(object? sender, RoutedEventArgs e)
     {
-        if (sender is not WpfMenuItem menuItem || menuItem.CommandParameter is not SpriteBrowserNode node)
-        {
-            return;
-        }
-
-        if (!TryGetSplitEligibleLargeDisplayPart(node, out var part))
+        if (sender is not WpfMenuItem { CommandParameter: SpriteBrowserNode node } || !TryGetSplitEligibleLargeDisplayPart(node, out var part))
         {
             return;
         }
@@ -440,35 +108,37 @@ public partial class MainWindow : Window
 
     private bool TryGetSplitEligibleLargeDisplayPart(SpriteBrowserNode node, out PartDefinition part)
     {
-        part = default!;
+        part = null!;
         if (node.AssetKind != SpriteAssetKind.PartCompositePreview)
         {
             return false;
         }
 
         part = GetRequiredPartDefinition(node.PrimaryId);
-        if (part.Kind is not PartKind.RightArm and not PartKind.LeftArm)
-        {
-            return false;
-        }
-
-        return true;
+        return part.Kind is PartKind.RightArm or PartKind.LeftArm;
     }
 
     private void RefreshSpriteTreeForLargeDisplayLayoutChange(int partId, int preferredSecondaryId)
     {
-        var expansionStates = CaptureSpriteNodeExpansionStates(_allSpriteNodes);
+        var states = CaptureSpriteNodeExpansionStates(_allSpriteNodes);
         _spritePreviewCache.Clear();
         _allSpriteNodes.Clear();
         _allSpriteNodes.AddRange(BuildSpriteTreeNodes());
-        RestoreSpriteNodeExpansionStates(_allSpriteNodes, expansionStates);
+        RestoreSpriteNodeExpansionStates(_allSpriteNodes, states);
         RefreshSpriteFilter();
-        RestoreSpriteNodeExpansionStates(_visibleSpriteNodes, expansionStates);
-        var replacement = FindSpriteNode(_visibleSpriteNodes, node => node.AssetKind == SpriteAssetKind.PartCompositePreview && node.PrimaryId == partId && node.SecondaryId == preferredSecondaryId)
-            ?? FindSpriteNode(_visibleSpriteNodes, node => node.AssetKind == SpriteAssetKind.PartCompositePreview && node.PrimaryId == partId);
-        if (replacement is not null)
+        RestoreSpriteNodeExpansionStates(_visibleSpriteNodes, states);
+
+        var selection = FindSpriteNode(_visibleSpriteNodes, node =>
+                node.AssetKind == SpriteAssetKind.PartCompositePreview &&
+                node.PrimaryId == partId &&
+                node.SecondaryId == preferredSecondaryId)
+            ?? FindSpriteNode(_visibleSpriteNodes, node =>
+                node.AssetKind == SpriteAssetKind.PartCompositePreview &&
+                node.PrimaryId == partId);
+
+        if (selection is not null)
         {
-            OnSpriteSelectionChanged(SpriteTreeView, new RoutedPropertyChangedEventArgs<object>(replacement, replacement));
+            OnSpriteSelectionChanged(SpriteTreeView, new RoutedPropertyChangedEventArgs<object>(selection, selection));
         }
     }
 
@@ -481,10 +151,10 @@ public partial class MainWindow : Window
                 return node;
             }
 
-            var match = FindSpriteNode(node.Children, predicate);
-            if (match is not null)
+            var child = FindSpriteNode(node.Children, predicate);
+            if (child is not null)
             {
-                return match;
+                return child;
             }
         }
 
@@ -497,9 +167,9 @@ public partial class MainWindow : Window
         foreach (var node in nodes)
         {
             states[GetSpriteNodeExpansionKey(node)] = node.IsExpanded;
-            foreach (var child in CaptureSpriteNodeExpansionStates(node.Children))
+            foreach (var entry in CaptureSpriteNodeExpansionStates(node.Children))
             {
-                states[child.Key] = child.Value;
+                states[entry.Key] = entry.Value;
             }
         }
 
@@ -510,19 +180,17 @@ public partial class MainWindow : Window
     {
         foreach (var node in nodes)
         {
-            if (states.TryGetValue(GetSpriteNodeExpansionKey(node), out var expanded))
+            if (states.TryGetValue(GetSpriteNodeExpansionKey(node), out var isExpanded))
             {
-                node.IsExpanded = expanded;
+                node.IsExpanded = isExpanded;
             }
 
             RestoreSpriteNodeExpansionStates(node.Children, states);
         }
     }
 
-    private static string GetSpriteNodeExpansionKey(SpriteBrowserNode node)
-    {
-        return $"{(int)node.AssetKind}:{node.PrimaryId}:{node.SecondaryId}:{node.Title}";
-    }
+    private static string GetSpriteNodeExpansionKey(SpriteBrowserNode node) =>
+        $"{node.AssetKind}:{node.PrimaryId}:{node.SecondaryId}:{node.Title}";
 
     private static IEnumerable<SpriteBrowserNode> FilterSpriteNodes(IEnumerable<SpriteBrowserNode> nodes, string? filter)
     {
@@ -547,24 +215,24 @@ public partial class MainWindow : Window
             }
 
             var matchingChildren = node.Children
-                .SelectMany(child => FilterSpriteNodes([child], trimmed))
+                .SelectMany(child => FilterSpriteNodes(new[] { child }, trimmed))
                 .ToList();
             if (matchingChildren.Count == 0)
             {
                 continue;
             }
 
-            var parent = new SpriteBrowserNode
+            var clone = new SpriteBrowserNode
             {
                 Title = node.Title,
                 FilterText = node.FilterText
             };
             foreach (var child in matchingChildren)
             {
-                parent.Children.Add(child);
+                clone.Children.Add(child);
             }
 
-            filtered.Add(parent);
+            filtered.Add(clone);
         }
 
         return filtered;
@@ -584,6 +252,7 @@ public partial class MainWindow : Window
             {
                 ClearSpritePreview();
             }
+
             return;
         }
 
@@ -620,30 +289,24 @@ public partial class MainWindow : Window
         {
             SpriteAssetKind.OverworldEventObject => BuildOverworldSpritePreviewState(GetCurrentOverworldSpriteAsset(node.PrimaryId)),
             SpriteAssetKind.Portrait => BuildPortraitPreviewState(GetCurrentPortraitAsset(node.PrimaryId, node.SecondaryId)),
+            SpriteAssetKind.MapTileset => BuildMapTilesetPreviewState(GetCurrentMapTilesetAsset(node.PrimaryId)),
             SpriteAssetKind.BattleCompositePartComponent => BuildBattleCompositeComponentPreviewState(GetCurrentBattleCompositeComponentAsset(node.PrimaryId, node.SecondaryId)),
             SpriteAssetKind.PartCompositePreview => BuildPartCompositePreviewState(GetRequiredPartDefinition(node.PrimaryId), node.SecondaryId),
             _ => throw new InvalidOperationException("Unsupported sprite asset kind.")
         };
+
         _spritePreviewCache[cacheKey] = preview;
         return preview;
     }
 
-    private static string GetSpritePreviewCacheKey(SpriteBrowserNode node)
-    {
-        return $"{(int)node.AssetKind}:{node.PrimaryId}:{node.SecondaryId}";
-    }
+    private static string GetSpritePreviewCacheKey(SpriteBrowserNode node) =>
+        $"{node.AssetKind}:{node.PrimaryId}:{node.SecondaryId}";
 
     private static SpritePreviewState BuildOverworldSpritePreviewState(SpriteAsset asset)
     {
         var swatches = BuildPaletteSwatches(asset.Image.PaletteBytes);
         var bitmap = CreateBitmapSource(asset.Image.PixelIndices, 2, swatches);
-        var width = bitmap.PixelWidth;
-        var height = bitmap.PixelHeight;
-        var summary = $"Overworld sheet {asset.SpriteId:D3}{Environment.NewLine}" +
-                      $"Image: {width}x{height}px{Environment.NewLine}" +
-                      $"Layout: tile width 2 (16px){Environment.NewLine}" +
-                      $"Image pointer entry: 0x{asset.ImagePointerOffset:X6} -> 0x{asset.ImageOffset:X6}{Environment.NewLine}" +
-                      $"Palette pointer entry: 0x{asset.PalettePointerOffset:X6} -> 0x{asset.PaletteOffset:X6}";
+        var summary = $"Overworld sheet {asset.SpriteId:D3}{Environment.NewLine}Image: {bitmap.PixelWidth}x{bitmap.PixelHeight}px{Environment.NewLine}Layout: tile width 2 (16px){Environment.NewLine}Image pointer entry: 0x{asset.ImagePointerOffset:X6} -> 0x{asset.ImageOffset:X6}{Environment.NewLine}Palette pointer entry: 0x{asset.PalettePointerOffset:X6} -> 0x{asset.PaletteOffset:X6}";
         var paletteSummary = $"Palette colors: {swatches.Count}  |  Format: GBA BGR555";
         return new SpritePreviewState(asset.SpriteId, bitmap, summary, paletteSummary, swatches);
     }
@@ -652,24 +315,26 @@ public partial class MainWindow : Window
     {
         var swatches = BuildPaletteSwatches(asset.Image.PaletteBytes);
         var bitmap = CreateBitmapSource(asset.Image.PixelIndices, asset.Image.TileWidth, swatches);
-        var summary = $"Portrait {asset.CharacterId:D3}:{asset.PortraitIndex}{Environment.NewLine}" +
-                      $"Image: {asset.Image.Width}x{asset.Image.Height}px{Environment.NewLine}" +
-                      $"Image pointer entry: 0x{asset.ImagePointerOffset:X6} -> 0x{asset.ImageOffset:X6}{Environment.NewLine}" +
-                      $"Palette pointer entry: 0x{asset.PalettePointerOffset:X6} -> 0x{asset.PaletteOffset:X6}";
+        var summary = $"Portrait {asset.CharacterId:D3}:{asset.PortraitIndex}{Environment.NewLine}Image: {asset.Image.Width}x{asset.Image.Height}px{Environment.NewLine}Image pointer entry: 0x{asset.ImagePointerOffset:X6} -> 0x{asset.ImageOffset:X6}{Environment.NewLine}Palette pointer entry: 0x{asset.PalettePointerOffset:X6} -> 0x{asset.PaletteOffset:X6}";
         var paletteSummary = $"Palette colors: {swatches.Count}  |  Format: GBA BGR555";
         return new SpritePreviewState(asset.CharacterId, bitmap, summary, paletteSummary, swatches);
+    }
+
+    private static SpritePreviewState BuildMapTilesetPreviewState(MapTilesetAsset asset)
+    {
+        var swatches = BuildPaletteSwatches(asset.TilesetSheet.PaletteBytes);
+        var bitmap = CreateBitmapSource(asset.TilesetSheet.PixelIndices, asset.TilesetSheet.TileWidth, swatches);
+        var summary = $"Map tileset for map {asset.MapId:D3}  {asset.Name}{Environment.NewLine}Tileset sheet: {bitmap.PixelWidth}x{bitmap.PixelHeight}px{Environment.NewLine}Graphics pointer entry: 0x{asset.GraphicsPointerOffset:X6} -> 0x{asset.GraphicsDataOffset:X6}{Environment.NewLine}Palette pointer entry: 0x{asset.PalettePointerOffset:X6} -> 0x{asset.PaletteDataOffset:X6}{Environment.NewLine}Color attribute pointer entry: 0x{asset.ColorAttributePointerOffset:X6} -> {(asset.ColorAttributeDataOffset >= 0 ? $"0x{asset.ColorAttributeDataOffset:X6}" : "none")}";
+        var paletteSummary = $"Palette colors: {swatches.Count}  |  Tiles: {asset.TilesetSheet.PixelIndices.Length / 64}";
+        return new SpritePreviewState(asset.MapId, bitmap, summary, paletteSummary, swatches);
     }
 
     private static SpritePreviewState BuildBattleCompositeComponentPreviewState(BattleCompositeSpriteComponentAsset asset)
     {
         var swatches = BuildPaletteSwatches(asset.Image.PaletteBytes);
         var bitmap = CreateBitmapSource(asset.Image.PixelIndices, asset.Image.TileWidth, swatches);
-        var componentName = GetBattleCompositeComponentNames()[asset.ComponentIndex];
-        var summary = $"Battle composite Medabot {asset.MedabotId:D3} / {componentName}{Environment.NewLine}" +
-                      $"Image: {asset.Image.Width}x{asset.Image.Height}px{Environment.NewLine}" +
-                      $"Image pointer entry: 0x{asset.ImagePointerOffset:X6} -> 0x{asset.ImageOffset:X6}{Environment.NewLine}" +
-                      $"Palette family entry: 0x{asset.PalettePointerOffset:X6}  |  Family: {asset.PaletteFamily}  |  Palette bank: {asset.PaletteSelector}{Environment.NewLine}" +
-                      $"Palette data: 0x{asset.PaletteOffset:X6}";
+        var componentName = PartSpriteDisplayLayout.GetBattleCompositeComponentNames()[asset.ComponentIndex];
+        var summary = $"Battle composite Medabot {asset.MedabotId:D3} / {componentName}{Environment.NewLine}Image: {asset.Image.Width}x{asset.Image.Height}px{Environment.NewLine}Image pointer entry: 0x{asset.ImagePointerOffset:X6} -> 0x{asset.ImageOffset:X6}{Environment.NewLine}Palette family entry: 0x{asset.PalettePointerOffset:X6}  |  Family: {asset.PaletteFamily}  |  Palette bank: {asset.PaletteSelector}{Environment.NewLine}Palette data: 0x{asset.PaletteOffset:X6}";
         var paletteSummary = $"Palette colors: {swatches.Count}  |  Component palette bank {asset.PaletteSelector}";
         return new SpritePreviewState(asset.MedabotId, bitmap, summary, paletteSummary, swatches);
     }
@@ -679,59 +344,15 @@ public partial class MainWindow : Window
         var asset = GetCurrentLargePartDisplayAsset(part.Id, variantComponentIndex);
         var renderedPieces = BuildRenderedLargeDisplayPieces(asset, part.Kind);
         var finalBanks = GetFinalLargeDisplayPaletteBankMap(asset);
-        var summaryPalette = ResolveDisplayedLargeDisplayPalette(asset, finalBanks);
-        var summarySwatches = BuildPaletteSwatches(summaryPalette);
+        var paletteBytes = ResolveDisplayedLargeDisplayPalette(asset, finalBanks);
+        var swatches = BuildPaletteSwatches(paletteBytes);
         var bitmap = CreateLargePartDisplayBitmap(renderedPieces, finalBanks);
-        var summary = $"Part {part.Id:D3}  {_metadata.GetPartName(part.Id)}{Environment.NewLine}" +
-                      $"Kind: {FormatPartKind(part.Kind)}{Environment.NewLine}" +
-                      $"Variant: {GetLargeDisplayVariantLabel(part.Kind, variantComponentIndex)}{Environment.NewLine}" +
-                      $"Medabot family: {part.MedabotId:D3}  {_metadata.GetBotName(part.MedabotId)}{Environment.NewLine}" +
-                      $"Large display: {bitmap.PixelWidth}x{bitmap.PixelHeight}px{Environment.NewLine}" +
-                      $"Root descriptor: {asset.RootDescriptorId:D2} @ 0x{asset.RootRecordOffset:X6}{Environment.NewLine}" +
-                      $"Pieces: {asset.Pieces.Count}{Environment.NewLine}" +
-                      $"First piece palette: 0x{asset.Pieces[0].PaletteOffset:X6}  |  Bank: {asset.Pieces[0].PaletteBank + 8}";
-        var paletteSummary = $"Palette colors: {summarySwatches.Count}  |  Large display uses staged OBJ palette banks from descriptor-selected pieces";
-        var previewPieces = renderedPieces
-            .Select((entry, index) => new SpritePreviewPiece(index, entry.X, entry.Y, entry.Image))
-            .ToArray();
-        return new SpritePreviewState(part.Id, bitmap, summary, paletteSummary, summarySwatches, previewPieces);
+        var summary = $"Part {part.Id:D3}  {_metadata.GetPartName(part.Id)}{Environment.NewLine}Kind: {PartSpriteDisplayLayout.FormatPartKind(part.Kind)}{Environment.NewLine}Variant: {PartSpriteDisplayLayout.GetLargeDisplayVariantLabel(part.Kind, variantComponentIndex)}{Environment.NewLine}Medabot family: {part.MedabotId:D3}  {_metadata.GetBotName(part.MedabotId)}{Environment.NewLine}Large display: {bitmap.PixelWidth}x{bitmap.PixelHeight}px{Environment.NewLine}Root descriptor: {asset.RootDescriptorId:D2} @ 0x{asset.RootRecordOffset:X6}{Environment.NewLine}Pieces: {asset.Pieces.Count}{Environment.NewLine}First piece palette: 0x{asset.Pieces[0].PaletteOffset:X6}  |  Bank: {asset.Pieces[0].PaletteBank + 8}";
+        var paletteSummary = $"Palette colors: {swatches.Count}  |  Large display uses staged OBJ palette banks from descriptor-selected pieces";
+        var pieces = renderedPieces.Select((entry, index) => new SpritePreviewPiece(index, entry.X, entry.Y, entry.Image)).ToArray();
+        return new SpritePreviewState(part.Id, bitmap, summary, paletteSummary, swatches, pieces);
     }
 
-    private static IReadOnlyList<PaletteSwatchItem> BuildPaletteSwatches(byte[] paletteBytes)
-    {
-        var swatches = new List<PaletteSwatchItem>(paletteBytes.Length / 2);
-        for (var index = 0; index + 1 < paletteBytes.Length; index += 2)
-        {
-            var raw = (ushort)(paletteBytes[index] | (paletteBytes[index + 1] << 8));
-            var color = DecodeGbaColor(raw);
-            swatches.Add(new PaletteSwatchItem
-            {
-                Index = index / 2,
-                Color = color,
-                Hex = $"#{color.R:X2}{color.G:X2}{color.B:X2}"
-            });
-        }
-
-        return swatches;
-    }
-
-    private static BitmapSource CreateBitmapSource(byte[] pixelIndices, int tileWidth, IReadOnlyList<PaletteSwatchItem> swatches)
-    {
-        var tileCount = pixelIndices.Length / 64;
-        var width = tileWidth * 8;
-        var height = Math.Max(1, tileCount / Math.Max(1, tileWidth)) * 8;
-        var pixels = new byte[width * height * 4];
-        for (var tileIndex = 0; tileIndex < tileCount; tileIndex++)
-        {
-            var tileX = tileIndex % tileWidth;
-            var tileY = tileIndex / tileWidth;
-            BlitTile(pixelIndices, tileIndex, width, height, tileX * 8, tileY * 8, swatches, pixels);
-        }
-
-        var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, width * 4);
-        bitmap.Freeze();
-        return bitmap;
-    }
 
     private static BitmapSource CreateCompositeBattlePreviewBitmap(
         BattleCompositeSpriteComponentAsset headBase,
@@ -767,6 +388,43 @@ public partial class MainWindow : Window
         BlitIndexedImage(legs.Image, width, height, legsX, legsY, swatches, pixels);
 
         var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, width * 4);
+        bitmap.Freeze();
+        return bitmap;
+    }
+
+    private static IReadOnlyList<PaletteSwatchItem> BuildPaletteSwatches(byte[] paletteBytes)
+    {
+        var swatches = new List<PaletteSwatchItem>(paletteBytes.Length / 2);
+        for (var index = 0; index + 1 < paletteBytes.Length; index += 2)
+        {
+            var rawColor = (ushort)(paletteBytes[index] | (paletteBytes[index + 1] << 8));
+            var color = DecodeGbaColor(rawColor);
+            swatches.Add(new PaletteSwatchItem
+            {
+                Index = index / 2,
+                Color = color,
+                Hex = $"#{color.R:X2}{color.G:X2}{color.B:X2}"
+            });
+        }
+
+        return swatches;
+    }
+
+    private static BitmapSource CreateBitmapSource(byte[] pixelIndices, int tileWidth, IReadOnlyList<PaletteSwatchItem> swatches)
+    {
+        var tileCount = pixelIndices.Length / 64;
+        var pixelWidth = tileWidth * 8;
+        var pixelHeight = Math.Max(1, tileCount / Math.Max(1, tileWidth)) * 8;
+        var pixels = new byte[pixelWidth * pixelHeight * 4];
+
+        for (var tileIndex = 0; tileIndex < tileCount; tileIndex++)
+        {
+            var tileX = tileIndex % tileWidth;
+            var tileY = tileIndex / tileWidth;
+            BlitTile(pixelIndices, tileIndex, pixelWidth, pixelHeight, tileX * 8, tileY * 8, swatches, pixels);
+        }
+
+        var bitmap = BitmapSource.Create(pixelWidth, pixelHeight, 96.0, 96.0, PixelFormats.Bgra32, null, pixels, pixelWidth * 4);
         bitmap.Freeze();
         return bitmap;
     }
@@ -1088,6 +746,23 @@ public partial class MainWindow : Window
         return _imageAssetRepository.ReadSprite(_session.RomFile, spriteId);
     }
 
+    private MapTilesetAsset GetCurrentMapTilesetAsset(int mapId)
+    {
+        if (_mapTilesetCache.TryGetValue(mapId, out var cached))
+        {
+            return cached;
+        }
+
+        if (_session is null)
+        {
+            throw new InvalidOperationException("Open a ROM before reading map tilesets.");
+        }
+
+        var asset = _mapTilesetRepository.ReadMap(_session.RomFile, mapId, _metadata.GetMapName(mapId));
+        _mapTilesetCache[mapId] = asset;
+        return asset;
+    }
+
     private PortraitAsset GetCurrentPortraitAsset(int characterId, int portraitIndex)
     {
         if (_editedPortraitAssets.TryGetValue((characterId, portraitIndex), out var edited))
@@ -1144,7 +819,7 @@ public partial class MainWindow : Window
     private LargePartDisplayAsset GetCurrentLargePartDisplayAsset(int partId, int componentIndex)
     {
         var part = GetRequiredPartDefinition(partId);
-        var variantSelector = GetLargeDisplayVariantSelectorForComponent(part.Kind, componentIndex);
+        var variantSelector = PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, componentIndex);
         if (_editedLargePartDisplayAssets.TryGetValue((partId, variantSelector), out var edited))
         {
             return edited;
@@ -1168,7 +843,7 @@ public partial class MainWindow : Window
     private LargePartDisplayAsset GetEditableLargePartDisplayAsset(int partId, int componentIndex)
     {
         var part = GetRequiredPartDefinition(partId);
-        var variantSelector = GetLargeDisplayVariantSelectorForComponent(part.Kind, componentIndex);
+        var variantSelector = PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, componentIndex);
         if (_editedLargePartDisplayAssets.TryGetValue((partId, variantSelector), out var edited))
         {
             return edited;
@@ -1214,9 +889,11 @@ public partial class MainWindow : Window
                 => "Status: imported changes are staged in memory. Use Apply Changes to write them into the ROM session.",
             SpriteAssetKind.Portrait when _editedPortraitAssets.ContainsKey((node.PrimaryId, node.SecondaryId))
                 => "Status: imported changes are staged in memory. Use Apply Changes to write them into the ROM session.",
+            SpriteAssetKind.MapTileset
+                => "Status: showing map tileset graphics. Editing/writeback is not wired yet; use this as the future tile picker surface.",
             SpriteAssetKind.BattleCompositePartComponent when _editedBattleCompositeComponentAssets.ContainsKey((node.PrimaryId, node.SecondaryId))
                 => "Status: staged Medabot component edits are in memory. Apply Changes writes the component image and its shared family palette into the ROM session.",
-            SpriteAssetKind.PartCompositePreview when _editedLargePartDisplayAssets.ContainsKey((node.PrimaryId, GetLargeDisplayVariantSelectorForComponent(GetRequiredPartDefinition(node.PrimaryId).Kind, node.SecondaryId)))
+            SpriteAssetKind.PartCompositePreview when _editedLargePartDisplayAssets.ContainsKey((node.PrimaryId, PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(GetRequiredPartDefinition(node.PrimaryId).Kind, node.SecondaryId)))
                 => "Status: staged Large Display edits are in memory. Apply Changes writes the descriptor-selected large-display piece blobs and uploaded palettes into the ROM session.",
             SpriteAssetKind.BattleCompositePartComponent
                 => "Status: editing a Medabot/component battle sprite family. Palette changes affect every part using that shared family palette.",
@@ -1764,6 +1441,7 @@ public partial class MainWindow : Window
         {
             SpriteAssetKind.OverworldEventObject => GetCurrentOverworldSpriteAsset(_selectedSpriteNode.PrimaryId).Image,
             SpriteAssetKind.Portrait => GetCurrentPortraitAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId).Image,
+            SpriteAssetKind.MapTileset => GetCurrentMapTilesetAsset(_selectedSpriteNode.PrimaryId).TilesetSheet,
             SpriteAssetKind.BattleCompositePartComponent => GetCurrentBattleCompositeComponentAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId).Image,
             SpriteAssetKind.PartCompositePreview => null,
             _ => null
@@ -2069,7 +1747,7 @@ public partial class MainWindow : Window
                 _editedBattleCompositeComponentAssets.Remove((_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId));
                 break;
             case SpriteAssetKind.PartCompositePreview:
-                _editedLargePartDisplayAssets.Remove((_selectedSpriteNode.PrimaryId, GetLargeDisplayVariantSelectorForComponent(GetRequiredPartDefinition(_selectedSpriteNode.PrimaryId).Kind, _selectedSpriteNode.SecondaryId)));
+                _editedLargePartDisplayAssets.Remove((_selectedSpriteNode.PrimaryId, PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(GetRequiredPartDefinition(_selectedSpriteNode.PrimaryId).Kind, _selectedSpriteNode.SecondaryId)));
                 break;
         }
 
@@ -2115,6 +1793,7 @@ public partial class MainWindow : Window
         {
             SpriteAssetKind.OverworldEventObject => $"sprite_{_selectedSpriteNode.PrimaryId:D3}.png",
             SpriteAssetKind.Portrait => $"portrait_{_selectedSpriteNode.PrimaryId:D3}_{_selectedSpriteNode.SecondaryId}.png",
+            SpriteAssetKind.MapTileset => $"map_tileset_{_selectedSpriteNode.PrimaryId:D3}.png",
             SpriteAssetKind.BattleCompositePartComponent => $"battle_composite_medabot_{_selectedSpriteNode.PrimaryId:D3}_{_selectedSpriteNode.SecondaryId}.png",
             SpriteAssetKind.PartCompositePreview => $"part_{_selectedSpriteNode.PrimaryId:D3}_{_selectedSpriteNode.SecondaryId}.png",
             _ => "asset.png"
@@ -2137,6 +1816,12 @@ public partial class MainWindow : Window
         if (_selectedSpriteNode is null || !(_selectedSpriteNode?.IsAsset ?? false))
         {
             await DisplayAlertAsync("No Asset Selected", "Select a sprite or portrait to import.", "OK");
+            return;
+        }
+
+        if (_selectedSpriteNode.AssetKind == SpriteAssetKind.MapTileset)
+        {
+            await DisplayAlertAsync("Read Only", "Map tileset browsing is available from the Sprites tab, but writing tileset graphics back is not wired yet.", "OK");
             return;
         }
 
@@ -2202,6 +1887,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_selectedSpriteNode.AssetKind == SpriteAssetKind.MapTileset)
+        {
+            await DisplayAlertAsync("Read Only", "Map tileset writeback is not implemented yet.", "OK");
+            return;
+        }
+
         try
         {
             switch (_selectedSpriteNode.AssetKind)
@@ -2238,7 +1929,7 @@ public partial class MainWindow : Window
                 case SpriteAssetKind.PartCompositePreview:
                 {
                     var part = GetRequiredPartDefinition(_selectedSpriteNode.PrimaryId);
-                    var variantSelector = GetLargeDisplayVariantSelectorForComponent(part.Kind, _selectedSpriteNode.SecondaryId);
+                    var variantSelector = PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, _selectedSpriteNode.SecondaryId);
                     var assetKey = (_selectedSpriteNode.PrimaryId, variantSelector);
                     if (_editedLargePartDisplayAssets.TryGetValue(assetKey, out var largeDisplay))
                     {
@@ -2273,39 +1964,6 @@ public partial class MainWindow : Window
         OnSpriteSelectionChanged(SpriteTreeView, new RoutedPropertyChangedEventArgs<object>(_selectedSpriteNode, _selectedSpriteNode));
     }
 
-    private static string[] GetBattleCompositeComponentNames() =>
-    [
-        "Head / Base",
-        "Right Arm A",
-        "Right Arm B",
-        "Left Arm A",
-        "Left Arm B",
-        "Legs"
-    ];
-
-    private static IReadOnlyList<(int ComponentIndex, string Title)> GetPreviewComponentEntriesForPartKind(PartKind kind) => kind switch
-    {
-        PartKind.Head => [(0, "Battle Display")],
-        PartKind.RightArm => [(1, "Battle Display A"), (2, "Battle Display B")],
-        PartKind.LeftArm => [(3, "Battle Display A"), (4, "Battle Display B")],
-        PartKind.Legs => [(5, "Battle Display")],
-        _ => throw new InvalidOperationException($"Unsupported part kind '{kind}'.")
-    };
-
-    private static int GetLargeDisplayVariantSelectorForComponent(PartKind kind, int componentIndex) => kind switch
-    {
-        PartKind.RightArm => componentIndex == 2 ? 1 : 0,
-        PartKind.LeftArm => componentIndex == 4 ? 1 : 0,
-        _ => 0
-    };
-
-    private static string GetLargeDisplayVariantLabel(PartKind kind, int componentIndex) => kind switch
-    {
-        PartKind.RightArm => componentIndex == 2 ? "B" : "A",
-        PartKind.LeftArm => componentIndex == 4 ? "B" : "A",
-        _ => "Default"
-    };
-
     private void ApplyLargeDisplayEdits(RomHackSession session, PartDefinition part, int componentIndex, LargePartDisplayAsset editedAsset)
     {
         _imageAssetPatcher.ApplyLargePartDisplaySmart(session, editedAsset);
@@ -2320,7 +1978,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var currentVariantSelector = GetLargeDisplayVariantSelectorForComponent(part.Kind, componentIndex);
+        var currentVariantSelector = PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, componentIndex);
         var mirroredVariantSelector = currentVariantSelector ^ 1;
         var mirroredAsset = _imageAssetRepository.ReadLargePartDisplay(session.RomFile, part, mirroredVariantSelector);
         if (mirroredAsset.Pieces.Count != editedAsset.Pieces.Count)
@@ -2347,15 +2005,6 @@ public partial class MainWindow : Window
         _largePartDisplayAssetCache.Remove((part.Id, mirroredVariantSelector));
         _editedLargePartDisplayAssets.Remove((part.Id, mirroredVariantSelector));
     }
-
-    private static string FormatPartKind(PartKind kind) => kind switch
-    {
-        PartKind.Head => "Head",
-        PartKind.RightArm => "Right Arm",
-        PartKind.LeftArm => "Left Arm",
-        PartKind.Legs => "Legs",
-        _ => kind.ToString()
-    };
 
     private static IndexedImage ImportIndexedImageFromPng(string path, IndexedImage referenceImage)
     {
@@ -2475,3 +2124,4 @@ public partial class MainWindow : Window
     }
 
 }
+
