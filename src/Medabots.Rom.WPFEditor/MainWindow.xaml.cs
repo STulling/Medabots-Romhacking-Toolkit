@@ -2656,7 +2656,7 @@ public partial class MainWindow : Window
             SpriteAssetKind.BattleCompositePartComponent when _editedBattleCompositeComponentAssets.ContainsKey((node.PrimaryId, node.SecondaryId))
                 => "Status: staged Medabot component edits are in memory. Apply Changes writes the component image and its shared family palette into the ROM session.",
             SpriteAssetKind.PartCompositePreview when _editedLargePartDisplayAssets.ContainsKey((node.PrimaryId, GetLargeDisplayVariantSelectorForComponent(GetRequiredPartDefinition(node.PrimaryId).Kind, node.SecondaryId)))
-                => "Status: staged Large Display edits are in memory. Apply Changes writes the descriptor-selected large-display piece blobs into the ROM session.",
+                => "Status: staged Large Display edits are in memory. Apply Changes writes the descriptor-selected large-display piece blobs and uploaded palettes into the ROM session.",
             SpriteAssetKind.BattleCompositePartComponent
                 => "Status: editing a Medabot/component battle sprite family. Palette changes affect every part using that shared family palette.",
             SpriteAssetKind.PartCompositePreview
@@ -2955,8 +2955,8 @@ public partial class MainWindow : Window
                     await DisplayAlertAsync("Use Palette Family", "Part sprites use shared family palettes. Change the Palette Family selector instead of editing palette colors directly.", "OK");
                     return;
                 case SpriteAssetKind.PartCompositePreview:
-                    await DisplayAlertAsync("Large Display Palette", "Large Display uses descriptor-driven per-piece palettes. Palette family editing is only available on the corresponding Battle Display component.", "OK");
-                    return;
+                    EditLargeDisplayPalette(GetEditableLargePartDisplayAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId));
+                    break;
                 default:
                     return;
             }
@@ -2998,6 +2998,49 @@ public partial class MainWindow : Window
         var encoded = EncodeGbaColor(WpfColor.FromRgb(dialog.Color.R, dialog.Color.G, dialog.Color.B));
         image.PaletteBytes[paletteOffset] = (byte)(encoded & 0xFF);
         image.PaletteBytes[paletteOffset + 1] = (byte)(encoded >> 8);
+    }
+
+    private void EditLargeDisplayPalette(LargePartDisplayAsset asset)
+    {
+        var editablePieces = asset.Pieces
+            .Where(piece => piece.PalettePointerOffset > 0 && piece.PaletteBytes.Length >= ImageAssetRepository.PaletteSize)
+            .ToArray();
+        if (editablePieces.Length == 0)
+        {
+            throw new InvalidOperationException("This Large Display does not have a part-specific uploaded palette to edit.");
+        }
+
+        var paletteOffset = _selectedPaletteIndex * 2;
+        if (paletteOffset < 0 || paletteOffset + 1 >= ImageAssetRepository.PaletteSize)
+        {
+            throw new InvalidOperationException("The selected palette index is out of range.");
+        }
+
+        var sourcePalette = editablePieces[0].PaletteBytes;
+        var originalRaw = (ushort)(sourcePalette[paletteOffset] | (sourcePalette[paletteOffset + 1] << 8));
+        var originalColor = DecodeGbaColor(originalRaw);
+
+        using var dialog = new Forms.ColorDialog
+        {
+            AllowFullOpen = true,
+            FullOpen = true,
+            Color = System.Drawing.Color.FromArgb(originalColor.R, originalColor.G, originalColor.B)
+        };
+
+        if (dialog.ShowDialog() != Forms.DialogResult.OK)
+        {
+            return;
+        }
+
+        PushUndoSnapshot(GetSelectedSpriteHistoryKey(), asset);
+        var encoded = EncodeGbaColor(WpfColor.FromRgb(dialog.Color.R, dialog.Color.G, dialog.Color.B));
+        foreach (var piece in editablePieces)
+        {
+            piece.PaletteBytes[paletteOffset] = (byte)(encoded & 0xFF);
+            piece.PaletteBytes[paletteOffset + 1] = (byte)(encoded >> 8);
+            piece.Image.PaletteBytes[paletteOffset] = (byte)(encoded & 0xFF);
+            piece.Image.PaletteBytes[paletteOffset + 1] = (byte)(encoded >> 8);
+        }
     }
 
     private void UpdateSpriteGridOverlay(int pixelWidth, int pixelHeight)

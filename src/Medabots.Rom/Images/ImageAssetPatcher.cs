@@ -112,6 +112,7 @@ public sealed class ImageAssetPatcher
         ArgumentNullException.ThrowIfNull(asset);
 
         var nextExpansionOffset = expansionStartOffset;
+        Span<byte> pointer = stackalloc byte[4];
         foreach (var piece in asset.Pieces)
         {
             if (piece.ImagePointerOffset <= 0)
@@ -127,10 +128,31 @@ public sealed class ImageAssetPatcher
                 : Align(imageOffset + compressed.Length, 4);
 
             session.ApplyPatch(RomPatchAction.Create(imageOffset, compressed, $"Write large part display {asset.PartId} variant {asset.VariantSelector} descriptor {piece.DescriptorId} image"));
-
-            Span<byte> pointer = stackalloc byte[4];
             BitConverter.TryWriteBytes(pointer, GbaPointer.ToRomAddress(imageOffset));
             session.ApplyPatch(RomPatchAction.Create(piece.ImagePointerOffset, pointer, $"Repoint large part display {asset.PartId} variant {asset.VariantSelector} descriptor {piece.DescriptorId} image"));
+        }
+
+        var paletteWrites = new Dictionary<int, (int CurrentOffset, byte[] PaletteBytes, int DescriptorId)>();
+        foreach (var piece in asset.Pieces)
+        {
+            if (piece.PalettePointerOffset <= 0 || piece.PaletteBytes.Length == 0)
+            {
+                continue;
+            }
+
+            paletteWrites[piece.PalettePointerOffset] = (piece.PaletteOffset, piece.PaletteBytes, piece.DescriptorId);
+        }
+
+        foreach (var paletteWrite in paletteWrites)
+        {
+            var paletteOffset = ResolveWriteOffset(session.RomFile, paletteWrite.Value.CurrentOffset, paletteWrite.Value.PaletteBytes.Length, nextExpansionOffset, null);
+            nextExpansionOffset = paletteOffset == paletteWrite.Value.CurrentOffset
+                ? nextExpansionOffset
+                : Align(paletteOffset + paletteWrite.Value.PaletteBytes.Length, 4);
+
+            session.ApplyPatch(RomPatchAction.Create(paletteOffset, paletteWrite.Value.PaletteBytes, $"Write large part display {asset.PartId} variant {asset.VariantSelector} descriptor {paletteWrite.Value.DescriptorId} palette"));
+            BitConverter.TryWriteBytes(pointer, GbaPointer.ToRomAddress(paletteOffset));
+            session.ApplyPatch(RomPatchAction.Create(paletteWrite.Key, pointer, $"Repoint large part display {asset.PartId} variant {asset.VariantSelector} descriptor {paletteWrite.Value.DescriptorId} palette"));
         }
     }
 

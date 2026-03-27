@@ -323,6 +323,8 @@ public sealed class AssetAndTableTests
         var workingSession = RomHackSession.FromRomFile(new RomFile("working-large-display.gba", baseRomBytes.ToArray()));
         var asset = repository.ReadLargePartDisplay(workingSession.RomFile, part);
         asset.Pieces[0].Image.PixelIndices[0] = (byte)((asset.Pieces[0].Image.PixelIndices[0] + 5) & 0x0F);
+        asset.Pieces[0].PaletteBytes[2] ^= 0x1F;
+        asset.Pieces[0].Image.PaletteBytes[2] ^= 0x1F;
 
         patcher.ApplyLargePartDisplaySmart(workingSession, asset, 0x800000);
 
@@ -331,6 +333,7 @@ public sealed class AssetAndTableTests
         var reread = repository.ReadLargePartDisplay(exportedSession.RomFile, part);
 
         Assert.Equal(asset.Pieces[0].Image.PixelIndices, reread.Pieces[0].Image.PixelIndices);
+        Assert.Equal(asset.Pieces[0].PaletteBytes, reread.Pieces[0].PaletteBytes);
     }
 
     [Fact]
