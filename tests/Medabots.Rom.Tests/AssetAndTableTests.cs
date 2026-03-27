@@ -2,6 +2,7 @@ using Medabots.Rom.Compression;
 using Medabots.Rom.Encounters;
 using Medabots.Rom.Images;
 using Medabots.Rom.Metadata;
+using Medabots.Rom.Parts;
 using Medabots.Rom.Shops;
 using Medabots.Rom.Starter;
 using Xunit;
@@ -52,11 +53,17 @@ public sealed class AssetAndTableTests
 
         var portrait = repository.ReadPortrait(rom, 0, 0);
         var sprite = repository.ReadSprite(rom, 0);
+        var composite = repository.ReadBattleCompositeSpriteComponent(rom, 0, 0);
 
         Assert.Equal(ImageAssetRepository.PaletteSize, portrait.Image.PaletteBytes.Length);
         Assert.NotEmpty(portrait.Image.PixelIndices);
         Assert.Equal(ImageAssetRepository.PaletteSize, sprite.Image.PaletteBytes.Length);
         Assert.NotEmpty(sprite.Image.PixelIndices);
+        Assert.Equal(ImageAssetRepository.PaletteSize, composite.Image.PaletteBytes.Length);
+        Assert.NotEmpty(composite.Image.PixelIndices);
+        Assert.InRange(composite.AppearanceId, 0, 0x3F);
+        Assert.True(composite.PalettePointerOffset > 0);
+        Assert.True(composite.PaletteOffset > 0);
     }
 
     [Fact]
@@ -111,6 +118,362 @@ public sealed class AssetAndTableTests
         Assert.NotNull(wrappedLength);
         Assert.InRange(encodedLength!.Value, 4, compressed.Length);
         Assert.InRange(wrappedLength!.Value, 4, wrapped.Length);
+    }
+
+    [Fact]
+    public void Malias2_CompressRoundTripsWithDecompressor()
+    {
+        byte[] original = Enumerable.Range(0, 0x190)
+            .Select(index => (byte)((index * 7) & 0xFF))
+            .ToArray();
+
+        var compressed = Malias2.Compress(original);
+        var decompressed = Malias2.Decompress(compressed, 0);
+
+        Assert.NotNull(decompressed);
+        Assert.Equal(original, decompressed);
+    }
+
+    [Fact]
+    public void Malias2_ReportsEncodedLengthForCompressedStreams()
+    {
+        byte[] original = Enumerable.Range(0, 0x90)
+            .Select(index => (byte)((index * 5) & 0xFF))
+            .ToArray();
+
+        var compressed = Malias2.Compress(original);
+        var encodedLength = Malias2.TryGetEncodedLength(compressed, 0);
+
+        Assert.NotNull(encodedLength);
+        Assert.Equal(compressed.Length, encodedLength);
+    }
+
+    [Fact]
+    public void PortraitPatcher_ApplyPortraitSmart_RelocatesWithoutCollidingImageAndPalette()
+    {
+        var romBytes = new byte[0x400];
+        var originalPacked = Enumerable.Range(0, 0x20).Select(index => (byte)index).ToArray();
+        var originalCompressed = Malias2.Compress(originalPacked);
+        Array.Copy(originalCompressed, 0, romBytes, 0x100, originalCompressed.Length);
+
+        var rom = new RomFile("test.gba", romBytes);
+        var session = RomHackSession.FromRomFile(rom);
+        var patcher = new ImageAssetPatcher();
+
+        var editedPixels = Enumerable.Range(0, 0x190).Select(index => (byte)(index & 0x0F)).ToArray();
+        var palette = Enumerable.Range(0, ImageAssetRepository.PaletteSize).Select(index => (byte)index).ToArray();
+        var asset = new PortraitAsset(
+            CharacterId: 0,
+            PortraitIndex: 0,
+            ImagePointerOffset: 0x20,
+            PalettePointerOffset: 0x24,
+            ImageOffset: 0x100,
+            PaletteOffset: 0,
+            Image: new IndexedImage(MedabotsRomSchema.PortraitTileWidth, editedPixels.Length / 0x40 / MedabotsRomSchema.PortraitTileWidth, editedPixels, palette));
+
+        patcher.ApplyPortraitSmart(session, asset, 0x800);
+
+        Assert.True(GbaPointer.TryReadFileOffset(session.RomFile.Data, asset.ImagePointerOffset, out var imageOffset));
+        Assert.True(GbaPointer.TryReadFileOffset(session.RomFile.Data, asset.PalettePointerOffset, out var paletteOffset));
+        Assert.True(imageOffset >= 0x800);
+        Assert.True(paletteOffset >= imageOffset + Malias2.Compress(TileImageCodec.Pack4BppTiles(editedPixels)).Length);
+        Assert.Equal((byte)'L', session.RomFile.Data[imageOffset]);
+        Assert.Equal((byte)'e', session.RomFile.Data[imageOffset + 1]);
+        Assert.Equal(palette, session.RomFile.ReadBytes(paletteOffset, palette.Length).ToArray());
+    }
+
+    [Fact]
+    public void PortraitPatcher_AppliedActions_ReplayEditedPortraitIntoFreshRom()
+    {
+        var baseRomBytes = new byte[0x3B2000];
+        var sourcePalette = Enumerable.Range(0, ImageAssetRepository.PaletteSize).Select(index => (byte)(index ^ 0x55)).ToArray();
+        var sourcePixels = Enumerable.Range(0, 0x190).Select(index => (byte)(index & 0x0F)).ToArray();
+        var sourceCompressed = Malias2.Compress(TileImageCodec.Pack4BppTiles(sourcePixels));
+
+        WritePointer(baseRomBytes, MedabotsRomSchema.PortraitPointerTableOffset, 0x200000);
+        WritePointer(baseRomBytes, MedabotsRomSchema.PortraitPaletteTableOffset, 0x210000);
+        Array.Copy(sourceCompressed, 0, baseRomBytes, 0x200000, sourceCompressed.Length);
+        Array.Copy(sourcePalette, 0, baseRomBytes, 0x210000, sourcePalette.Length);
+
+        var workingSession = RomHackSession.FromRomFile(new RomFile("working.gba", baseRomBytes.ToArray()));
+        var repository = new ImageAssetRepository();
+        var patcher = new ImageAssetPatcher();
+
+        var portrait = repository.ReadPortrait(workingSession.RomFile, 0, 0);
+        portrait.Image.PixelIndices[0] = (byte)((portrait.Image.PixelIndices[0] + 3) & 0x0F);
+        portrait.Image.PaletteBytes[2] ^= 0x1F;
+
+        patcher.ApplyPortraitSmart(workingSession, portrait, 0x800000);
+
+        var exportedSession = RomHackSession.FromRomFile(new RomFile("exported.gba", baseRomBytes.ToArray()));
+        exportedSession.ApplyPatches(workingSession.AppliedActions);
+        var reread = repository.ReadPortrait(exportedSession.RomFile, 0, 0);
+
+        Assert.Equal(portrait.Image.PixelIndices, reread.Image.PixelIndices);
+        Assert.Equal(portrait.Image.PaletteBytes, reread.Image.PaletteBytes);
+    }
+
+    [Fact]
+    public void BattleCompositePatcher_AppliedActions_ReplayEditedComponentIntoFreshRom()
+    {
+        var baseRomBytes = new byte[0x510000];
+        var sourcePalette = Enumerable.Range(0, ImageAssetRepository.PaletteSize).Select(index => (byte)(index ^ 0x33)).ToArray();
+        var alternatePalette = Enumerable.Range(0, ImageAssetRepository.PaletteSize).Select(index => (byte)(index ^ 0x77)).ToArray();
+        var sourcePixels = Enumerable.Range(0, 0x80).Select(index => (byte)(index & 0x0F)).ToArray();
+        var sourceCompressed = Malias2.Compress(TileImageCodec.Pack4BppTiles(sourcePixels));
+
+        WritePointer(baseRomBytes, MedabotsRomSchema.CompositeBattleSpritePointerTableOffset, 0x200000);
+        baseRomBytes[MedabotsRomSchema.CompositeBattleSpritePaletteFamilyTableOffset] = 0;
+        Array.Copy(sourceCompressed, 0, baseRomBytes, 0x200000, sourceCompressed.Length);
+        Array.Copy(sourcePalette, 0, baseRomBytes, MedabotsRomSchema.PartSelectionComponentPaletteSetOffset, sourcePalette.Length);
+        Array.Copy(alternatePalette, 0, baseRomBytes, MedabotsRomSchema.PartSelectionComponentPaletteSetOffset + ImageAssetRepository.PaletteSize, alternatePalette.Length);
+
+        var workingSession = RomHackSession.FromRomFile(new RomFile("working.gba", baseRomBytes.ToArray()));
+        var repository = new ImageAssetRepository();
+        var patcher = new ImageAssetPatcher();
+
+        var component = repository.ReadBattleCompositeSpriteComponent(workingSession.RomFile, 0, 0);
+        component.Image.PixelIndices[0] = (byte)((component.Image.PixelIndices[0] + 5) & 0x0F);
+        component = component with
+        {
+            PaletteFamily = 1,
+            PaletteOffset = MedabotsRomSchema.PartSelectionComponentPaletteSetOffset + ImageAssetRepository.PaletteSize,
+            PaletteSelector = 5,
+            Image = component.Image with { PaletteBytes = alternatePalette.ToArray() }
+        };
+
+        patcher.ApplyBattleCompositeSpriteComponentSmart(workingSession, component, 0x800000);
+
+        var exportedSession = RomHackSession.FromRomFile(new RomFile("exported.gba", baseRomBytes.ToArray()));
+        exportedSession.ApplyPatches(workingSession.AppliedActions);
+        var reread = repository.ReadBattleCompositeSpriteComponent(exportedSession.RomFile, 0, 0);
+
+        Assert.Equal(component.Image.PixelIndices, reread.Image.PixelIndices);
+        Assert.Equal(component.Image.PaletteBytes, reread.Image.PaletteBytes);
+        Assert.Equal(component.PaletteFamily, reread.PaletteFamily);
+    }
+
+    [Fact]
+    public void ImageRepository_ReadLargePartDisplay_ResolvesDescriptorDrivenPiece()
+    {
+        var romBytes = new byte[0x510000];
+        var palette = Enumerable.Range(0, ImageAssetRepository.PaletteSize).Select(index => (byte)index).ToArray();
+        var packedPixels = Enumerable.Range(0, 0x80).Select(index => (byte)(index & 0x0F)).ToArray();
+        var compressed = GbaLz77.Compress(TileImageCodec.Pack4BppTiles(packedPixels));
+
+        romBytes[MedabotsRomSchema.CompositeBattleSpritePaletteFamilyTableOffset] = 0;
+        Array.Copy(palette, 0, romBytes, 0x1220, palette.Length);
+
+        romBytes[MedabotsRomSchema.CompositePreviewHeadAppearanceTableOffset] = 0x07;
+        WritePointer(romBytes, MedabotsRomSchema.CompositePreviewDescriptorPointerTableOffset + (7 * sizeof(uint)), 0x1000);
+        WritePointer(romBytes, 0x1000, 0x1100);
+        BitConverter.GetBytes(0).CopyTo(romBytes, 0x1004);
+        BitConverter.GetBytes(0).CopyTo(romBytes, 0x1008);
+        romBytes[0x1012] = 0x20;
+        romBytes[0x1013] = 0x20;
+        romBytes[0x1014] = 0x11;
+        WritePointer(romBytes, 0x1100, 0x1200);
+        WritePointer(romBytes, 0x1104, 0x1220);
+        Array.Copy(compressed, 0, romBytes, 0x1200, compressed.Length);
+
+        var repository = new ImageAssetRepository();
+        var rom = new RomFile("large-display.gba", romBytes);
+        var part = new PartDefinition(0, 0, PartKind.Head, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+        var asset = repository.ReadLargePartDisplay(rom, part);
+
+        Assert.Equal(7, asset.RootDescriptorId);
+        Assert.Contains(8, asset.InitialPaletteBanks.Keys);
+        Assert.Single(asset.Pieces);
+        Assert.Equal(0x1200, asset.Pieces[0].ImageOffset);
+        Assert.Equal(0x20, asset.Pieces[0].Image.Width);
+        Assert.Equal(0x20, asset.Pieces[0].Image.Height);
+        Assert.Equal(palette, asset.Pieces[0].PaletteBytes);
+    }
+
+    [Fact]
+    public void ImageRepository_ReadLargePartDisplay_ResolvesMultipleRootDescriptorsFromAppearanceRow()
+    {
+        var romBytes = new byte[0x520000];
+        var paletteA = Enumerable.Range(0, ImageAssetRepository.PaletteSize).Select(index => (byte)index).ToArray();
+        var paletteB = Enumerable.Range(0, ImageAssetRepository.PaletteSize).Select(index => (byte)(0x80 + index)).ToArray();
+        var packedPixelsA = Enumerable.Repeat((byte)1, 0x80).ToArray();
+        var packedPixelsB = Enumerable.Repeat((byte)2, 0x80).ToArray();
+        var compressedA = GbaLz77.Compress(TileImageCodec.Pack4BppTiles(packedPixelsA));
+        var compressedB = GbaLz77.Compress(TileImageCodec.Pack4BppTiles(packedPixelsB));
+
+        romBytes[MedabotsRomSchema.CompositePreviewRightArmAppearanceTableOffset] = 0x51;
+        romBytes[MedabotsRomSchema.CompositePreviewRightArmAppearanceTableOffset + 4] = 0x52;
+
+        WritePointer(romBytes, MedabotsRomSchema.CompositePreviewDescriptorPointerTableOffset + (0x11 * sizeof(uint)), 0x1000);
+        WritePointer(romBytes, MedabotsRomSchema.CompositePreviewDescriptorPointerTableOffset + (0x12 * sizeof(uint)), 0x1020);
+        WritePointer(romBytes, 0x1000, 0x1100);
+        WritePointer(romBytes, 0x1020, 0x1140);
+        romBytes[0x1012] = 0x20;
+        romBytes[0x1013] = 0x20;
+        romBytes[0x1014] = 0x11;
+        romBytes[0x1032] = 0x20;
+        romBytes[0x1033] = 0x20;
+        romBytes[0x1034] = 0x11;
+        BitConverter.GetBytes(0x20).CopyTo(romBytes, 0x1024);
+
+        WritePointer(romBytes, 0x1108, 0x1200);
+        WritePointer(romBytes, 0x110C, 0x1220);
+        WritePointer(romBytes, 0x1148, 0x1240);
+        WritePointer(romBytes, 0x114C, 0x1260);
+
+        Array.Copy(compressedA, 0, romBytes, 0x1200, compressedA.Length);
+        Array.Copy(paletteA, 0, romBytes, 0x1220, paletteA.Length);
+        Array.Copy(compressedB, 0, romBytes, 0x1240, compressedB.Length);
+        Array.Copy(paletteB, 0, romBytes, 0x1260, paletteB.Length);
+
+        var repository = new ImageAssetRepository();
+        var rom = new RomFile("large-display-multi.gba", romBytes);
+        var part = new PartDefinition(1, 0, PartKind.RightArm, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+        var asset = repository.ReadLargePartDisplay(rom, part);
+
+        Assert.Equal(2, asset.Pieces.Count);
+        Assert.Contains(asset.Pieces, piece => piece.ImageOffset == 0x1200);
+        Assert.Contains(asset.Pieces, piece => piece.ImageOffset == 0x1240);
+    }
+
+    [Fact]
+    public void ImageRepository_ReadLargePartDisplay_UsesVariantSelectorBitForLeftArm()
+    {
+        var romBytes = new byte[0x540000];
+        var palette = Enumerable.Range(0, ImageAssetRepository.PaletteSize).Select(index => (byte)index).ToArray();
+        var packedPixelsA = Enumerable.Repeat((byte)3, 0x80).ToArray();
+        var packedPixelsB = Enumerable.Repeat((byte)7, 0x80).ToArray();
+        var compressedA = GbaLz77.Compress(TileImageCodec.Pack4BppTiles(packedPixelsA));
+        var compressedB = GbaLz77.Compress(TileImageCodec.Pack4BppTiles(packedPixelsB));
+
+        var selectorEntry = (uint)(0x0E | (1 << 6) | (1 << 15));
+        BitConverter.GetBytes(selectorEntry).CopyTo(romBytes, MedabotsRomSchema.CompositePreviewLeftArmAppearanceTableOffset);
+        WritePointer(romBytes, MedabotsRomSchema.CompositePreviewDescriptorPointerTableOffset + (0x0E * sizeof(uint)), 0x1000);
+        WritePointer(romBytes, 0x1000, 0x1100);
+        romBytes[0x1012] = 0x20;
+        romBytes[0x1013] = 0x20;
+        romBytes[0x1014] = 0x11;
+        WritePointer(romBytes, 0x1108, 0x1200);
+        WritePointer(romBytes, 0x110C, 0x1220);
+        WritePointer(romBytes, 0x1110, 0x1240);
+        WritePointer(romBytes, 0x1114, 0x1260);
+        Array.Copy(compressedA, 0, romBytes, 0x1200, compressedA.Length);
+        Array.Copy(compressedB, 0, romBytes, 0x1240, compressedB.Length);
+        Array.Copy(palette, 0, romBytes, 0x1220, palette.Length);
+        Array.Copy(palette, 0, romBytes, 0x1260, palette.Length);
+        Array.Copy(palette, 0, romBytes, MedabotsRomSchema.PartDetailObjPaletteBlockAOffset, palette.Length);
+        Array.Copy(palette, 0, romBytes, MedabotsRomSchema.PartDetailObjPaletteBlockBOffset, palette.Length);
+        Array.Copy(palette, 0, romBytes, MedabotsRomSchema.PartDetailObjPaletteBlockCOffset, palette.Length);
+
+        var repository = new ImageAssetRepository();
+        var rom = new RomFile("large-display-left-arm-variant.gba", romBytes);
+        var part = new PartDefinition(2, 0, PartKind.LeftArm, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+        var asset = repository.ReadLargePartDisplay(rom, part);
+
+        Assert.Single(asset.Pieces);
+        Assert.Equal(0x1240, asset.Pieces[0].ImageOffset);
+        Assert.All(asset.Pieces[0].Image.PixelIndices.Take(0x80), pixel => Assert.Equal((byte)7, pixel));
+    }
+
+    [Fact]
+    public void ImageRepository_ReadLargePartDisplay_LeftArmOverlayPassOverwritesTargetPieceTiles()
+    {
+        var romBytes = new byte[0x560000];
+        var palette = Enumerable.Range(0, ImageAssetRepository.PaletteSize).Select(index => (byte)(index + 1)).ToArray();
+        var basePixels = Enumerable.Repeat((byte)1, 0x80).ToArray();
+        var overlayPixels = Enumerable.Repeat((byte)9, 0x80).ToArray();
+        var baseCompressed = GbaLz77.Compress(TileImageCodec.Pack4BppTiles(basePixels));
+        var overlayCompressed = GbaLz77.Compress(TileImageCodec.Pack4BppTiles(overlayPixels));
+
+        BitConverter.GetBytes((uint)0x4E).CopyTo(romBytes, MedabotsRomSchema.CompositePreviewLeftArmAppearanceTableOffset);
+        BitConverter.GetBytes((uint)0x4F).CopyTo(romBytes, MedabotsRomSchema.CompositePreviewRightArmAppearanceTableOffset);
+
+        WritePointer(romBytes, MedabotsRomSchema.CompositePreviewDescriptorPointerTableOffset + (0x0E * sizeof(uint)), 0x1000);
+        WritePointer(romBytes, MedabotsRomSchema.CompositePreviewDescriptorPointerTableOffset + (0x0F * sizeof(uint)), 0x1020);
+        WritePointer(romBytes, 0x1000, 0x1100);
+        WritePointer(romBytes, 0x1020, 0x1140);
+        romBytes[0x1012] = 0x20;
+        romBytes[0x1013] = 0x20;
+        romBytes[0x1014] = 0x11;
+        romBytes[0x1032] = 0x20;
+        romBytes[0x1033] = 0x20;
+        romBytes[0x1034] = 0x11;
+        WritePointer(romBytes, 0x1108, 0x1200);
+        WritePointer(romBytes, 0x110C, 0x1220);
+        WritePointer(romBytes, 0x1148, 0x1240);
+        WritePointer(romBytes, 0x114C, 0x1260);
+        Array.Copy(baseCompressed, 0, romBytes, 0x1200, baseCompressed.Length);
+        Array.Copy(overlayCompressed, 0, romBytes, 0x1240, overlayCompressed.Length);
+        Array.Copy(palette, 0, romBytes, 0x1220, palette.Length);
+        Array.Copy(palette, 0, romBytes, 0x1260, palette.Length);
+        Array.Copy(palette, 0, romBytes, MedabotsRomSchema.PartDetailObjPaletteBlockAOffset, palette.Length);
+        Array.Copy(palette, 0, romBytes, MedabotsRomSchema.PartDetailObjPaletteBlockBOffset, palette.Length);
+        Array.Copy(palette, 0, romBytes, MedabotsRomSchema.PartDetailObjPaletteBlockCOffset, palette.Length);
+
+        var repository = new ImageAssetRepository();
+        var rom = new RomFile("large-display-left-arm-overlay.gba", romBytes);
+        var part = new PartDefinition(2, 0, PartKind.LeftArm, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+        var asset = repository.ReadLargePartDisplay(rom, part);
+
+        Assert.Single(asset.Pieces);
+        Assert.Equal(0x1200, asset.Pieces[0].ImageOffset);
+        Assert.All(asset.Pieces[0].Image.PixelIndices.Take(0x80), pixel => Assert.Equal((byte)9, pixel));
+    }
+
+    [Fact]
+    public void ImageRepository_ReadLargePartDisplay_IgnoresPaletteUploadWhenPalettePointerEqualsImagePointer()
+    {
+        var romBytes = new byte[0x540000];
+        var initPalette = Enumerable.Range(0, ImageAssetRepository.PaletteSize).Select(index => (byte)(index + 2)).ToArray();
+        var uploadedPalette = Enumerable.Range(0, ImageAssetRepository.PaletteSize).Select(index => (byte)(0x80 + index)).ToArray();
+        var packedPixelsA = Enumerable.Repeat((byte)4, 0x40).ToArray();
+        var packedPixelsB = Enumerable.Repeat((byte)6, 0x100).ToArray();
+        var compressedA = GbaLz77.Compress(TileImageCodec.Pack4BppTiles(packedPixelsA));
+        var compressedB = GbaLz77.Compress(TileImageCodec.Pack4BppTiles(packedPixelsB));
+
+        romBytes[MedabotsRomSchema.CompositePreviewHeadAppearanceTableOffset] = 0x47;
+        romBytes[MedabotsRomSchema.CompositePreviewHeadAppearanceTableOffset + 4] = 0x48;
+
+        WritePointer(romBytes, MedabotsRomSchema.CompositePreviewDescriptorPointerTableOffset + (7 * sizeof(uint)), 0x1000);
+        WritePointer(romBytes, MedabotsRomSchema.CompositePreviewDescriptorPointerTableOffset + (8 * sizeof(uint)), 0x1020);
+        WritePointer(romBytes, 0x1000, 0x1100);
+        WritePointer(romBytes, 0x1020, 0x1140);
+        romBytes[0x1012] = 0x10;
+        romBytes[0x1013] = 0x10;
+        romBytes[0x1014] = 0x11;
+        romBytes[0x1032] = 0x20;
+        romBytes[0x1033] = 0x20;
+        romBytes[0x1034] = 0x11;
+        WritePointer(romBytes, 0x1108, 0x1200);
+        WritePointer(romBytes, 0x110C, 0x1220);
+        WritePointer(romBytes, 0x1148, 0x1240);
+        WritePointer(romBytes, 0x114C, 0x1240);
+        Array.Copy(compressedA, 0, romBytes, 0x1200, compressedA.Length);
+        Array.Copy(compressedB, 0, romBytes, 0x1240, compressedB.Length);
+        Array.Copy(uploadedPalette, 0, romBytes, 0x1220, uploadedPalette.Length);
+        Array.Copy(initPalette, 0, romBytes, MedabotsRomSchema.PartDetailObjPaletteBlockAOffset, initPalette.Length);
+        Array.Copy(initPalette, 0, romBytes, MedabotsRomSchema.PartDetailObjPaletteBlockBOffset, initPalette.Length);
+        Array.Copy(initPalette, 0, romBytes, MedabotsRomSchema.PartDetailObjPaletteBlockCOffset, initPalette.Length);
+
+        var repository = new ImageAssetRepository();
+        var rom = new RomFile("large-display-head-palette-equals-image.gba", romBytes);
+        var part = new PartDefinition(0, 0, PartKind.Head, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+        var asset = repository.ReadLargePartDisplay(rom, part);
+
+        Assert.Equal(2, asset.Pieces.Count);
+        Assert.Equal(0x1220, asset.Pieces[0].PaletteOffset);
+        Assert.Equal(0, asset.Pieces[1].PaletteOffset);
+    }
+
+    private static void WritePointer(byte[] romBytes, int offset, int fileOffset)
+    {
+        var pointer = BitConverter.GetBytes(GbaPointer.ToRomAddress(fileOffset));
+        Array.Copy(pointer, 0, romBytes, offset, pointer.Length);
     }
 
     private static string FindWorkspaceRom()

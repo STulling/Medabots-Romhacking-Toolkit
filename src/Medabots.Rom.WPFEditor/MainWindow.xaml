@@ -504,63 +504,85 @@
                     </Border>
                     <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}">
                         <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="12" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="300" />
-                                <ColumnDefinition Width="12" />
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="320" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="Sprite Preview" FontWeight="SemiBold" FontSize="14" />
-                                <Border Margin="0,12,0,0" BorderBrush="#FFD1D5DB" BorderThickness="1" Background="#FFF9FAFB" Padding="8">
-                                    <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                                                  VerticalScrollBarVisibility="Auto"
+                            <ToolBarTray Grid.Row="0" Background="Transparent">
+                                <ToolBar Band="0" BandIndex="0">
+                                    <ToggleButton x:Name="SpriteToolPencilButton" IsChecked="True" Click="OnSpriteToolPencilClicked">Pencil</ToggleButton>
+                                    <ToggleButton x:Name="SpriteToolEraserButton" Margin="6,0,0,0" Click="OnSpriteToolEraserClicked">Eraser</ToggleButton>
+                                    <ToggleButton x:Name="SpriteToolPickerButton" Margin="6,0,0,0" Click="OnSpriteToolPickerClicked">Picker</ToggleButton>
+                                    <Separator />
+                                    <Button Click="OnUndoSpriteEditClicked">Undo</Button>
+                                    <Button Margin="6,0,0,0" Click="OnRevertSelectedSpriteChangesClicked">Reset Asset</Button>
+                                    <Button Margin="6,0,0,0" Click="OnRevertAllSpriteChangesClicked">Reset All</Button>
+                                    <Separator />
+                                    <Button Margin="6,0,0,0" Click="OnApplySpriteChangesClicked">Apply Changes</Button>
+                                    <Separator />
+                                    <TextBlock x:Name="SpriteZoomValueLabel" Margin="8,0,0,0" VerticalAlignment="Center" Text="Zoom 4x" />
+                                </ToolBar>
+                            </ToolBarTray>
+                            <Grid Grid.Row="2" Grid.Column="0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="12" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="Sprite Preview" FontWeight="SemiBold" FontSize="14" />
+                                <Border Grid.Row="2"
+                                        MinHeight="520"
+                                        BorderBrush="#FFD1D5DB"
+                                        BorderThickness="1"
+                                        Background="#FFF9FAFB"
+                                        Padding="8">
+                                    <Border.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Export PNG" Click="OnExportSpritePngClicked" />
+                                            <MenuItem Header="Import PNG" Click="OnImportSpritePngClicked" />
+                                            <Separator />
+                                            <MenuItem Header="Apply Changes" Click="OnApplySpriteChangesClicked" />
+                                        </ContextMenu>
+                                    </Border.ContextMenu>
+                                    <ScrollViewer x:Name="SpritePreviewScrollViewer"
+                                                  HorizontalScrollBarVisibility="Hidden"
+                                                  VerticalScrollBarVisibility="Hidden"
+                                                  SizeChanged="OnSpritePreviewViewportSizeChanged"
+                                                  PreviewMouseDown="OnSpritePreviewScrollViewerMouseDown"
+                                                  PreviewMouseMove="OnSpritePreviewScrollViewerMouseMove"
+                                                  PreviewMouseUp="OnSpritePreviewScrollViewerMouseUp"
                                                   PreviewMouseWheel="OnSpritePreviewMouseWheel">
-                                        <Grid>
-                                            <Image x:Name="SpritePreviewImage"
-                                                   Stretch="Fill"
-                                                   HorizontalAlignment="Left"
-                                                   VerticalAlignment="Top"
-                                                   SnapsToDevicePixels="True"
-                                                   RenderOptions.BitmapScalingMode="NearestNeighbor"
-                                                   MouseLeftButtonDown="OnSpritePreviewMouseLeftButtonDown"
-                                                   MouseLeftButtonUp="OnSpritePreviewMouseLeftButtonUp"
-                                                   MouseMove="OnSpritePreviewMouseMove" />
-                                            <Canvas x:Name="SpriteGridCanvas"
-                                                    HorizontalAlignment="Left"
-                                                    VerticalAlignment="Top"
-                                                    IsHitTestVisible="False" />
-                                        </Grid>
+                                        <Border x:Name="SpritePreviewPaddingBorder" Padding="96" Background="Transparent">
+                                            <Grid x:Name="SpritePreviewSurface"
+                                                  HorizontalAlignment="Left"
+                                                  VerticalAlignment="Top">
+                                                <Image x:Name="SpritePreviewImage"
+                                                       Stretch="Fill"
+                                                       HorizontalAlignment="Left"
+                                                       VerticalAlignment="Top"
+                                                       SnapsToDevicePixels="True"
+                                                       RenderOptions.BitmapScalingMode="NearestNeighbor"
+                                                       MouseLeftButtonDown="OnSpritePreviewMouseLeftButtonDown"
+                                                       MouseLeftButtonUp="OnSpritePreviewMouseLeftButtonUp"
+                                                       MouseMove="OnSpritePreviewMouseMove" />
+                                                <Canvas x:Name="SpriteGridCanvas"
+                                                        HorizontalAlignment="Left"
+                                                        VerticalAlignment="Top"
+                                                        IsHitTestVisible="False" />
+                                            </Grid>
+                                        </Border>
                                     </ScrollViewer>
                                 </Border>
-                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                                    <ToggleButton x:Name="SpriteToolPencilButton" IsChecked="True" Click="OnSpriteToolPencilClicked">Pencil</ToggleButton>
-                                    <ToggleButton x:Name="SpriteToolEraserButton" Margin="8,0,0,0" Click="OnSpriteToolEraserClicked">Eraser</ToggleButton>
-                                    <ToggleButton x:Name="SpriteToolPickerButton" Margin="8,0,0,0" Click="OnSpriteToolPickerClicked">Picker</ToggleButton>
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0" VerticalAlignment="Center">
-                                    <TextBlock VerticalAlignment="Center" Text="Zoom" />
-                                    <Slider x:Name="SpriteZoomSlider"
-                                            Margin="8,0,0,0"
-                                            Width="160"
-                                            Minimum="1"
-                                            Maximum="24"
-                                            Value="4"
-                                            TickFrequency="1"
-                                            IsSnapToTickEnabled="True"
-                                            ValueChanged="OnSpriteZoomChanged" />
-                                    <TextBlock x:Name="SpriteZoomValueLabel" Margin="8,0,0,0" VerticalAlignment="Center" Text="4x" />
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                                    <Button Click="OnExportSpritePngClicked">Export PNG</Button>
-                                    <Button Margin="8,0,0,0" Click="OnImportSpritePngClicked">Import PNG</Button>
-                                    <Button Margin="8,0,0,0" Click="OnApplySpriteChangesClicked">Apply Changes</Button>
-                                    <Button Margin="8,0,0,0" Click="OnUndoSpriteEditClicked">Undo</Button>
-                                    <Button Margin="8,0,0,0" Click="OnRevertSelectedSpriteChangesClicked">Reset Asset</Button>
-                                    <Button Margin="8,0,0,0" Click="OnRevertAllSpriteChangesClicked">Reset All</Button>
-                                </StackPanel>
-                                <TextBlock x:Name="SpritePatchStatusLabel" Margin="0,8,0,0" Foreground="#FF6B7280" TextWrapping="Wrap" />
-                            </StackPanel>
-                            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                                <TextBlock Grid.Row="3" x:Name="SpritePatchStatusLabel" Margin="0,8,0,0" Foreground="#FF6B7280" TextWrapping="Wrap" />
+                            </Grid>
+                            <ScrollViewer Grid.Row="2" Grid.Column="2" VerticalScrollBarVisibility="Auto">
                                 <StackPanel>
                                     <TextBlock Text="Sprite Details" FontWeight="SemiBold" FontSize="14" />
                                     <TextBlock x:Name="SpriteSummaryLabel" Margin="0,12,0,0" TextWrapping="Wrap" />
@@ -580,8 +602,14 @@
                                                             HorizontalAlignment="Left"
                                                             VerticalAlignment="Top"
                                                             Background="{Binding Color, Converter={StaticResource ColorToBrushConverter}}"
+                                                            PreviewMouseRightButtonDown="OnSpritePaletteSwatchRightButtonDown"
                                                             Click="OnSpritePaletteSwatchClicked"
                                                             Tag="{Binding Index}">
+                                                        <Button.ContextMenu>
+                                                            <ContextMenu>
+                                                                <MenuItem Header="Edit Color" Click="OnEditPaletteColorMenuClicked" CommandParameter="{Binding Index}" />
+                                                            </ContextMenu>
+                                                        </Button.ContextMenu>
                                                         <Button.Style>
                                                             <Style TargetType="Button">
                                                                 <Setter Property="BorderBrush" Value="#FF9CA3AF" />
@@ -602,6 +630,42 @@
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                     <TextBlock x:Name="SpritePaletteSummaryLabel" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#FF6B7280" />
+                                    <StackPanel x:Name="SpritePaletteFamilyEditorPanel" Margin="0,12,0,0" Visibility="Collapsed">
+                                        <TextBlock Text="Palette Family" FontWeight="SemiBold" />
+                                        <ComboBox x:Name="SpritePaletteFamilyComboBox"
+                                                  Margin="0,6,0,0"
+                                                  MinWidth="160"
+                                                  SelectionChanged="OnSpritePaletteFamilySelectionChanged">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                        <ItemsControl ItemsSource="{Binding PreviewSwatches}">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <StackPanel Orientation="Horizontal" />
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Border Width="12"
+                                                                            Height="12"
+                                                                            Margin="0,0,3,0"
+                                                                            BorderBrush="#FF9CA3AF"
+                                                                            BorderThickness="1"
+                                                                            Background="{Binding Color, Converter={StaticResource ColorToBrushConverter}}" />
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                        <TextBlock x:Name="SpritePaletteFamilyHintLabel"
+                                                   Margin="0,6,0,0"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="#FF6B7280" />
+                                    </StackPanel>
                                 </StackPanel>
                             </ScrollViewer>
                         </Grid>

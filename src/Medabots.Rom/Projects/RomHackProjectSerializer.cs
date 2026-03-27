@@ -45,13 +45,15 @@ public static class RomHackProjectSerializer
 
     private sealed class RomHackProjectDocument
     {
-        public int SchemaVersion { get; set; } = 3;
+        public int SchemaVersion { get; set; } = 4;
 
         public string Name { get; set; } = "New Medabots Hack";
 
         public string? SourceRomPath { get; set; }
 
         public string? TextProfileId { get; set; }
+
+        public List<RomPatchActionDocument> PendingActions { get; set; } = [];
 
         public List<MessagePatchDocument> MessagePatches { get; set; } = [];
 
@@ -61,7 +63,7 @@ public static class RomHackProjectSerializer
 
         public RomHackProject ToProject(string? projectFilePath)
         {
-            if (SchemaVersion is not 1 and not 2 and not 3)
+            if (SchemaVersion is not 1 and not 2 and not 3 and not 4)
             {
                 throw new InvalidDataException($"Unsupported project schema version '{SchemaVersion}'.");
             }
@@ -73,6 +75,11 @@ public static class RomHackProjectSerializer
                 ProjectFilePath = projectFilePath,
                 TextProfileId = TextProfileId
             };
+
+            foreach (var action in PendingActions)
+            {
+                project.PendingActions.Add(new RomPatchAction(action.Offset, Convert.FromBase64String(action.DataBase64), action.Description));
+            }
 
             foreach (var patch in MessagePatches)
             {
@@ -99,6 +106,14 @@ public static class RomHackProjectSerializer
                 Name = project.Name,
                 SourceRomPath = project.SourceRomPath,
                 TextProfileId = project.TextProfileId,
+                PendingActions = project.PendingActions
+                    .Select(action => new RomPatchActionDocument
+                    {
+                        Offset = action.Offset,
+                        DataBase64 = Convert.ToBase64String(action.Data),
+                        Description = action.Description
+                    })
+                    .ToList(),
                 MessagePatches = project.MessagePatches
                     .Select(patch => new MessagePatchDocument
                     {
@@ -133,6 +148,15 @@ public static class RomHackProjectSerializer
         public int Index { get; set; }
 
         public string Text { get; set; } = string.Empty;
+    }
+
+    private sealed class RomPatchActionDocument
+    {
+        public int Offset { get; set; }
+
+        public string DataBase64 { get; set; } = string.Empty;
+
+        public string Description { get; set; } = string.Empty;
     }
 
     private sealed class EventLabelPatchDocument

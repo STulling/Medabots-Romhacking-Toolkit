@@ -8,7 +8,9 @@ public sealed class ColorToBrushConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
-        return value is Color color ? new SolidColorBrush(color) : Brushes.Transparent;
+        return value is System.Windows.Media.Color color
+            ? new SolidColorBrush(color)
+            : System.Windows.Media.Brushes.Transparent;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

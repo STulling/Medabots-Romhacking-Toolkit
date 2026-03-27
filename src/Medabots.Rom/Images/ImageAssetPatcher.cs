@@ -6,15 +6,30 @@ public sealed class ImageAssetPatcher
 {
     public const int DefaultExpansionStartOffset = 0x800000;
 
+    public void ApplyBattleCompositeSpriteComponent(RomHackSession session, BattleCompositeSpriteComponentAsset asset, int imageDumpOffset)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(asset);
+
+        var packed = TileImageCodec.Pack4BppTiles(asset.Image.PixelIndices);
+        var compressed = Malias2.Compress(packed);
+        session.ApplyPatch(RomPatchAction.Create(imageDumpOffset, compressed, $"Write Medabot component {asset.MedabotId}:{asset.ComponentIndex} image"));
+        session.ApplyPatch(RomPatchAction.Create(asset.PalettePointerOffset, [asset.PaletteFamily], $"Set Medabot component palette family {asset.MedabotId}:{asset.ComponentIndex}"));
+
+        Span<byte> pointer = stackalloc byte[4];
+        BitConverter.TryWriteBytes(pointer, GbaPointer.ToRomAddress(imageDumpOffset));
+        session.ApplyPatch(RomPatchAction.Create(asset.ImagePointerOffset, pointer, $"Repoint Medabot component {asset.MedabotId}:{asset.ComponentIndex} image"));
+    }
+
     public void ApplyPortrait(RomHackSession session, PortraitAsset asset, int imageDumpOffset, int paletteDumpOffset)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(asset);
 
         var packed = TileImageCodec.Pack4BppTiles(asset.Image.PixelIndices);
-        var compressed = WrapPortraitPayload(packed);
-        session.RomFile.WriteBytes(imageDumpOffset, compressed);
-        session.RomFile.WriteBytes(paletteDumpOffset, asset.Image.PaletteBytes);
+        var compressed = Malias2.Compress(packed);
+        session.ApplyPatch(RomPatchAction.Create(imageDumpOffset, compressed, $"Write portrait {asset.CharacterId}:{asset.PortraitIndex} image"));
+        session.ApplyPatch(RomPatchAction.Create(paletteDumpOffset, asset.Image.PaletteBytes, $"Write portrait {asset.CharacterId} palette"));
 
         Span<byte> pointer = stackalloc byte[4];
         BitConverter.TryWriteBytes(pointer, GbaPointer.ToRomAddress(imageDumpOffset));
@@ -30,8 +45,8 @@ public sealed class ImageAssetPatcher
 
         var packed = TileImageCodec.Pack4BppTiles(asset.Image.PixelIndices);
         var compressed = GbaLz77.Compress(packed);
-        session.RomFile.WriteBytes(imageDumpOffset, compressed);
-        session.RomFile.WriteBytes(paletteDumpOffset, asset.Image.PaletteBytes);
+        session.ApplyPatch(RomPatchAction.Create(imageDumpOffset, compressed, $"Write sprite {asset.SpriteId} image"));
+        session.ApplyPatch(RomPatchAction.Create(paletteDumpOffset, asset.Image.PaletteBytes, $"Write sprite {asset.SpriteId} palette"));
 
         Span<byte> pointer = stackalloc byte[4];
         BitConverter.TryWriteBytes(pointer, GbaPointer.ToRomAddress(imageDumpOffset));
@@ -46,9 +61,17 @@ public sealed class ImageAssetPatcher
         ArgumentNullException.ThrowIfNull(asset);
 
         var packed = TileImageCodec.Pack4BppTiles(asset.Image.PixelIndices);
-        var wrapped = WrapPortraitPayload(packed);
-        var imageOffset = ResolveWriteOffset(session.RomFile, 0, wrapped.Length, expansionStartOffset, null);
-        var paletteOffset = ResolveWriteOffset(session.RomFile, asset.PaletteOffset, asset.Image.PaletteBytes.Length, expansionStartOffset, null);
+        var compressed = Malias2.Compress(packed);
+        var imageOffset = ResolveWriteOffset(session.RomFile, asset.ImageOffset, compressed.Length, expansionStartOffset, Malias2.TryGetEncodedLength);
+
+        // Reserve any newly allocated image space before choosing the palette destination
+        // so both writes cannot collide in the expansion region.
+        session.RomFile.EnsureCapacity(imageOffset + compressed.Length);
+
+        var paletteExpansionStart = imageOffset == asset.ImageOffset
+            ? expansionStartOffset
+            : Align(imageOffset + compressed.Length, 4);
+        var paletteOffset = ResolveWriteOffset(session.RomFile, asset.PaletteOffset, asset.Image.PaletteBytes.Length, paletteExpansionStart, null);
         ApplyPortrait(session, asset, imageOffset, paletteOffset);
     }
 
@@ -60,8 +83,27 @@ public sealed class ImageAssetPatcher
         var packed = TileImageCodec.Pack4BppTiles(asset.Image.PixelIndices);
         var compressed = GbaLz77.Compress(packed);
         var imageOffset = ResolveWriteOffset(session.RomFile, asset.ImageOffset, compressed.Length, expansionStartOffset, GbaLz77.TryGetEncodedLength);
-        var paletteOffset = ResolveWriteOffset(session.RomFile, asset.PaletteOffset, asset.Image.PaletteBytes.Length, expansionStartOffset, null);
+
+        // Reserve any newly allocated image space before choosing the palette destination
+        // so both writes cannot collide in the expansion region.
+        session.RomFile.EnsureCapacity(imageOffset + compressed.Length);
+
+        var paletteExpansionStart = imageOffset == asset.ImageOffset
+            ? expansionStartOffset
+            : Align(imageOffset + compressed.Length, 4);
+        var paletteOffset = ResolveWriteOffset(session.RomFile, asset.PaletteOffset, asset.Image.PaletteBytes.Length, paletteExpansionStart, null);
         ApplySprite(session, asset, imageOffset, paletteOffset);
+    }
+
+    public void ApplyBattleCompositeSpriteComponentSmart(RomHackSession session, BattleCompositeSpriteComponentAsset asset, int expansionStartOffset = DefaultExpansionStartOffset)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(asset);
+
+        var packed = TileImageCodec.Pack4BppTiles(asset.Image.PixelIndices);
+        var compressed = Malias2.Compress(packed);
+        var imageOffset = ResolveWriteOffset(session.RomFile, asset.ImageOffset, compressed.Length, expansionStartOffset, Malias2.TryGetEncodedLength);
+        ApplyBattleCompositeSpriteComponent(session, asset, imageOffset);
     }
 
     private static int ResolveWriteOffset(RomFile romFile, int currentOffset, int newLength, int expansionStartOffset, Func<byte[], int, int?>? encodedLengthReader)
@@ -85,30 +127,5 @@ public sealed class ImageAssetPatcher
     {
         var mask = alignment - 1;
         return (value + mask) & ~mask;
-    }
-
-    private static byte[] WrapPortraitPayload(ReadOnlySpan<byte> data)
-    {
-        var result = new List<byte>(6 + data.Length + (data.Length / 4) + 4)
-        {
-            (byte)'L',
-            (byte)'e',
-            0x00,
-            0x08,
-            0x00,
-            0x00
-        };
-
-        var index = 0;
-        while (index < data.Length)
-        {
-            result.Add(0xAA);
-            for (var i = 0; i < 4; i++)
-            {
-                result.Add(index < data.Length ? data[index++] : (byte)0x00);
-            }
-        }
-
-        return result.ToArray();
     }
 }

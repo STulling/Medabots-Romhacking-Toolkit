@@ -21,6 +21,7 @@ public sealed class RomHackProjectTests
                 TextProfileId = "MEDABOTSRKSVA9BPE9"
             };
 
+            project.PendingActions.Add(new RomPatchAction(0x1234, [0xAA, 0xBB, 0xCC], "Patch sprite pointer"));
             project.MessagePatches.Add(new Text.MessagePatch(new Text.MessageId(0, 2), "<PORTRAIT:0, 27, 0>Hello<END:0>"));
             project.EventLabels.Add(new EventLabelPatch(361, 0x25, "EquipBattleRifle"));
             project.EventLabels.Add(new EventLabelPatch(361, 0x47, "MissingBattleRifle"));
@@ -32,6 +33,10 @@ public sealed class RomHackProjectTests
             Assert.Equal(project.Name, loaded.Name);
             Assert.Equal(project.SourceRomPath, loaded.SourceRomPath);
             Assert.Equal(project.TextProfileId, loaded.TextProfileId);
+            Assert.Single(loaded.PendingActions);
+            Assert.Equal(0x1234, loaded.PendingActions[0].Offset);
+            Assert.Equal([0xAA, 0xBB, 0xCC], loaded.PendingActions[0].Data);
+            Assert.Equal("Patch sprite pointer", loaded.PendingActions[0].Description);
             Assert.Single(loaded.MessagePatches);
             Assert.Equal(0, loaded.MessagePatches[0].Id.Bank);
             Assert.Equal(2, loaded.MessagePatches[0].Id.Index);

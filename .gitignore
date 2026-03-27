@@ -1,3 +1,9 @@
 bin/
 obj/
 .vs/
+.vscode/
+artifacts/
+docs/
+python/
+*.gba
+*.sav

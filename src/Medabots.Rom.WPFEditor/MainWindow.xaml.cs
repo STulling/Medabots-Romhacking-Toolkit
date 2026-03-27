@@ -8,6 +8,17 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using Forms = System.Windows.Forms;
+using WpfColor = System.Windows.Media.Color;
+using WpfPoint = System.Windows.Point;
+using WpfMouseEventArgs = System.Windows.Input.MouseEventArgs;
+using WpfTextBox = System.Windows.Controls.TextBox;
+using WpfButton = System.Windows.Controls.Button;
+using WpfMenuItem = System.Windows.Controls.MenuItem;
+using WpfCursors = System.Windows.Input.Cursors;
+using WpfMessageBox = System.Windows.MessageBox;
+using Win32OpenFileDialog = Microsoft.Win32.OpenFileDialog;
+using Win32SaveFileDialog = Microsoft.Win32.SaveFileDialog;
 using Medabots.Rom.Battles;
 using Medabots.Rom.Editor;
 using Medabots.Rom.Encounters;
@@ -75,9 +86,12 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, SpritePreviewState> _spritePreviewCache = [];
     private readonly Dictionary<int, SpriteAsset> _editedOverworldSpriteAssets = [];
     private readonly Dictionary<(int CharacterId, int PortraitIndex), PortraitAsset> _editedPortraitAssets = [];
+    private readonly Dictionary<(int MedabotId, int ComponentIndex), BattleCompositeSpriteComponentAsset> _editedBattleCompositeComponentAssets = [];
+    private readonly Dictionary<(int PartId, int ComponentIndex), BattleCompositeSpriteComponentAsset> _battleCompositeComponentCache = [];
     private readonly Dictionary<string, SpriteEditHistory> _spriteEditHistories = [];
     private readonly Dictionary<(int EntryLength, int ShopId), ShopDefinition> _shopCache = [];
     private readonly List<EventOperationOption> _eventOperationOptions = [];
+    private readonly List<SpritePaletteFamilyOption> _spritePaletteFamilyOptions = [];
 
     private RomHackSession? _session;
     private RomHackProject _project = new();
@@ -91,7 +105,13 @@ public partial class MainWindow : Window
     private int _selectedPaletteIndex = 1;
     private bool _isPaintingSprite;
     private bool _hasCapturedUndoForCurrentStroke;
+    private bool _isPanningSpritePreview;
+    private bool _isUpdatingSpritePaletteFamilyUi;
+    private WpfPoint _spritePanStartPoint;
+    private double _spritePanStartHorizontalOffset;
+    private double _spritePanStartVerticalOffset;
     private int _spriteEditorZoom = 4;
+    private const double SpriteViewportPadding = 160d;
     private IReadOnlyDictionary<MessageId, string> _loadedMessages = new Dictionary<MessageId, string>();
     private IReadOnlyList<BattleDefinition> _loadedBattles = [];
     private IReadOnlyList<BattleActionOpcodeEntry> _loadedBattleActionOpcodes = [];
@@ -116,6 +136,8 @@ public partial class MainWindow : Window
         SpriteTreeView.ItemsSource = _visibleSpriteNodes;
         EncounterCollectionView.ItemsSource = _visibleEncounterItems;
         ShopCollectionView.ItemsSource = _visibleShopItems;
+        SpritePaletteFamilyComboBox.SelectedValuePath = nameof(SpritePaletteFamilyOption.Value);
+        RefreshSpritePaletteFamilyOptions();
         _eventOperationOptions.AddRange(_eventOperationRegistry.Definitions
             .OrderBy(definition => definition.Opcode)
             .Select(definition => new EventOperationOption
@@ -166,6 +188,7 @@ public partial class MainWindow : Window
             _session = session;
             _project = loadedProject;
             PrepareProjectForEditing();
+            _session.ApplyPatches(_project.PendingActions);
             SetLoadingState(true, "Detecting profile...", 0.08);
             TryDetectTextProfile();
             await LoadBrowsableDataAsync();
@@ -267,10 +290,13 @@ public partial class MainWindow : Window
         _loadedEncounters = _encounterTableReader.ReadAll(_session.RomFile);
         _loadedPart = null;
         _spritePreviewCache.Clear();
+        _battleCompositeComponentCache.Clear();
         _editedOverworldSpriteAssets.Clear();
         _editedPortraitAssets.Clear();
+        _editedBattleCompositeComponentAssets.Clear();
         _spriteEditHistories.Clear();
         _selectedSpriteNode = null;
+        RefreshSpritePaletteFamilyOptions();
 
         RebuildMessageItems();
         _allBattleItems.Clear();
@@ -729,7 +755,7 @@ public partial class MainWindow : Window
 
     private async void OnRevertEventPatchMenuClicked(object? sender, RoutedEventArgs e)
     {
-        if (sender is not MenuItem menuItem || menuItem.CommandParameter is not EventBrowserItem item)
+        if (sender is not WpfMenuItem menuItem || menuItem.CommandParameter is not EventBrowserItem item)
         {
             return;
         }
@@ -1283,6 +1309,15 @@ public partial class MainWindow : Window
         {
             _project.EventScriptPatches.Add(new EventScriptPatch(patch.Key, patch.Value));
         }
+
+        _project.PendingActions.Clear();
+        if (_session is not null)
+        {
+            foreach (var action in _session.AppliedActions)
+            {
+                _project.PendingActions.Add(new RomPatchAction(action.Offset, action.Data.ToArray(), action.Description));
+            }
+        }
     }
 
     private void TryDetectTextProfile()
@@ -1443,12 +1478,19 @@ public partial class MainWindow : Window
         SpritePreviewImage.Source = null;
         SpritePreviewImage.Width = double.NaN;
         SpritePreviewImage.Height = double.NaN;
+        SpritePreviewSurface.Width = double.NaN;
+        SpritePreviewSurface.Height = double.NaN;
+        SpritePreviewImage.Margin = new Thickness(0);
+        SpriteGridCanvas.Margin = new Thickness(0);
         SpriteGridCanvas.Children.Clear();
         SpriteGridCanvas.Width = 0;
         SpriteGridCanvas.Height = 0;
-        SpriteSummaryLabel.Text = "Select an overworld sheet or portrait to inspect its decoded image and palette data.";
+        SpriteSummaryLabel.Text = "Select an overworld sheet, portrait, Medabot composite sprite, or individual part preview to inspect its decoded image and palette data.";
         SpritePaletteSummaryLabel.Text = string.Empty;
         SpritePaletteItemsControl.ItemsSource = null;
+        SpritePaletteFamilyEditorPanel.Visibility = Visibility.Collapsed;
+        SpritePaletteFamilyComboBox.SelectedItem = null;
+        SpritePaletteFamilyHintLabel.Text = string.Empty;
         SpritePatchStatusLabel.Text = string.Empty;
         _selectedPaletteIndex = 1;
         _hasCapturedUndoForCurrentStroke = false;
@@ -1459,6 +1501,7 @@ public partial class MainWindow : Window
         var nodes = new List<SpriteBrowserNode>();
         nodes.Add(BuildOverworldSpriteRoot());
         nodes.Add(BuildPortraitRoot());
+        nodes.Add(BuildMedabotPartRoot());
         return nodes;
     }
 
@@ -1589,6 +1632,110 @@ public partial class MainWindow : Window
         return root;
     }
 
+    private SpriteBrowserNode BuildBattleCompositeMedabotRoot()
+    {
+        const int groupSize = 16;
+        var componentNames = GetBattleCompositeComponentNames();
+        var root = new SpriteBrowserNode
+        {
+            Title = "Medabot Sprite Families",
+            FilterText = "Medabot Sprite Families"
+        };
+
+        for (var start = 0; start < MedabotsRomSchema.CompositeBattleSpritePartCount; start += groupSize)
+        {
+            var end = Math.Min(start + groupSize - 1, MedabotsRomSchema.CompositeBattleSpritePartCount - 1);
+            var group = new SpriteBrowserNode
+            {
+                Title = $"Medabots {start:D3}-{end:D3}",
+                FilterText = $"Medabot Sprite Families {start:D3} {end:D3}"
+            };
+
+            for (var medabotId = start; medabotId <= end; medabotId++)
+            {
+                var medabotNode = new SpriteBrowserNode
+                {
+                    Title = $"Medabot {medabotId:D3}  {_metadata.GetBotName(medabotId)}",
+                    FilterText = $"Medabot Sprite Family {medabotId:D3} {_metadata.GetBotName(medabotId)}"
+                };
+
+                for (var componentIndex = 0; componentIndex < MedabotsRomSchema.CompositeBattleSpritePointersPerPart; componentIndex++)
+                {
+                    medabotNode.Children.Add(new SpriteBrowserNode
+                    {
+                        Title = componentNames[componentIndex],
+                        FilterText = $"Battle Composite Medabot {medabotId:D3} {_metadata.GetBotName(medabotId)} {componentNames[componentIndex]}",
+                        AssetKind = SpriteAssetKind.BattleCompositePartComponent,
+                        PrimaryId = medabotId,
+                        SecondaryId = componentIndex
+                    });
+                }
+
+                group.Children.Add(medabotNode);
+            }
+
+            root.Children.Add(group);
+        }
+
+        return root;
+    }
+
+    private SpriteBrowserNode BuildMedabotPartRoot()
+    {
+        var root = new SpriteBrowserNode
+        {
+            Title = "Medabots",
+            FilterText = "Medabots Parts"
+        };
+
+        var groupedByMedabot = _loadedParts
+            .GroupBy(part => part.MedabotId)
+            .OrderBy(group => group.Key)
+            .ToArray();
+
+        foreach (var medabotGroup in groupedByMedabot)
+        {
+            var medabotNode = new SpriteBrowserNode
+            {
+                Title = $"{medabotGroup.Key:D3}  {_metadata.GetBotName(medabotGroup.Key)}",
+                FilterText = $"Medabot {medabotGroup.Key:D3} {_metadata.GetBotName(medabotGroup.Key)}"
+            };
+
+            foreach (var part in medabotGroup.OrderBy(part => part.Kind).ThenBy(part => part.Id))
+            {
+                var partNode = new SpriteBrowserNode
+                {
+                    Title = $"{FormatPartKind(part.Kind)}  {part.Id:D3}  {_metadata.GetPartName(part.Id)}",
+                    FilterText = $"Part {part.Id:D3} {_metadata.GetPartName(part.Id)} Medabot {_metadata.GetBotName(part.MedabotId)} {FormatPartKind(part.Kind)}"
+                };
+
+                var componentIndex = GetPreviewComponentIndexForPartKind(part.Kind);
+                partNode.Children.Add(new SpriteBrowserNode
+                {
+                    Title = "Small Display",
+                    FilterText = $"Small Display Part {part.Id:D3} {_metadata.GetPartName(part.Id)} Medabot {_metadata.GetBotName(part.MedabotId)} {FormatPartKind(part.Kind)}",
+                    AssetKind = SpriteAssetKind.BattleCompositePartComponent,
+                    PrimaryId = part.MedabotId,
+                    SecondaryId = componentIndex
+                });
+                partNode.Children.Add(new SpriteBrowserNode
+                {
+                    Title = "Large Display",
+                    FilterText = $"Large Display Part {part.Id:D3} {_metadata.GetPartName(part.Id)} Medabot {_metadata.GetBotName(part.MedabotId)} {FormatPartKind(part.Kind)}",
+                    AssetKind = SpriteAssetKind.PartCompositePreview,
+                    PrimaryId = part.Id,
+                    SecondaryId = componentIndex
+                });
+
+                medabotNode.Children.Add(partNode);
+            }
+
+            root.Children.Add(medabotNode);
+        }
+
+        return root;
+    }
+
     private static IEnumerable<SpriteBrowserNode> FilterSpriteNodes(IEnumerable<SpriteBrowserNode> nodes, string? filter)
     {
         if (string.IsNullOrWhiteSpace(filter))
@@ -1662,19 +1809,21 @@ public partial class MainWindow : Window
                 {
                     SpriteAssetKind.OverworldEventObject => BuildOverworldSpritePreviewState(GetCurrentOverworldSpriteAsset(node.PrimaryId)),
                     SpriteAssetKind.Portrait => BuildPortraitPreviewState(GetCurrentPortraitAsset(node.PrimaryId, node.SecondaryId)),
+                    SpriteAssetKind.BattleCompositePartComponent => BuildBattleCompositeComponentPreviewState(GetCurrentBattleCompositeComponentAsset(node.PrimaryId, node.SecondaryId)),
+                    SpriteAssetKind.PartCompositePreview => BuildPartCompositePreviewState(GetRequiredPartDefinition(node.PrimaryId)),
                     _ => throw new InvalidOperationException("Unsupported sprite asset kind.")
                 };
                 _spritePreviewCache[cacheKey] = preview;
             }
 
             SpritePreviewImage.Source = preview.Bitmap;
-            SpritePreviewImage.Width = preview.Bitmap.PixelWidth * _spriteEditorZoom;
-            SpritePreviewImage.Height = preview.Bitmap.PixelHeight * _spriteEditorZoom;
+            UpdateSpritePreviewLayout(preview.Bitmap.PixelWidth, preview.Bitmap.PixelHeight);
             SpriteSummaryLabel.Text = preview.Summary;
             SpritePaletteSummaryLabel.Text = preview.PaletteSummary;
             SpritePaletteItemsControl.ItemsSource = preview.Swatches;
             SpritePatchStatusLabel.Text = GetSpritePatchStatusText(node);
             UpdateSelectedPaletteSwatch();
+            UpdateSpritePaletteFamilyEditor(node);
             UpdateSpriteGridOverlay(preview.Bitmap.PixelWidth, preview.Bitmap.PixelHeight);
         }
         catch (Exception ex)
@@ -1709,6 +1858,39 @@ public partial class MainWindow : Window
                       $"Palette pointer entry: 0x{asset.PalettePointerOffset:X6} -> 0x{asset.PaletteOffset:X6}";
         var paletteSummary = $"Palette colors: {swatches.Count}  |  Format: GBA BGR555";
         return new SpritePreviewState(asset.CharacterId, bitmap, summary, paletteSummary, swatches);
+    }
+
+    private static SpritePreviewState BuildBattleCompositeComponentPreviewState(BattleCompositeSpriteComponentAsset asset)
+    {
+        var swatches = BuildPaletteSwatches(asset.Image.PaletteBytes);
+        var bitmap = CreateBitmapSource(asset.Image.PixelIndices, asset.Image.TileWidth, swatches);
+        var componentName = GetBattleCompositeComponentNames()[asset.ComponentIndex];
+        var summary = $"Battle composite Medabot {asset.MedabotId:D3} / {componentName}{Environment.NewLine}" +
+                      $"Image: {asset.Image.Width}x{asset.Image.Height}px{Environment.NewLine}" +
+                      $"Image pointer entry: 0x{asset.ImagePointerOffset:X6} -> 0x{asset.ImageOffset:X6}{Environment.NewLine}" +
+                      $"Palette family entry: 0x{asset.PalettePointerOffset:X6}  |  Family: {asset.PaletteFamily}  |  Palette bank: {asset.PaletteSelector}{Environment.NewLine}" +
+                      $"Palette data: 0x{asset.PaletteOffset:X6}";
+        var paletteSummary = $"Palette colors: {swatches.Count}  |  Component palette bank {asset.PaletteSelector}";
+        return new SpritePreviewState(asset.MedabotId, bitmap, summary, paletteSummary, swatches);
+    }
+
+    private SpritePreviewState BuildPartCompositePreviewState(PartDefinition part)
+    {
+        var session = _session ?? throw new InvalidOperationException("No ROM session is loaded.");
+        var asset = _imageAssetRepository.ReadLargePartDisplay(session.RomFile, part);
+        var finalBanks = GetFinalLargeDisplayPaletteBankMap(asset);
+        var summaryPalette = ResolveDisplayedLargeDisplayPalette(asset, finalBanks);
+        var summarySwatches = BuildPaletteSwatches(summaryPalette);
+        var bitmap = CreateLargePartDisplayBitmap(asset, part.Kind);
+        var summary = $"Part {part.Id:D3}  {_metadata.GetPartName(part.Id)}{Environment.NewLine}" +
+                      $"Kind: {FormatPartKind(part.Kind)}{Environment.NewLine}" +
+                      $"Medabot family: {part.MedabotId:D3}  {_metadata.GetBotName(part.MedabotId)}{Environment.NewLine}" +
+                      $"Large display: {bitmap.PixelWidth}x{bitmap.PixelHeight}px{Environment.NewLine}" +
+                      $"Root descriptor: {asset.RootDescriptorId:D2} @ 0x{asset.RootRecordOffset:X6}{Environment.NewLine}" +
+                      $"Pieces: {asset.Pieces.Count}{Environment.NewLine}" +
+                      $"First piece palette: 0x{asset.Pieces[0].PaletteOffset:X6}  |  Bank: {asset.Pieces[0].PaletteBank + 8}";
+        var paletteSummary = $"Palette colors: {summarySwatches.Count}  |  Large display uses staged OBJ palette banks from descriptor-selected pieces";
+        return new SpritePreviewState(part.Id, bitmap, summary, paletteSummary, summarySwatches);
     }
 
     private static IReadOnlyList<PaletteSwatchItem> BuildPaletteSwatches(byte[] paletteBytes)
@@ -1747,6 +1929,244 @@ public partial class MainWindow : Window
         return bitmap;
     }
 
+    private static BitmapSource CreateCompositeBattlePreviewBitmap(
+        BattleCompositeSpriteComponentAsset headBase,
+        BattleCompositeSpriteComponentAsset rightArmA,
+        BattleCompositeSpriteComponentAsset rightArmB,
+        BattleCompositeSpriteComponentAsset leftArmA,
+        BattleCompositeSpriteComponentAsset leftArmB,
+        BattleCompositeSpriteComponentAsset legs,
+        IReadOnlyList<PaletteSwatchItem> swatches)
+    {
+        var rightArm = CombineCompositeComponentsVertically(rightArmA.Image, rightArmB.Image);
+        var leftArm = CombineCompositeComponentsVertically(leftArmA.Image, leftArmB.Image);
+
+        var baseX = Math.Max(rightArm.Width + 8, 8);
+        var baseY = 0;
+        var armY = 8;
+        var legsY = 4 + Math.Max(headBase.Image.Height - 8, 0);
+        var rightArmX = Math.Max(0, baseX - 8);
+        var leftArmX = baseX + 8;
+        var legsX = baseX;
+
+        var width = Math.Max(
+            Math.Max(baseX + headBase.Image.Width, rightArmX + rightArm.Width),
+            Math.Max(leftArmX + leftArm.Width, legsX + legs.Image.Width));
+        var height = Math.Max(
+            Math.Max(baseY + headBase.Image.Height, armY + Math.Max(rightArm.Height, leftArm.Height)),
+            legsY + legs.Image.Height);
+
+        var pixels = new byte[width * height * 4];
+        BlitIndexedImage(headBase.Image, width, height, baseX, baseY, swatches, pixels);
+        BlitIndexedImage(rightArm, width, height, rightArmX, armY, swatches, pixels);
+        BlitIndexedImage(leftArm, width, height, leftArmX, armY, swatches, pixels);
+        BlitIndexedImage(legs.Image, width, height, legsX, legsY, swatches, pixels);
+
+        var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, width * 4);
+        bitmap.Freeze();
+        return bitmap;
+    }
+
+    private static BitmapSource CreateLargePartDisplayBitmap(
+        LargePartDisplayAsset asset,
+        PartKind kind)
+    {
+        if (asset.Pieces.Count == 0)
+        {
+            return CreateBitmapSource([], 1, []);
+        }
+
+        var renderedPieces = BuildRenderedLargeDisplayPieces(asset, kind);
+
+        var minX = renderedPieces.Min(entry => entry.X);
+        var minY = renderedPieces.Min(entry => entry.Y);
+        var maxX = renderedPieces.Max(entry => entry.X + entry.Image.Width);
+        var maxY = renderedPieces.Max(entry => entry.Y + entry.Image.Height);
+        var width = Math.Max(1, maxX - minX);
+        var height = Math.Max(1, maxY - minY);
+        var pixels = new byte[width * height * 4];
+        var finalBanks = GetFinalLargeDisplayPaletteBankMap(asset);
+        var fallbackPalette = ResolveDisplayedLargeDisplayPalette(asset, finalBanks);
+        byte[] currentPalette = fallbackPalette;
+
+        foreach (var entry in renderedPieces)
+        {
+            var piece = entry.Piece;
+            var bank = piece.PaletteBank + 8;
+            var palette = ResolveEffectiveLargeDisplayPiecePalette(piece, bank, finalBanks, currentPalette, fallbackPalette);
+            if (!IsAllZeroPalette(palette))
+            {
+                currentPalette = palette;
+            }
+
+            var pieceSwatches = BuildPaletteSwatches(palette);
+            BlitIndexedImage(entry.Image, width, height, entry.X - minX, entry.Y - minY, pieceSwatches, pixels);
+        }
+
+        var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, width * 4);
+        bitmap.Freeze();
+        return bitmap;
+    }
+
+    private static IReadOnlyList<(LargePartDisplayPieceAsset Piece, IndexedImage Image, int X, int Y)> BuildRenderedLargeDisplayPieces(
+        LargePartDisplayAsset asset,
+        PartKind kind)
+    {
+        var rendered = asset.Pieces
+            .Select(piece => (Piece: piece, Image: GetRenderedLargeDisplayPieceImage(piece, kind, asset.Pieces.Count), X: piece.X, Y: piece.Y))
+            .ToArray();
+
+        if (kind is not PartKind.RightArm and not PartKind.LeftArm)
+        {
+            return rendered;
+        }
+
+        if (asset.Pieces.Count <= 1)
+        {
+            return rendered;
+        }
+
+        var ordered = rendered
+            .OrderBy(entry => entry.Piece.X)
+            .Select((entry, index) => (entry.Piece, entry.Image, X: 0, Y: index * entry.Image.Height))
+            .ToArray();
+        return ordered;
+    }
+
+    private static Dictionary<int, byte[]> GetFinalLargeDisplayPaletteBankMap(LargePartDisplayAsset asset)
+    {
+        var banks = asset.InitialPaletteBanks
+            .Where(pair => !IsAllZeroPalette(pair.Value))
+            .ToDictionary(pair => pair.Key, pair => pair.Value);
+        foreach (var piece in asset.Pieces)
+        {
+            if (piece.PaletteBytes.Length != 0)
+            {
+                banks[piece.PaletteBank + 8] = piece.PaletteBytes;
+            }
+        }
+
+        return banks;
+    }
+
+    private static byte[] ResolveEffectiveLargeDisplayPiecePalette(
+        LargePartDisplayPieceAsset piece,
+        int bank,
+        IReadOnlyDictionary<int, byte[]> finalBanks,
+        byte[] currentPalette,
+        byte[] fallbackPalette)
+    {
+        if (piece.PaletteBytes.Length != 0 && !IsAllZeroPalette(piece.PaletteBytes))
+        {
+            return piece.PaletteBytes;
+        }
+
+        if (finalBanks.TryGetValue(bank, out var bankPalette) && !IsAllZeroPalette(bankPalette))
+        {
+            return bankPalette;
+        }
+
+        if (!IsAllZeroPalette(currentPalette))
+        {
+            return currentPalette;
+        }
+
+        return fallbackPalette;
+    }
+
+    private static byte[] ResolveDisplayedLargeDisplayPalette(
+        LargePartDisplayAsset asset,
+        IReadOnlyDictionary<int, byte[]> finalBanks)
+    {
+        var uploadedPalette = asset.Pieces
+            .Select(piece => piece.PaletteBytes)
+            .FirstOrDefault(palette => palette.Length != 0 && !IsAllZeroPalette(palette));
+        if (uploadedPalette is not null)
+        {
+            return uploadedPalette;
+        }
+
+        var stagedPalette = finalBanks.Values.FirstOrDefault(palette => !IsAllZeroPalette(palette));
+        if (stagedPalette is not null)
+        {
+            return stagedPalette;
+        }
+
+        return new byte[ImageAssetRepository.PaletteSize];
+    }
+
+    private static bool IsAllZeroPalette(IReadOnlyList<byte> palette)
+    {
+        foreach (var value in palette)
+        {
+            if (value != 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static IndexedImage GetRenderedLargeDisplayPieceImage(
+        LargePartDisplayPieceAsset piece,
+        PartKind kind,
+        int pieceCount)
+    {
+        if (kind is not PartKind.RightArm and not PartKind.LeftArm)
+        {
+            return piece.Image;
+        }
+
+        var totalTiles = Math.Max(1, piece.LoadedTileCount);
+        var tileWidth = 4;
+        var tileHeight = Math.Max(1, (int)Math.Ceiling(totalTiles / (double)tileWidth));
+        var effectivePixels = piece.Image.PixelIndices.Take(totalTiles * 64).ToArray();
+        return new IndexedImage(tileWidth, tileHeight, effectivePixels, piece.Image.PaletteBytes);
+    }
+
+    private static IndexedImage CombineCompositeComponentsVertically(IndexedImage top, IndexedImage bottom)
+    {
+        var tileWidth = Math.Max(top.TileWidth, bottom.TileWidth);
+        var tileHeight = top.TileHeight + bottom.TileHeight;
+        var pixels = new byte[tileWidth * tileHeight * 64];
+
+        for (var y = 0; y < top.Height; y++)
+        {
+            for (var x = 0; x < top.Width; x++)
+            {
+                var sourceIndex = GetTileOrderedPixelIndex(top, x, y);
+                var destIndex = GetTileOrderedPixelIndex(new IndexedImage(tileWidth, tileHeight, pixels, Array.Empty<byte>()), x, y);
+                pixels[destIndex] = top.PixelIndices[sourceIndex];
+            }
+        }
+
+        var offsetY = top.Height;
+        for (var y = 0; y < bottom.Height; y++)
+        {
+            for (var x = 0; x < bottom.Width; x++)
+            {
+                var sourceIndex = GetTileOrderedPixelIndex(bottom, x, y);
+                var destIndex = GetTileOrderedPixelIndex(new IndexedImage(tileWidth, tileHeight, pixels, Array.Empty<byte>()), x, y + offsetY);
+                pixels[destIndex] = bottom.PixelIndices[sourceIndex];
+            }
+        }
+
+        return new IndexedImage(tileWidth, tileHeight, pixels, top.PaletteBytes);
+    }
+
+    private static void BlitIndexedImage(IndexedImage image, int bitmapWidth, int bitmapHeight, int destX, int destY, IReadOnlyList<PaletteSwatchItem> swatches, byte[] output)
+    {
+        for (var tileY = 0; tileY < image.TileHeight; tileY++)
+        {
+            for (var tileX = 0; tileX < image.TileWidth; tileX++)
+            {
+                var tileIndex = (tileY * image.TileWidth) + tileX;
+                BlitTile(image.PixelIndices, tileIndex, bitmapWidth, bitmapHeight, destX + (tileX * 8), destY + (tileY * 8), swatches, output);
+            }
+        }
+    }
+
     private static void BlitTile(byte[] pixelIndices, int tileIndex, int bitmapWidth, int bitmapHeight, int destX, int destY, IReadOnlyList<PaletteSwatchItem> swatches, byte[] output)
     {
         var tileBase = tileIndex * 64;
@@ -1778,14 +2198,24 @@ public partial class MainWindow : Window
         }
     }
 
-    private static Color DecodeGbaColor(ushort rawColor)
+    private static WpfColor DecodeGbaColor(ushort rawColor)
     {
         static byte Expand5To8(int value) => (byte)((value << 3) | (value >> 2));
 
         var red = Expand5To8(rawColor & 0x1F);
         var green = Expand5To8((rawColor >> 5) & 0x1F);
         var blue = Expand5To8((rawColor >> 10) & 0x1F);
-        return Color.FromRgb(red, green, blue);
+        return WpfColor.FromRgb(red, green, blue);
+    }
+
+    private static ushort EncodeGbaColor(WpfColor color)
+    {
+        static ushort Compress8To5(byte value) => (ushort)(value >> 3);
+
+        var red = Compress8To5(color.R);
+        var green = Compress8To5(color.G);
+        var blue = Compress8To5(color.B);
+        return (ushort)(red | (green << 5) | (blue << 10));
     }
 
     private SpriteAsset GetCurrentOverworldSpriteAsset(int spriteId)
@@ -1818,6 +2248,60 @@ public partial class MainWindow : Window
         return _imageAssetRepository.ReadPortrait(_session.RomFile, characterId, portraitIndex);
     }
 
+    private BattleCompositeSpriteComponentAsset GetCurrentBattleCompositeComponentAsset(int medabotId, int componentIndex)
+    {
+        if (_editedBattleCompositeComponentAssets.TryGetValue((medabotId, componentIndex), out var edited))
+        {
+            return edited;
+        }
+
+        if (_battleCompositeComponentCache.TryGetValue((medabotId, componentIndex), out var cached))
+        {
+            return cached;
+        }
+
+        if (_session is null)
+        {
+            throw new InvalidOperationException("No ROM session is open.");
+        }
+
+        var asset = _imageAssetRepository.ReadBattleCompositeSpriteComponent(_session.RomFile, medabotId, componentIndex);
+        _battleCompositeComponentCache[(medabotId, componentIndex)] = asset;
+        return asset;
+    }
+
+    private BattleCompositeSpriteComponentAsset GetEditableBattleCompositeComponentAsset(int medabotId, int componentIndex)
+    {
+        if (_editedBattleCompositeComponentAssets.TryGetValue((medabotId, componentIndex), out var edited))
+        {
+            return edited;
+        }
+
+        var current = GetCurrentBattleCompositeComponentAsset(medabotId, componentIndex);
+        var clone = current with
+        {
+            Image = new IndexedImage(current.Image.TileWidth, current.Image.TileHeight, current.Image.PixelIndices.ToArray(), current.Image.PaletteBytes.ToArray())
+        };
+        _editedBattleCompositeComponentAssets[(medabotId, componentIndex)] = clone;
+        return clone;
+    }
+
+    private PartDefinition GetRequiredPartDefinition(int partId)
+    {
+        if (partId >= 0 && partId < _loadedParts.Count)
+        {
+            return _loadedParts[partId];
+        }
+
+        var part = _loadedParts.FirstOrDefault(candidate => candidate.Id == partId);
+        if (part is not null)
+        {
+            return part;
+        }
+
+        throw new InvalidOperationException($"Could not resolve part definition {partId}.");
+    }
+
     private string GetSpritePatchStatusText(SpriteBrowserNode node)
     {
         return node.AssetKind switch
@@ -1826,7 +2310,60 @@ public partial class MainWindow : Window
                 => "Status: imported changes are staged in memory. Use Apply Changes to write them into the ROM session.",
             SpriteAssetKind.Portrait when _editedPortraitAssets.ContainsKey((node.PrimaryId, node.SecondaryId))
                 => "Status: imported changes are staged in memory. Use Apply Changes to write them into the ROM session.",
+            SpriteAssetKind.BattleCompositePartComponent when _editedBattleCompositeComponentAssets.ContainsKey((node.PrimaryId, node.SecondaryId))
+                => "Status: staged Medabot component edits are in memory. Apply Changes writes the component image and its shared family palette into the ROM session.",
+            SpriteAssetKind.PartCompositePreview when _editedBattleCompositeComponentAssets.ContainsKey((GetRequiredPartDefinition(node.PrimaryId).MedabotId, node.SecondaryId))
+                => "Status: staged changes exist for this Medabot family. Large Display uses the descriptor-driven part-detail preview path; use Small Display to edit underlying component pixels.",
+            SpriteAssetKind.BattleCompositePartComponent
+                => "Status: editing a Medabot/component battle sprite family. Palette changes affect every part using that shared family palette.",
+            SpriteAssetKind.PartCompositePreview
+                => "Status: read-only large part-display preview for this part. Use Small Display to edit underlying component pixels.",
             _ => "Status: showing ROM data."
+        };
+    }
+
+    private void UpdateSpritePaletteFamilyEditor(SpriteBrowserNode node)
+    {
+        if (!IsCompositePaletteFamilyEditable(node))
+        {
+            _isUpdatingSpritePaletteFamilyUi = true;
+            SpritePaletteFamilyEditorPanel.Visibility = Visibility.Collapsed;
+            SpritePaletteFamilyComboBox.SelectedItem = null;
+            SpritePaletteFamilyHintLabel.Text = string.Empty;
+            _isUpdatingSpritePaletteFamilyUi = false;
+            return;
+        }
+
+        var asset = GetSelectedBattleCompositeComponentAsset(node);
+        _isUpdatingSpritePaletteFamilyUi = true;
+        SpritePaletteFamilyEditorPanel.Visibility = Visibility.Visible;
+        SpritePaletteFamilyComboBox.SelectedValue = asset.PaletteFamily;
+        SpritePaletteFamilyHintLabel.Text = "Part sprites use shared family palettes. Changing the family changes which shared palette row this component uses in-game.";
+        _isUpdatingSpritePaletteFamilyUi = false;
+    }
+
+    private bool IsCompositePaletteFamilyEditable(SpriteBrowserNode node)
+    {
+        return node.AssetKind is SpriteAssetKind.BattleCompositePartComponent;
+    }
+
+    private BattleCompositeSpriteComponentAsset GetSelectedBattleCompositeComponentAsset(SpriteBrowserNode node)
+    {
+        return node.AssetKind switch
+        {
+            SpriteAssetKind.BattleCompositePartComponent => GetCurrentBattleCompositeComponentAsset(node.PrimaryId, node.SecondaryId),
+            SpriteAssetKind.PartCompositePreview => GetCurrentBattleCompositeComponentAsset(GetRequiredPartDefinition(node.PrimaryId).MedabotId, node.SecondaryId),
+            _ => throw new InvalidOperationException("The selected sprite node does not use a composite component asset.")
+        };
+    }
+
+    private BattleCompositeSpriteComponentAsset GetEditableSelectedBattleCompositeComponentAsset(SpriteBrowserNode node)
+    {
+        return node.AssetKind switch
+        {
+            SpriteAssetKind.BattleCompositePartComponent => GetEditableBattleCompositeComponentAsset(node.PrimaryId, node.SecondaryId),
+            SpriteAssetKind.PartCompositePreview => GetEditableBattleCompositeComponentAsset(GetRequiredPartDefinition(node.PrimaryId).MedabotId, node.SecondaryId),
+            _ => throw new InvalidOperationException("The selected sprite node does not use an editable composite component asset.")
         };
     }
 
@@ -1845,6 +2382,26 @@ public partial class MainWindow : Window
         SpritePaletteItemsControl.Items.Refresh();
     }
 
+    private void RefreshSpritePaletteFamilyOptions()
+    {
+        _spritePaletteFamilyOptions.Clear();
+        for (var index = 0; index < MedabotsRomSchema.CompositeBattleSpritePaletteCount; index++)
+        {
+            var paletteBytes = _session is null
+                ? new byte[ImageAssetRepository.PaletteSize]
+                : _imageAssetRepository.ReadBattleCompositePaletteBytesForFamily(_session.RomFile, (byte)index);
+            _spritePaletteFamilyOptions.Add(new SpritePaletteFamilyOption
+            {
+                Value = (byte)index,
+                DisplayName = $"Family {index}",
+                PreviewSwatches = BuildPaletteSwatches(paletteBytes).Take(4).ToArray()
+            });
+        }
+
+        SpritePaletteFamilyComboBox.ItemsSource = null;
+        SpritePaletteFamilyComboBox.ItemsSource = _spritePaletteFamilyOptions;
+    }
+
     private void SetSpriteEditorTool(SpriteEditorTool tool)
     {
         _selectedSpriteEditorTool = tool;
@@ -1853,37 +2410,113 @@ public partial class MainWindow : Window
         SpriteToolPickerButton.IsChecked = tool == SpriteEditorTool.Picker;
     }
 
-    private void OnSpriteZoomChanged(object? sender, RoutedPropertyChangedEventArgs<double> e)
+    private void SetSpriteZoom(int nextZoom, ScrollViewer? scrollViewer = null, WpfPoint? pointer = null)
     {
-        _spriteEditorZoom = Math.Max(1, (int)Math.Round(e.NewValue));
+        var clampedZoom = Math.Clamp(nextZoom, 1, 24);
+        if (clampedZoom == _spriteEditorZoom && SpritePreviewImage?.Source is BitmapSource currentBitmap)
+        {
+            UpdateSpritePreviewLayout(currentBitmap.PixelWidth, currentBitmap.PixelHeight);
+            UpdateSpriteGridOverlay(currentBitmap.PixelWidth, currentBitmap.PixelHeight);
+            return;
+        }
+
+        var oldZoom = _spriteEditorZoom;
+        var anchorSourceX = 0d;
+        var anchorSourceY = 0d;
+        var shouldRecenterToPointer = scrollViewer is not null && pointer.HasValue && SpritePreviewImage?.Source is BitmapSource;
+
+        if (shouldRecenterToPointer)
+        {
+            var anchorPoint = pointer.GetValueOrDefault();
+            var image = SpritePreviewImage!;
+            anchorSourceX = (scrollViewer!.HorizontalOffset + anchorPoint.X - image.Margin.Left) / Math.Max(1, oldZoom);
+            anchorSourceY = (scrollViewer.VerticalOffset + anchorPoint.Y - image.Margin.Top) / Math.Max(1, oldZoom);
+        }
+
+        _spriteEditorZoom = clampedZoom;
         if (SpriteZoomValueLabel is not null)
         {
-            SpriteZoomValueLabel.Text = $"{_spriteEditorZoom}x";
+            SpriteZoomValueLabel.Text = $"Zoom {_spriteEditorZoom}x";
         }
 
         if (SpritePreviewImage is not null && SpritePreviewImage.Source is BitmapSource bitmap)
         {
-            SpritePreviewImage.Width = bitmap.PixelWidth * _spriteEditorZoom;
-            SpritePreviewImage.Height = bitmap.PixelHeight * _spriteEditorZoom;
+            UpdateSpritePreviewLayout(bitmap.PixelWidth, bitmap.PixelHeight);
+            UpdateSpriteGridOverlay(bitmap.PixelWidth, bitmap.PixelHeight);
+
+            if (shouldRecenterToPointer)
+            {
+                var anchorPoint = pointer.GetValueOrDefault();
+                var targetHorizontalOffset = (SpritePreviewImage.Margin.Left + (anchorSourceX * _spriteEditorZoom)) - anchorPoint.X;
+                var targetVerticalOffset = (SpritePreviewImage.Margin.Top + (anchorSourceY * _spriteEditorZoom)) - anchorPoint.Y;
+                scrollViewer!.ScrollToHorizontalOffset(Math.Max(0, targetHorizontalOffset));
+                scrollViewer.ScrollToVerticalOffset(Math.Max(0, targetVerticalOffset));
+            }
+        }
+    }
+
+    private void OnSpritePreviewViewportSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (SpritePreviewImage?.Source is BitmapSource bitmap)
+        {
+            UpdateSpritePreviewLayout(bitmap.PixelWidth, bitmap.PixelHeight);
             UpdateSpriteGridOverlay(bitmap.PixelWidth, bitmap.PixelHeight);
         }
     }
 
     private void OnSpritePreviewMouseWheel(object? sender, MouseWheelEventArgs e)
     {
-        if (SpriteZoomSlider is null)
+        if (sender is not ScrollViewer scrollViewer)
         {
             return;
         }
 
         var delta = e.Delta > 0 ? 1 : -1;
-        var nextValue = Math.Clamp(SpriteZoomSlider.Value + delta, SpriteZoomSlider.Minimum, SpriteZoomSlider.Maximum);
-        if (Math.Abs(nextValue - SpriteZoomSlider.Value) < double.Epsilon)
+        SetSpriteZoom(_spriteEditorZoom + delta, scrollViewer, e.GetPosition(scrollViewer));
+        e.Handled = true;
+    }
+
+    private void OnSpritePreviewScrollViewerMouseDown(object? sender, MouseButtonEventArgs e)
+    {
+        if (sender is not ScrollViewer scrollViewer || e.ChangedButton != MouseButton.Middle)
         {
             return;
         }
 
-        SpriteZoomSlider.Value = nextValue;
+        _isPanningSpritePreview = true;
+        _spritePanStartPoint = e.GetPosition(scrollViewer);
+        _spritePanStartHorizontalOffset = scrollViewer.HorizontalOffset;
+        _spritePanStartVerticalOffset = scrollViewer.VerticalOffset;
+        scrollViewer.Cursor = WpfCursors.SizeAll;
+        scrollViewer.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void OnSpritePreviewScrollViewerMouseMove(object? sender, WpfMouseEventArgs e)
+    {
+        if (!_isPanningSpritePreview || sender is not ScrollViewer scrollViewer)
+        {
+            return;
+        }
+
+        var point = e.GetPosition(scrollViewer);
+        var deltaX = point.X - _spritePanStartPoint.X;
+        var deltaY = point.Y - _spritePanStartPoint.Y;
+        scrollViewer.ScrollToHorizontalOffset(Math.Max(0, _spritePanStartHorizontalOffset - deltaX));
+        scrollViewer.ScrollToVerticalOffset(Math.Max(0, _spritePanStartVerticalOffset - deltaY));
+        e.Handled = true;
+    }
+
+    private void OnSpritePreviewScrollViewerMouseUp(object? sender, MouseButtonEventArgs e)
+    {
+        if (!_isPanningSpritePreview || sender is not ScrollViewer scrollViewer || e.ChangedButton != MouseButton.Middle)
+        {
+            return;
+        }
+
+        _isPanningSpritePreview = false;
+        scrollViewer.Cursor = WpfCursors.Arrow;
+        scrollViewer.ReleaseMouseCapture();
         e.Handled = true;
     }
 
@@ -1893,13 +2526,135 @@ public partial class MainWindow : Window
 
     private void OnSpritePaletteSwatchClicked(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Button button || button.Tag is not int index)
+        if (sender is not WpfButton button || button.Tag is not int index)
         {
             return;
         }
 
         _selectedPaletteIndex = index;
         UpdateSelectedPaletteSwatch();
+    }
+
+    private void OnSpritePaletteSwatchRightButtonDown(object? sender, MouseButtonEventArgs e)
+    {
+        if (sender is not WpfButton button || button.Tag is not int index)
+        {
+            return;
+        }
+
+        _selectedPaletteIndex = index;
+        UpdateSelectedPaletteSwatch();
+    }
+
+    private void OnSpritePaletteFamilySelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isUpdatingSpritePaletteFamilyUi || _selectedSpriteNode is null || _session is null || !IsCompositePaletteFamilyEditable(_selectedSpriteNode))
+        {
+            return;
+        }
+
+        if (SpritePaletteFamilyComboBox.SelectedValue is not byte family)
+        {
+            return;
+        }
+
+        var asset = GetEditableSelectedBattleCompositeComponentAsset(_selectedSpriteNode);
+        if (asset.PaletteFamily == family)
+        {
+            return;
+        }
+
+        PushUndoSnapshot(GetSelectedSpriteHistoryKey(), asset.Image);
+        var paletteBytes = _imageAssetRepository.ReadBattleCompositePaletteBytesForFamily(_session.RomFile, family);
+        var updated = asset with
+        {
+            PaletteFamily = family,
+            PaletteOffset = MedabotsRomSchema.PartSelectionComponentPaletteSetOffset + (family * ImageAssetRepository.PaletteSize),
+            PaletteSelector = (byte)(family + 4),
+            Image = asset.Image with { PaletteBytes = paletteBytes }
+        };
+        _editedBattleCompositeComponentAssets[(updated.MedabotId, updated.ComponentIndex)] = updated;
+        _hasCapturedUndoForCurrentStroke = false;
+        InvalidateSelectedSpritePreview();
+        SpritePatchStatusLabel.Text = $"Status: staged palette family {family} for this Medabot component. Apply Changes will patch the family selector byte in the ROM.";
+    }
+
+    private async void OnEditPaletteColorMenuClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is WpfMenuItem menuItem && menuItem.CommandParameter is int index)
+        {
+            _selectedPaletteIndex = index;
+            UpdateSelectedPaletteSwatch();
+        }
+
+        await EditSelectedPaletteColorAsync();
+    }
+
+    private async Task EditSelectedPaletteColorAsync()
+    {
+        if (_selectedSpriteNode is null || !_selectedSpriteNode.IsAsset)
+        {
+            await DisplayAlertAsync("No Asset Selected", "Select a sprite, portrait, Medabot composite sprite, or individual part preview before editing palette colors.", "OK");
+            return;
+        }
+
+        try
+        {
+            switch (_selectedSpriteNode.AssetKind)
+            {
+                case SpriteAssetKind.OverworldEventObject:
+                    EditPaletteColor(GetEditableOverworldSpriteAsset(_selectedSpriteNode.PrimaryId).Image);
+                    break;
+                case SpriteAssetKind.Portrait:
+                    EditPaletteColor(GetEditablePortraitAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId).Image);
+                    break;
+                case SpriteAssetKind.BattleCompositePartComponent:
+                    await DisplayAlertAsync("Use Palette Family", "Part sprites use shared family palettes. Change the Palette Family selector instead of editing palette colors directly.", "OK");
+                    return;
+                case SpriteAssetKind.PartCompositePreview:
+                    await DisplayAlertAsync("Large Display Palette", "Large Display uses descriptor-driven per-piece palettes. Palette family editing is only available on the corresponding Small Display component.", "OK");
+                    return;
+                default:
+                    return;
+            }
+
+            _hasCapturedUndoForCurrentStroke = false;
+            InvalidateSelectedSpritePreview();
+            SpritePatchStatusLabel.Text = $"Status: updated palette color {_selectedPaletteIndex:X2} for the staged asset.";
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Palette Edit Failed", ex.Message, "OK");
+        }
+    }
+
+    private void EditPaletteColor(IndexedImage image)
+    {
+        var paletteOffset = _selectedPaletteIndex * 2;
+        if (paletteOffset < 0 || paletteOffset + 1 >= image.PaletteBytes.Length)
+        {
+            throw new InvalidOperationException("The selected palette index is out of range.");
+        }
+
+        var originalRaw = (ushort)(image.PaletteBytes[paletteOffset] | (image.PaletteBytes[paletteOffset + 1] << 8));
+        var originalColor = DecodeGbaColor(originalRaw);
+
+        using var dialog = new Forms.ColorDialog
+        {
+            AllowFullOpen = true,
+            FullOpen = true,
+            Color = System.Drawing.Color.FromArgb(originalColor.R, originalColor.G, originalColor.B)
+        };
+
+        if (dialog.ShowDialog() != Forms.DialogResult.OK)
+        {
+            return;
+        }
+
+        PushUndoSnapshot(GetSelectedSpriteHistoryKey(), image);
+        var encoded = EncodeGbaColor(WpfColor.FromRgb(dialog.Color.R, dialog.Color.G, dialog.Color.B));
+        image.PaletteBytes[paletteOffset] = (byte)(encoded & 0xFF);
+        image.PaletteBytes[paletteOffset + 1] = (byte)(encoded >> 8);
     }
 
     private void UpdateSpriteGridOverlay(int pixelWidth, int pixelHeight)
@@ -1913,7 +2668,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var gridBrush = new SolidColorBrush(Color.FromArgb(80, 107, 114, 128));
+        var gridBrush = new SolidColorBrush(WpfColor.FromArgb(80, 107, 114, 128));
         for (var x = 0; x <= pixelWidth; x++)
         {
             SpriteGridCanvas.Children.Add(new System.Windows.Shapes.Line
@@ -1941,6 +2696,31 @@ public partial class MainWindow : Window
         }
     }
 
+    private void UpdateSpritePreviewLayout(int pixelWidth, int pixelHeight)
+    {
+        var scaledWidth = pixelWidth * _spriteEditorZoom;
+        var scaledHeight = pixelHeight * _spriteEditorZoom;
+
+        SpritePreviewImage.Width = scaledWidth;
+        SpritePreviewImage.Height = scaledHeight;
+        SpriteGridCanvas.Width = scaledWidth;
+        SpriteGridCanvas.Height = scaledHeight;
+
+        var viewportWidth = Math.Max(0d, SpritePreviewScrollViewer?.ViewportWidth ?? 0d);
+        var viewportHeight = Math.Max(0d, SpritePreviewScrollViewer?.ViewportHeight ?? 0d);
+
+        var surfaceWidth = Math.Max(scaledWidth + (SpriteViewportPadding * 2), viewportWidth + (SpriteViewportPadding * 2));
+        var surfaceHeight = Math.Max(scaledHeight + (SpriteViewportPadding * 2), viewportHeight + (SpriteViewportPadding * 2));
+
+        var offsetX = Math.Max(SpriteViewportPadding, (surfaceWidth - scaledWidth) / 2d);
+        var offsetY = Math.Max(SpriteViewportPadding, (surfaceHeight - scaledHeight) / 2d);
+
+        SpritePreviewSurface.Width = surfaceWidth;
+        SpritePreviewSurface.Height = surfaceHeight;
+        SpritePreviewImage.Margin = new Thickness(offsetX, offsetY, 0, 0);
+        SpriteGridCanvas.Margin = new Thickness(offsetX, offsetY, 0, 0);
+    }
+
     private void OnSpritePreviewMouseLeftButtonDown(object? sender, MouseButtonEventArgs e)
     {
         if (_selectedSpriteNode is null || SpritePreviewImage.Source is not BitmapSource)
@@ -1954,7 +2734,7 @@ public partial class MainWindow : Window
         ApplySpriteToolAtPoint(e.GetPosition(SpritePreviewImage));
     }
 
-    private void OnSpritePreviewMouseMove(object? sender, MouseEventArgs e)
+    private void OnSpritePreviewMouseMove(object? sender, WpfMouseEventArgs e)
     {
         if (!_isPaintingSprite || e.LeftButton != MouseButtonState.Pressed)
         {
@@ -1971,7 +2751,7 @@ public partial class MainWindow : Window
         SpritePreviewImage.ReleaseMouseCapture();
     }
 
-    private void ApplySpriteToolAtPoint(Point point)
+    private void ApplySpriteToolAtPoint(WpfPoint point)
     {
         if (_selectedSpriteNode is null || !TryResolveSpritePixel(point, out var pixelX, out var pixelY))
         {
@@ -1992,6 +2772,14 @@ public partial class MainWindow : Window
                 ApplyToolToIndexedImage(asset.Image, pixelX, pixelY);
                 break;
             }
+            case SpriteAssetKind.BattleCompositePartComponent:
+            {
+                var asset = GetEditableBattleCompositeComponentAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId);
+                ApplyToolToIndexedImage(asset.Image, pixelX, pixelY);
+                break;
+            }
+            case SpriteAssetKind.PartCompositePreview:
+                return;
             default:
                 return;
         }
@@ -1999,7 +2787,7 @@ public partial class MainWindow : Window
         InvalidateSelectedSpritePreview();
     }
 
-    private bool TryResolveSpritePixel(Point point, out int pixelX, out int pixelY)
+    private bool TryResolveSpritePixel(WpfPoint point, out int pixelX, out int pixelY)
     {
         pixelX = (int)(point.X / _spriteEditorZoom);
         pixelY = (int)(point.Y / _spriteEditorZoom);
@@ -2012,6 +2800,8 @@ public partial class MainWindow : Window
         {
             SpriteAssetKind.OverworldEventObject => GetCurrentOverworldSpriteAsset(_selectedSpriteNode.PrimaryId).Image,
             SpriteAssetKind.Portrait => GetCurrentPortraitAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId).Image,
+            SpriteAssetKind.BattleCompositePartComponent => GetCurrentBattleCompositeComponentAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId).Image,
+            SpriteAssetKind.PartCompositePreview => GetCurrentBattleCompositeComponentAsset(GetRequiredPartDefinition(_selectedSpriteNode.PrimaryId).MedabotId, _selectedSpriteNode.SecondaryId).Image,
             _ => null
         };
         if (image is null)
@@ -2067,14 +2857,14 @@ public partial class MainWindow : Window
             case SpriteEditorTool.Pencil:
                 if (image.PixelIndices[pixelIndex] != (byte)_selectedPaletteIndex)
                 {
-                    CaptureUndoSnapshotForCurrentStroke(image.PixelIndices);
+                    CaptureUndoSnapshotForCurrentStroke(image);
                     image.PixelIndices[pixelIndex] = (byte)_selectedPaletteIndex;
                 }
                 break;
             case SpriteEditorTool.Eraser:
                 if (image.PixelIndices[pixelIndex] != 0)
                 {
-                    CaptureUndoSnapshotForCurrentStroke(image.PixelIndices);
+                    CaptureUndoSnapshotForCurrentStroke(image);
                     image.PixelIndices[pixelIndex] = 0;
                 }
                 break;
@@ -2085,14 +2875,14 @@ public partial class MainWindow : Window
         }
     }
 
-    private void CaptureUndoSnapshotForCurrentStroke(byte[] pixels)
+    private void CaptureUndoSnapshotForCurrentStroke(IndexedImage image)
     {
         if (_hasCapturedUndoForCurrentStroke)
         {
             return;
         }
 
-        PushUndoSnapshot(GetSelectedSpriteHistoryKey(), pixels);
+        PushUndoSnapshot(GetSelectedSpriteHistoryKey(), image);
         _hasCapturedUndoForCurrentStroke = true;
     }
 
@@ -2139,7 +2929,7 @@ public partial class MainWindow : Window
         return $"{(int)_selectedSpriteNode.AssetKind}:{_selectedSpriteNode.PrimaryId}:{_selectedSpriteNode.SecondaryId}";
     }
 
-    private void PushUndoSnapshot(string historyKey, byte[] pixels)
+    private void PushUndoSnapshot(string historyKey, IndexedImage image)
     {
         if (!_spriteEditHistories.TryGetValue(historyKey, out var history))
         {
@@ -2147,7 +2937,7 @@ public partial class MainWindow : Window
             _spriteEditHistories[historyKey] = history;
         }
 
-        history.Push(pixels);
+        history.Push(image.PixelIndices, image.PaletteBytes);
     }
 
     private async void OnUndoSpriteEditClicked(object? sender, RoutedEventArgs e)
@@ -2165,15 +2955,37 @@ public partial class MainWindow : Window
             return;
         }
 
-        var pixels = history.Pop();
+        var snapshot = history.Pop();
         switch (_selectedSpriteNode.AssetKind)
         {
             case SpriteAssetKind.OverworldEventObject:
-                Array.Copy(pixels, GetEditableOverworldSpriteAsset(_selectedSpriteNode.PrimaryId).Image.PixelIndices, pixels.Length);
+            {
+                var image = GetEditableOverworldSpriteAsset(_selectedSpriteNode.PrimaryId).Image;
+                Array.Copy(snapshot.Pixels, image.PixelIndices, snapshot.Pixels.Length);
+                Array.Copy(snapshot.Palette, image.PaletteBytes, snapshot.Palette.Length);
                 break;
+            }
             case SpriteAssetKind.Portrait:
-                Array.Copy(pixels, GetEditablePortraitAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId).Image.PixelIndices, pixels.Length);
+            {
+                var image = GetEditablePortraitAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId).Image;
+                Array.Copy(snapshot.Pixels, image.PixelIndices, snapshot.Pixels.Length);
+                Array.Copy(snapshot.Palette, image.PaletteBytes, snapshot.Palette.Length);
                 break;
+            }
+            case SpriteAssetKind.BattleCompositePartComponent:
+            {
+                var image = GetEditableBattleCompositeComponentAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId).Image;
+                Array.Copy(snapshot.Pixels, image.PixelIndices, snapshot.Pixels.Length);
+                Array.Copy(snapshot.Palette, image.PaletteBytes, snapshot.Palette.Length);
+                break;
+            }
+            case SpriteAssetKind.PartCompositePreview:
+            {
+                var image = GetEditableBattleCompositeComponentAsset(GetRequiredPartDefinition(_selectedSpriteNode.PrimaryId).MedabotId, _selectedSpriteNode.SecondaryId).Image;
+                Array.Copy(snapshot.Pixels, image.PixelIndices, snapshot.Pixels.Length);
+                Array.Copy(snapshot.Palette, image.PaletteBytes, snapshot.Palette.Length);
+                break;
+            }
         }
 
         _hasCapturedUndoForCurrentStroke = false;
@@ -2197,6 +3009,12 @@ public partial class MainWindow : Window
             case SpriteAssetKind.Portrait:
                 _editedPortraitAssets.Remove((_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId));
                 break;
+            case SpriteAssetKind.BattleCompositePartComponent:
+                _editedBattleCompositeComponentAssets.Remove((_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId));
+                break;
+            case SpriteAssetKind.PartCompositePreview:
+                _editedBattleCompositeComponentAssets.Remove((GetRequiredPartDefinition(_selectedSpriteNode.PrimaryId).MedabotId, _selectedSpriteNode.SecondaryId));
+                break;
         }
 
         _spriteEditHistories.Remove(GetSelectedSpriteHistoryKey());
@@ -2209,6 +3027,8 @@ public partial class MainWindow : Window
     {
         _editedOverworldSpriteAssets.Clear();
         _editedPortraitAssets.Clear();
+        _editedBattleCompositeComponentAssets.Clear();
+        _battleCompositeComponentCache.Clear();
         _spriteEditHistories.Clear();
         _spritePreviewCache.Clear();
         _hasCapturedUndoForCurrentStroke = false;
@@ -2237,6 +3057,8 @@ public partial class MainWindow : Window
         {
             SpriteAssetKind.OverworldEventObject => $"sprite_{_selectedSpriteNode.PrimaryId:D3}.png",
             SpriteAssetKind.Portrait => $"portrait_{_selectedSpriteNode.PrimaryId:D3}_{_selectedSpriteNode.SecondaryId}.png",
+            SpriteAssetKind.BattleCompositePartComponent => $"battle_composite_medabot_{_selectedSpriteNode.PrimaryId:D3}_{_selectedSpriteNode.SecondaryId}.png",
+            SpriteAssetKind.PartCompositePreview => $"part_{_selectedSpriteNode.PrimaryId:D3}_{_selectedSpriteNode.SecondaryId}.png",
             _ => "asset.png"
         };
         var path = PickSaveFilePath("Export sprite PNG", "PNG image (*.png)|*.png", title);
@@ -2273,7 +3095,7 @@ public partial class MainWindow : Window
                 case SpriteAssetKind.OverworldEventObject:
                 {
                     var current = GetEditableOverworldSpriteAsset(_selectedSpriteNode.PrimaryId);
-                    PushUndoSnapshot(GetSelectedSpriteHistoryKey(), current.Image.PixelIndices);
+                    PushUndoSnapshot(GetSelectedSpriteHistoryKey(), current.Image);
                     var updated = current with { Image = ImportIndexedImageFromPng(path, current.Image) };
                     _editedOverworldSpriteAssets[_selectedSpriteNode.PrimaryId] = updated;
                     break;
@@ -2281,11 +3103,22 @@ public partial class MainWindow : Window
                 case SpriteAssetKind.Portrait:
                 {
                     var current = GetEditablePortraitAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId);
-                    PushUndoSnapshot(GetSelectedSpriteHistoryKey(), current.Image.PixelIndices);
+                    PushUndoSnapshot(GetSelectedSpriteHistoryKey(), current.Image);
                     var updated = current with { Image = ImportIndexedImageFromPng(path, current.Image) };
                     _editedPortraitAssets[(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId)] = updated;
                     break;
                 }
+                case SpriteAssetKind.BattleCompositePartComponent:
+                {
+                    var current = GetEditableBattleCompositeComponentAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId);
+                    PushUndoSnapshot(GetSelectedSpriteHistoryKey(), current.Image);
+                    var updated = current with { Image = ImportIndexedImageFromPng(path, current.Image) };
+                    _editedBattleCompositeComponentAssets[(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId)] = updated;
+                    break;
+                }
+                case SpriteAssetKind.PartCompositePreview:
+                    await DisplayAlertAsync("Use Small Display", "Large Display uses the descriptor-driven part-detail preview. Import PNG on the corresponding Small Display node to edit the underlying sprite art.", "OK");
+                    return;
             }
 
             _hasCapturedUndoForCurrentStroke = false;
@@ -2327,6 +3160,30 @@ public partial class MainWindow : Window
                         _spriteEditHistories.Remove(GetSelectedSpriteHistoryKey());
                     }
                     break;
+                case SpriteAssetKind.BattleCompositePartComponent:
+                {
+                    var componentKey = (_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId);
+                    if (_editedBattleCompositeComponentAssets.TryGetValue(componentKey, out var component))
+                    {
+                        _imageAssetPatcher.ApplyBattleCompositeSpriteComponentSmart(_session, component);
+                        _editedBattleCompositeComponentAssets.Remove(componentKey);
+                        _battleCompositeComponentCache.Remove(componentKey);
+                        _spriteEditHistories.Remove(GetSelectedSpriteHistoryKey());
+                    }
+                    break;
+                }
+                case SpriteAssetKind.PartCompositePreview:
+                {
+                    var componentKey = (GetRequiredPartDefinition(_selectedSpriteNode.PrimaryId).MedabotId, _selectedSpriteNode.SecondaryId);
+                    if (_editedBattleCompositeComponentAssets.TryGetValue(componentKey, out var component))
+                    {
+                        _imageAssetPatcher.ApplyBattleCompositeSpriteComponentSmart(_session, component);
+                        _editedBattleCompositeComponentAssets.Remove(componentKey);
+                        _battleCompositeComponentCache.Remove(componentKey);
+                        _spriteEditHistories.Remove(GetSelectedSpriteHistoryKey());
+                    }
+                    break;
+                }
             }
 
             UpdateStatus();
@@ -2347,9 +3204,37 @@ public partial class MainWindow : Window
             return;
         }
 
-        _spritePreviewCache.Remove($"{(int)_selectedSpriteNode.AssetKind}:{_selectedSpriteNode.PrimaryId}:{_selectedSpriteNode.SecondaryId}");
+        _spritePreviewCache.Clear();
         OnSpriteSelectionChanged(SpriteTreeView, new RoutedPropertyChangedEventArgs<object>(_selectedSpriteNode, _selectedSpriteNode));
     }
+
+    private static string[] GetBattleCompositeComponentNames() =>
+    [
+        "Head / Base",
+        "Right Arm A",
+        "Right Arm B",
+        "Left Arm A",
+        "Left Arm B",
+        "Legs"
+    ];
+
+    private static int GetPreviewComponentIndexForPartKind(PartKind kind) => kind switch
+    {
+        PartKind.Head => 0,
+        PartKind.RightArm => 1,
+        PartKind.LeftArm => 3,
+        PartKind.Legs => 5,
+        _ => throw new InvalidOperationException($"Unsupported part kind '{kind}'.")
+    };
+
+    private static string FormatPartKind(PartKind kind) => kind switch
+    {
+        PartKind.Head => "Head",
+        PartKind.RightArm => "Right Arm",
+        PartKind.LeftArm => "Left Arm",
+        PartKind.Legs => "Legs",
+        _ => kind.ToString()
+    };
 
     private static IndexedImage ImportIndexedImageFromPng(string path, IndexedImage referenceImage)
     {
@@ -2383,14 +3268,14 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            rasterPixels[i] = FindNearestPaletteIndex(swatches, Color.FromRgb(red, green, blue));
+            rasterPixels[i] = FindNearestPaletteIndex(swatches, WpfColor.FromRgb(red, green, blue));
         }
 
         var indexedPixels = ConvertRasterToTileOrdered(rasterPixels, targetWidth, targetHeight, referenceImage.TileWidth, referenceImage.TileHeight);
         return new IndexedImage(referenceImage.TileWidth, referenceImage.TileHeight, indexedPixels, referenceImage.PaletteBytes.ToArray());
     }
 
-    private static byte FindNearestPaletteIndex(IReadOnlyList<PaletteSwatchItem> swatches, Color color)
+    private static byte FindNearestPaletteIndex(IReadOnlyList<PaletteSwatchItem> swatches, WpfColor color)
     {
         var bestIndex = 0;
         var bestDistance = int.MaxValue;
@@ -2430,7 +3315,7 @@ public partial class MainWindow : Window
         PopulateBattleBotEntries(battle.Bots[2], BattleBot3HeadEntry, BattleBot3RightEntry, BattleBot3LeftEntry, BattleBot3LegsEntry, BattleBot3MedalEntry, BattleBot3LevelEntry);
     }
 
-    private static void PopulateBattleBotEntries(BattleBot bot, TextBox head, TextBox right, TextBox left, TextBox legs, TextBox medal, TextBox level)
+    private static void PopulateBattleBotEntries(BattleBot bot, WpfTextBox head, WpfTextBox right, WpfTextBox left, WpfTextBox legs, WpfTextBox medal, WpfTextBox level)
     {
         head.Text = bot.HeadPartId.ToString();
         right.Text = bot.RightArmPartId.ToString();
@@ -2452,7 +3337,7 @@ public partial class MainWindow : Window
         return new BattleDefinition(original.Id, original.PointerOffset, original.DataOffset, ParseByte(BattleCharacterEntry.Text, "Battle character"), original.Unknown1, ParseByte(BattleBotCountEntry.Text, "Battle bot count"), bots, original.AlwaysZero);
     }
 
-    private static BattleBot BuildBattleBot(BattleBot original, TextBox head, TextBox right, TextBox left, TextBox legs, TextBox medal, TextBox level)
+    private static BattleBot BuildBattleBot(BattleBot original, WpfTextBox head, WpfTextBox right, WpfTextBox left, WpfTextBox legs, WpfTextBox medal, WpfTextBox level)
     {
         return new BattleBot(original.Unknown, ParseByte(head.Text, "Head part"), ParseByte(right.Text, "Right arm part"), ParseByte(left.Text, "Left arm part"), ParseByte(legs.Text, "Leg part"), ParseByte(medal.Text, "Medal"), ParseByte(level.Text, "Medal level"), original.Unknown1, original.Unknown2, original.Unknown3, original.Unknown4, original.Unknown5);
     }
@@ -3409,7 +4294,7 @@ public partial class MainWindow : Window
 
     private bool TryGetContextInstructionItem(object? sender, out EventInstructionItem instructionItem)
     {
-        if (sender is MenuItem menuItem && menuItem.CommandParameter is EventInstructionItem item && item.Instruction is not null)
+        if (sender is WpfMenuItem menuItem && menuItem.CommandParameter is EventInstructionItem item && item.Instruction is not null)
         {
             instructionItem = item;
             return true;
@@ -3475,7 +4360,7 @@ public partial class MainWindow : Window
 
     private Task DisplayAlertAsync(string title, string message, string buttonText)
     {
-        MessageBox.Show(this, message, title, MessageBoxButton.OK, MessageBoxImage.Information);
+        WpfMessageBox.Show(this, message, title, MessageBoxButton.OK, MessageBoxImage.Information);
         return Task.CompletedTask;
     }
 
@@ -3491,7 +4376,7 @@ public partial class MainWindow : Window
 
     private static string? PickOpenFilePath(string title, string filter)
     {
-        var dialog = new OpenFileDialog
+        var dialog = new Win32OpenFileDialog
         {
             Title = title,
             Filter = filter,
@@ -3504,7 +4389,7 @@ public partial class MainWindow : Window
 
     private static string? PickSaveFilePath(string title, string filter, string initialPath)
     {
-        var dialog = new SaveFileDialog
+        var dialog = new Win32SaveFileDialog
         {
             Title = title,
             Filter = filter,
