@@ -2,6 +2,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows;
+using System.Windows.Input;
 using Medabots.Rom.Editor;
 using Medabots.Rom.Images;
 using Medabots.Rom.Maps;
@@ -43,9 +44,15 @@ public partial class MainWindow
         new() { Key = "chapter15", DisplayName = "Chapter 15", ChapterIndex = 15 }
     ];
     private const int MinimumMapPreviewTileWidth = 32;
+    private const double MapViewportPadding = 160d;
     private int? _selectedMapTileX;
     private int? _selectedMapTileY;
     private MapOverlayRecordItem? _selectedMapOverlayRecord;
+    private bool _isPanningMapPreview;
+    private System.Windows.Point _mapPanStartPoint;
+    private double _mapPanStartHorizontalOffset;
+    private double _mapPanStartVerticalOffset;
+    private int _mapPreviewZoom = 2;
 
     private void OnMapSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
@@ -82,15 +89,6 @@ public partial class MainWindow
     private void PopulateMapPreview(MapTilesetAsset asset)
     {
         EnsureMapUiOptions();
-        EnsureMapTilesetOptions();
-        var matchingOption = _mapTilesetOptions.FirstOrDefault(option =>
-            option.GraphicsDataOffset == asset.GraphicsDataOffset &&
-            option.PaletteDataOffset == asset.PaletteDataOffset &&
-            option.ColorAttributeDataOffset == asset.ColorAttributeDataOffset);
-
-        MapTilesetSelectorComboBox.ItemsSource = _mapTilesetOptions;
-        MapTilesetSelectorComboBox.DisplayMemberPath = nameof(MapTilesetOption.DisplayName);
-        MapTilesetSelectorComboBox.SelectedItem = matchingOption;
         var maxLayerWidth = asset.Layers.Count == 0 ? asset.WidthInTiles : asset.Layers.Max(layer => layer.HeaderWidthInTiles);
         var maxLayerHeight = asset.Layers.Count == 0 ? asset.HeightInTiles : asset.Layers.Max(layer => layer.HeaderHeightInTiles);
         MapSummaryLabel.Text = $"Map {asset.MapId:D3}  {asset.Name}{Environment.NewLine}Base size: {asset.WidthInTiles}x{asset.HeightInTiles} tiles ({asset.WidthInMetaTiles}x{asset.HeightInMetaTiles} meta-tiles){Environment.NewLine}Layer size: {maxLayerWidth}x{maxLayerHeight} tiles{Environment.NewLine}Graphics @ 0x{asset.GraphicsDataOffset:X}  Palette @ 0x{asset.PaletteDataOffset:X}  Color Attr @ {(asset.ColorAttributeDataOffset >= 0 ? $"0x{asset.ColorAttributeDataOffset:X}" : "none")}";
@@ -121,31 +119,6 @@ public partial class MainWindow
         }
     }
 
-    private void EnsureMapTilesetOptions()
-    {
-        if (_mapTilesetOptions.Count > 0 || _session is null)
-        {
-            return;
-        }
-
-        var groups = Enumerable.Range(0, Math.Min(MedabotsRomSchema.MapCount, _metadata.Catalog.Maps.Count))
-            .Select(mapId => _mapTilesetRepository.ReadMap(_session.RomFile, mapId, _metadata.GetMapName(mapId)))
-            .GroupBy(asset => (asset.GraphicsDataOffset, asset.PaletteDataOffset, asset.ColorAttributeDataOffset))
-            .OrderBy(group => group.First().GraphicsDataOffset);
-
-        foreach (var group in groups)
-        {
-            var representative = group.First();
-            var usedBy = group.Select(asset => asset.MapId).OrderBy(id => id).ToArray();
-            _mapTilesetOptions.Add(new MapTilesetOption(
-                representative.MapId,
-                representative.GraphicsDataOffset,
-                representative.PaletteDataOffset,
-                representative.ColorAttributeDataOffset,
-                $"Tileset from {_metadata.GetMapName(representative.MapId)} ({usedBy.Length} maps)"));
-        }
-    }
-
     private void OnMapLayerVisibilityChanged(object? sender, RoutedEventArgs e)
     {
         if (!_isWindowFullyInitialized)
@@ -166,6 +139,10 @@ public partial class MainWindow
 
         UpdateMapOverlayStatus();
         UpdateMapEditorSidebar();
+        if (MapCompositePreviewImage?.Source is BitmapSource bitmap)
+        {
+            UpdateMapGridOverlay(bitmap.PixelWidth, bitmap.PixelHeight);
+        }
     }
 
     private void OnMapEventChapterFilterChanged(object? sender, SelectionChangedEventArgs e)
@@ -191,11 +168,13 @@ public partial class MainWindow
         var editLayerKey = (MapEditLayerComboBox?.SelectedItem as MapLayerOption)?.Key ?? "layer1";
         var coordinateDivisor = editLayerKey is "events" or "warps" ? 16 : 8;
         var overlayOffset = editLayerKey is "events" or "warps" ? GetMapOverlayPixelOffset() : default;
-        var adjustedX = position.X - overlayOffset.X;
-        var adjustedY = position.Y - overlayOffset.Y;
+        var sourceX = position.X / _mapPreviewZoom;
+        var sourceY = position.Y / _mapPreviewZoom;
+        var adjustedX = sourceX - overlayOffset.X;
+        var adjustedY = sourceY - overlayOffset.Y;
         var tileX = (int)(adjustedX / coordinateDivisor);
         var tileY = (int)(adjustedY / coordinateDivisor);
-        if (tileX < 0 || tileY < 0 || tileX >= source.PixelWidth / coordinateDivisor || tileY >= source.PixelHeight / coordinateDivisor)
+        if (tileX < 0 || tileY < 0 || sourceX < 0 || sourceY < 0 || sourceX >= source.PixelWidth || sourceY >= source.PixelHeight)
         {
             return;
         }
@@ -245,7 +224,7 @@ public partial class MainWindow
             visibleLayers.Add(_loadedMapTileset.Layers[0]);
         }
 
-        MapCompositePreviewImage.Source = CreateCompositeMapBitmap(visibleLayers);
+        SetMapCompositePreviewSource(CreateCompositeMapBitmap(visibleLayers));
         DrawMapOverlays();
     }
 
@@ -302,7 +281,7 @@ public partial class MainWindow
 
         var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, width * 4);
         bitmap.Freeze();
-        MapCompositePreviewImage.Source = bitmap;
+        SetMapCompositePreviewSource(bitmap);
     }
 
     private static BitmapSource CreateCompositeMapBitmap(IReadOnlyList<MapLayerAsset> visibleLayers)
@@ -381,10 +360,16 @@ public partial class MainWindow
         _selectedMapTileY = null;
         _selectedMapOverlayRecord = null;
         MapSummaryLabel.Text = "Select a map to inspect its tileset and layers.";
-        MapTilesetSelectorComboBox.ItemsSource = null;
         MapTilesetSummaryLabel.Text = string.Empty;
         MapOverlayStatusLabel.Text = "Select a map to inspect layers and future overlays.";
         MapCompositePreviewImage.Source = null;
+        MapPreviewSurface.Width = 0;
+        MapPreviewSurface.Height = 0;
+        MapCompositePreviewImage.Width = 0;
+        MapCompositePreviewImage.Height = 0;
+        MapGridCanvas.Children.Clear();
+        MapGridCanvas.Width = 0;
+        MapGridCanvas.Height = 0;
         MapEditorTitleLabel.Text = "Layer Editor";
         MapTileEditorPanel.Visibility = Visibility.Visible;
         MapOverlayEditorPanel.Visibility = Visibility.Collapsed;
@@ -790,6 +775,169 @@ public partial class MainWindow
         3 => "Right",
         _ => $"Unknown ({facingVariant})"
     };
+
+    private void SetMapCompositePreviewSource(BitmapSource bitmap)
+    {
+        MapCompositePreviewImage.Source = bitmap;
+        UpdateMapPreviewLayout(bitmap.PixelWidth, bitmap.PixelHeight);
+        UpdateMapGridOverlay(bitmap.PixelWidth, bitmap.PixelHeight);
+    }
+
+    private void OnMapPreviewViewportSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (MapCompositePreviewImage?.Source is BitmapSource bitmap)
+        {
+            UpdateMapPreviewLayout(bitmap.PixelWidth, bitmap.PixelHeight);
+            UpdateMapGridOverlay(bitmap.PixelWidth, bitmap.PixelHeight);
+        }
+    }
+
+    private void OnMapPreviewMouseWheel(object? sender, MouseWheelEventArgs e)
+    {
+        if (sender is not ScrollViewer scrollViewer)
+        {
+            return;
+        }
+
+        var delta = e.Delta > 0 ? 1 : -1;
+        SetMapZoom(_mapPreviewZoom + delta, scrollViewer, e.GetPosition(scrollViewer));
+        e.Handled = true;
+    }
+
+    private void OnMapPreviewScrollViewerMouseDown(object? sender, MouseButtonEventArgs e)
+    {
+        if (sender is not ScrollViewer scrollViewer || e.ChangedButton != MouseButton.Middle)
+        {
+            return;
+        }
+
+        _isPanningMapPreview = true;
+        _mapPanStartPoint = e.GetPosition(scrollViewer);
+        _mapPanStartHorizontalOffset = scrollViewer.HorizontalOffset;
+        _mapPanStartVerticalOffset = scrollViewer.VerticalOffset;
+        scrollViewer.Cursor = System.Windows.Input.Cursors.SizeAll;
+        scrollViewer.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void OnMapPreviewScrollViewerMouseMove(object? sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (!_isPanningMapPreview || sender is not ScrollViewer scrollViewer)
+        {
+            return;
+        }
+
+        var point = e.GetPosition(scrollViewer);
+        var deltaX = point.X - _mapPanStartPoint.X;
+        var deltaY = point.Y - _mapPanStartPoint.Y;
+        scrollViewer.ScrollToHorizontalOffset(Math.Max(0, _mapPanStartHorizontalOffset - deltaX));
+        scrollViewer.ScrollToVerticalOffset(Math.Max(0, _mapPanStartVerticalOffset - deltaY));
+        e.Handled = true;
+    }
+
+    private void OnMapPreviewScrollViewerMouseUp(object? sender, MouseButtonEventArgs e)
+    {
+        if (!_isPanningMapPreview || sender is not ScrollViewer scrollViewer || e.ChangedButton != MouseButton.Middle)
+        {
+            return;
+        }
+
+        _isPanningMapPreview = false;
+        scrollViewer.Cursor = System.Windows.Input.Cursors.Arrow;
+        scrollViewer.ReleaseMouseCapture();
+        e.Handled = true;
+    }
+
+    private void SetMapZoom(int zoom, ScrollViewer? scrollViewer = null, System.Windows.Point? pointer = null)
+    {
+        var clamped = Math.Clamp(zoom, 1, 12);
+        if (clamped == _mapPreviewZoom || MapCompositePreviewImage?.Source is not BitmapSource bitmap)
+        {
+            return;
+        }
+
+        var previousZoom = _mapPreviewZoom;
+        _mapPreviewZoom = clamped;
+        MapZoomValueLabel.Text = $"Zoom {_mapPreviewZoom}x";
+        UpdateMapPreviewLayout(bitmap.PixelWidth, bitmap.PixelHeight);
+        UpdateMapGridOverlay(bitmap.PixelWidth, bitmap.PixelHeight);
+
+        if (scrollViewer is not null && pointer.HasValue && previousZoom > 0)
+        {
+            var anchorPoint = pointer.Value;
+            var contentX = (scrollViewer.HorizontalOffset + anchorPoint.X - MapCompositePreviewImage.Margin.Left) / previousZoom;
+            var contentY = (scrollViewer.VerticalOffset + anchorPoint.Y - MapCompositePreviewImage.Margin.Top) / previousZoom;
+            var targetHorizontalOffset = (MapCompositePreviewImage.Margin.Left + (contentX * _mapPreviewZoom)) - anchorPoint.X;
+            var targetVerticalOffset = (MapCompositePreviewImage.Margin.Top + (contentY * _mapPreviewZoom)) - anchorPoint.Y;
+            scrollViewer.ScrollToHorizontalOffset(Math.Max(0, targetHorizontalOffset));
+            scrollViewer.ScrollToVerticalOffset(Math.Max(0, targetVerticalOffset));
+        }
+    }
+
+    private void UpdateMapPreviewLayout(int pixelWidth, int pixelHeight)
+    {
+        var scaledWidth = pixelWidth * _mapPreviewZoom;
+        var scaledHeight = pixelHeight * _mapPreviewZoom;
+        MapCompositePreviewImage.Width = scaledWidth;
+        MapCompositePreviewImage.Height = scaledHeight;
+        MapGridCanvas.Width = scaledWidth;
+        MapGridCanvas.Height = scaledHeight;
+
+        var viewportWidth = Math.Max(0d, MapPreviewScrollViewer?.ViewportWidth ?? 0d);
+        var viewportHeight = Math.Max(0d, MapPreviewScrollViewer?.ViewportHeight ?? 0d);
+        var surfaceWidth = Math.Max(scaledWidth + (MapViewportPadding * 2), viewportWidth + (MapViewportPadding * 2));
+        var surfaceHeight = Math.Max(scaledHeight + (MapViewportPadding * 2), viewportHeight + (MapViewportPadding * 2));
+        var offsetX = Math.Max(MapViewportPadding, (surfaceWidth - scaledWidth) / 2d);
+        var offsetY = Math.Max(MapViewportPadding, (surfaceHeight - scaledHeight) / 2d);
+
+        MapPreviewSurface.Width = surfaceWidth;
+        MapPreviewSurface.Height = surfaceHeight;
+        MapCompositePreviewImage.Margin = new Thickness(offsetX, offsetY, 0, 0);
+        MapGridCanvas.Margin = new Thickness(offsetX, offsetY, 0, 0);
+    }
+
+    private void UpdateMapGridOverlay(int pixelWidth, int pixelHeight)
+    {
+        MapGridCanvas.Children.Clear();
+        MapGridCanvas.Width = pixelWidth * _mapPreviewZoom;
+        MapGridCanvas.Height = pixelHeight * _mapPreviewZoom;
+
+        if (_mapPreviewZoom < 4)
+        {
+            return;
+        }
+
+        var editLayerKey = (MapEditLayerComboBox?.SelectedItem as MapLayerOption)?.Key ?? "layer1";
+        var cellSize = editLayerKey is "events" or "warps" ? 16 : 8;
+        var gridBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(80, 107, 114, 128));
+
+        for (var x = 0; x <= pixelWidth; x += cellSize)
+        {
+            MapGridCanvas.Children.Add(new System.Windows.Shapes.Line
+            {
+                X1 = x * _mapPreviewZoom,
+                Y1 = 0,
+                X2 = x * _mapPreviewZoom,
+                Y2 = pixelHeight * _mapPreviewZoom,
+                Stroke = gridBrush,
+                StrokeThickness = 1.0
+            });
+        }
+
+        for (var y = 0; y <= pixelHeight; y += cellSize)
+        {
+            MapGridCanvas.Children.Add(new System.Windows.Shapes.Line
+            {
+                X1 = 0,
+                Y1 = y * _mapPreviewZoom,
+                X2 = pixelWidth * _mapPreviewZoom,
+                Y2 = y * _mapPreviewZoom,
+                Stroke = gridBrush,
+                StrokeThickness = 1.0
+            });
+        }
+    }
+
     private static void BlitIndexedImageOverlay(IndexedImage image, int bitmapWidth, int bitmapHeight, int destX, int destY, IReadOnlyList<PaletteSwatchItem> swatches, byte[] output)
     {
         for (var tileY = 0; tileY < image.TileHeight; tileY++)
