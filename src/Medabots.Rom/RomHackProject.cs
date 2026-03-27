@@ -19,4 +19,6 @@ public sealed class RomHackProject
     public IList<EventLabelPatch> EventLabels { get; } = new List<EventLabelPatch>();
 
     public IList<EventScriptPatch> EventScriptPatches { get; } = new List<EventScriptPatch>();
+
+    public IList<int> SplitLargeDisplayPartIds { get; } = new List<int>();
 }

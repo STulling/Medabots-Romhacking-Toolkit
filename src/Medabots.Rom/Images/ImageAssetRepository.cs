@@ -154,7 +154,7 @@ public sealed class ImageAssetRepository
             new IndexedImage(tileWidth, Math.Max(1, tileCount / tileWidth), unpacked, BuildPlaceholderCompositePalette()));
     }
 
-    public LargePartDisplayAsset ReadLargePartDisplay(RomFile romFile, PartDefinition part)
+    public LargePartDisplayAsset ReadLargePartDisplay(RomFile romFile, PartDefinition part, int? variantSelector = null)
     {
         ArgumentNullException.ThrowIfNull(romFile);
         ArgumentNullException.ThrowIfNull(part);
@@ -184,14 +184,14 @@ public sealed class ImageAssetRepository
             throw new InvalidDataException($"Large part display root descriptor for part {part.Id} is empty.");
         }
 
-        var variantSelector = GetLargeDisplayVariantSelector(part.Kind);
+        var resolvedVariantSelector = GetLargeDisplayVariantSelector(part.Kind, variantSelector);
         var mutablePieces = new List<MutableLargePartDisplayPiece>();
         var visited = new HashSet<(int DescriptorId, int TableIndex)>();
         foreach (var rootEntry in rootEntries)
         {
             var descriptorId = (int)(rootEntry & 0x3F);
-            var tableIndex = ResolveCompositePreviewTableIndex(rootEntry, variantSelector);
-            ReadLargePartDisplayDescriptorRecursive(romFile, appearanceEntries, descriptorId, tableIndex, variantSelector, mutablePieces, visited);
+            var tableIndex = ResolveCompositePreviewTableIndex(rootEntry, resolvedVariantSelector);
+            ReadLargePartDisplayDescriptorRecursive(romFile, appearanceEntries, descriptorId, tableIndex, resolvedVariantSelector, mutablePieces, visited);
         }
 
         ApplyLargeDisplayArmOverlayPass(romFile, part.Kind, partOrdinal, mutablePieces);
@@ -202,6 +202,7 @@ public sealed class ImageAssetRepository
             part.Id,
             partOrdinal,
             part.Kind,
+            resolvedVariantSelector,
             rootDescriptorId,
             rootRecordOffset,
             initialPaletteBanks,
@@ -257,9 +258,11 @@ public sealed class ImageAssetRepository
         var paletteOffset = TryReadOptionalPointer(romFile, imagePointerOffset + sizeof(uint), out var resolvedPaletteOffset)
             ? resolvedPaletteOffset
             : 0;
+        var palettePointerOffset = imagePointerOffset + sizeof(uint);
         if (paletteOffset == imageOffset)
         {
             paletteOffset = 0;
+            palettePointerOffset = 0;
         }
 
         var paletteBytes = paletteOffset == 0
@@ -286,6 +289,8 @@ public sealed class ImageAssetRepository
         pieces.Add(new MutableLargePartDisplayPiece(
             descriptorId,
             descriptorOffset,
+            imagePointerOffset,
+            palettePointerOffset,
             imageOffset,
             paletteOffset,
             paletteBytes,
@@ -442,8 +447,18 @@ public sealed class ImageAssetRepository
         };
     }
 
-    private static int GetLargeDisplayVariantSelector(PartKind kind)
+    private static int GetLargeDisplayVariantSelector(PartKind kind, int? requestedVariantSelector)
     {
+        if (kind is not PartKind.RightArm and not PartKind.LeftArm)
+        {
+            return 0;
+        }
+
+        if (requestedVariantSelector.HasValue)
+        {
+            return requestedVariantSelector.Value & 1;
+        }
+
         return kind == PartKind.LeftArm ? 1 : 0;
     }
 
@@ -530,6 +545,8 @@ public sealed class ImageAssetRepository
         public MutableLargePartDisplayPiece(
             int descriptorId,
             int recordOffset,
+            int imagePointerOffset,
+            int palettePointerOffset,
             int imageOffset,
             int paletteOffset,
             byte[] paletteBytes,
@@ -543,6 +560,8 @@ public sealed class ImageAssetRepository
         {
             DescriptorId = descriptorId;
             RecordOffset = recordOffset;
+            ImagePointerOffset = imagePointerOffset;
+            PalettePointerOffset = palettePointerOffset;
             ImageOffset = imageOffset;
             PaletteOffset = paletteOffset;
             PaletteBytes = paletteBytes;
@@ -557,6 +576,8 @@ public sealed class ImageAssetRepository
 
         public int DescriptorId { get; }
         public int RecordOffset { get; }
+        public int ImagePointerOffset { get; }
+        public int PalettePointerOffset { get; }
         public int ImageOffset { get; }
         public int PaletteOffset { get; }
         public byte[] PaletteBytes { get; }
@@ -574,6 +595,8 @@ public sealed class ImageAssetRepository
             return new LargePartDisplayPieceAsset(
                 DescriptorId,
                 RecordOffset,
+                ImagePointerOffset,
+                PalettePointerOffset,
                 ImageOffset,
                 PaletteOffset,
                 palette,

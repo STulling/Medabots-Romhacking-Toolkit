@@ -24,4 +24,10 @@
     <ProjectReference Include="..\..\src\Medabots.Rom\Medabots.Rom.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\..\Medabots Rokusho Version (E).gba" Link="Medabots Rokusho Version (E).gba">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

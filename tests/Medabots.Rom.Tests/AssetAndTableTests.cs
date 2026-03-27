@@ -5,6 +5,7 @@ using Medabots.Rom.Metadata;
 using Medabots.Rom.Parts;
 using Medabots.Rom.Shops;
 using Medabots.Rom.Starter;
+using System.Security.Cryptography;
 using Xunit;
 
 namespace Medabots.Rom.Tests;
@@ -285,10 +286,51 @@ public sealed class AssetAndTableTests
         Assert.Equal(7, asset.RootDescriptorId);
         Assert.Contains(8, asset.InitialPaletteBanks.Keys);
         Assert.Single(asset.Pieces);
+        Assert.Equal(0x1100, asset.Pieces[0].ImagePointerOffset);
+        Assert.Equal(0x1104, asset.Pieces[0].PalettePointerOffset);
         Assert.Equal(0x1200, asset.Pieces[0].ImageOffset);
         Assert.Equal(0x20, asset.Pieces[0].Image.Width);
         Assert.Equal(0x20, asset.Pieces[0].Image.Height);
         Assert.Equal(palette, asset.Pieces[0].PaletteBytes);
+    }
+
+    [Fact]
+    public void LargePartDisplayPatcher_AppliedActions_ReplayEditedLargeDisplayIntoFreshRom()
+    {
+        var baseRomBytes = new byte[0x900000];
+        var palette = Enumerable.Range(0, ImageAssetRepository.PaletteSize).Select(index => (byte)index).ToArray();
+        var sourcePixels = Enumerable.Range(0, 0x80).Select(index => (byte)(index & 0x0F)).ToArray();
+        var sourceCompressed = GbaLz77.Compress(TileImageCodec.Pack4BppTiles(sourcePixels));
+
+        baseRomBytes[MedabotsRomSchema.CompositePreviewHeadAppearanceTableOffset] = 0x07;
+        WritePointer(baseRomBytes, MedabotsRomSchema.CompositePreviewDescriptorPointerTableOffset + (7 * sizeof(uint)), 0x1000);
+        WritePointer(baseRomBytes, 0x1000, 0x1100);
+        baseRomBytes[0x1012] = 0x20;
+        baseRomBytes[0x1013] = 0x20;
+        baseRomBytes[0x1014] = 0x11;
+        WritePointer(baseRomBytes, 0x1100, 0x1200);
+        WritePointer(baseRomBytes, 0x1104, 0x1220);
+        Array.Copy(sourceCompressed, 0, baseRomBytes, 0x1200, sourceCompressed.Length);
+        Array.Copy(palette, 0, baseRomBytes, 0x1220, palette.Length);
+        Array.Copy(palette, 0, baseRomBytes, MedabotsRomSchema.PartDetailObjPaletteBlockAOffset, palette.Length);
+        Array.Copy(palette, 0, baseRomBytes, MedabotsRomSchema.PartDetailObjPaletteBlockBOffset, palette.Length);
+        Array.Copy(palette, 0, baseRomBytes, MedabotsRomSchema.PartDetailObjPaletteBlockCOffset, palette.Length);
+
+        var repository = new ImageAssetRepository();
+        var patcher = new ImageAssetPatcher();
+        var part = new PartDefinition(0, 0, PartKind.Head, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+        var workingSession = RomHackSession.FromRomFile(new RomFile("working-large-display.gba", baseRomBytes.ToArray()));
+        var asset = repository.ReadLargePartDisplay(workingSession.RomFile, part);
+        asset.Pieces[0].Image.PixelIndices[0] = (byte)((asset.Pieces[0].Image.PixelIndices[0] + 5) & 0x0F);
+
+        patcher.ApplyLargePartDisplaySmart(workingSession, asset, 0x800000);
+
+        var exportedSession = RomHackSession.FromRomFile(new RomFile("exported-large-display.gba", baseRomBytes.ToArray()));
+        exportedSession.ApplyPatches(workingSession.AppliedActions);
+        var reread = repository.ReadLargePartDisplay(exportedSession.RomFile, part);
+
+        Assert.Equal(asset.Pieces[0].Image.PixelIndices, reread.Pieces[0].Image.PixelIndices);
     }
 
     [Fact]
@@ -470,10 +512,94 @@ public sealed class AssetAndTableTests
         Assert.Equal(0, asset.Pieces[1].PaletteOffset);
     }
 
+    [Fact]
+    public async Task ImageRepository_ReadLargePartDisplay_ExtractsRealRollertankLegs()
+    {
+        var rom = await RomFile.LoadAsync(FindWorkspaceRom());
+        var repository = new ImageAssetRepository();
+        var parts = new PartTableReader().ReadAll(rom);
+
+        var asset = repository.ReadLargePartDisplay(rom, parts[375]);
+
+        Assert.Equal(5, asset.Pieces.Count);
+        Assert.Equal(new[] { 25, 26, 27, 28, 29 }, asset.Pieces.Select(piece => piece.DescriptorId).ToArray());
+        Assert.All(asset.Pieces, piece => Assert.Equal(16, piece.LoadedTileCount));
+        Assert.True(asset.Pieces[0].PaletteOffset > 0);
+        Assert.All(asset.Pieces.Skip(1), piece => Assert.Equal(0, piece.PaletteOffset));
+        Assert.All(asset.Pieces, piece => Assert.Equal(3, piece.PaletteBank));
+        Assert.Equal("FB05D277618A9CCD25A81E3ED957CF42C6F8386BD3F1792A6D07C7BFAE3D59F7", ComputeLargePartDisplaySignature(asset));
+    }
+
+    [Fact]
+    public async Task ImageRepository_ReadLargePartDisplay_ExtractsRealPipoHammerLargeArm()
+    {
+        var rom = await RomFile.LoadAsync(FindWorkspaceRom());
+        var repository = new ImageAssetRepository();
+        var parts = new PartTableReader().ReadAll(rom);
+
+        var asset = repository.ReadLargePartDisplay(rom, parts[170]);
+
+        Assert.Equal(2, asset.Pieces.Count);
+        Assert.Equal(new[] { 14, 15 }, asset.Pieces.Select(piece => piece.DescriptorId).ToArray());
+        Assert.All(asset.Pieces, piece => Assert.Equal(16, piece.LoadedTileCount));
+        Assert.True(asset.Pieces[0].PaletteOffset > 0);
+        Assert.Equal(0, asset.Pieces[1].PaletteOffset);
+        Assert.All(asset.Pieces, piece => Assert.Equal(2, piece.PaletteBank));
+        Assert.Equal("0994425EFA39100232493D4DB065EFF6500952A2A53E432741D3331B165CF6FE", ComputeLargePartDisplaySignature(asset));
+    }
+
+    [Fact]
+    public async Task ImageRepository_ReadLargePartDisplay_ExtractsRealTatackerLegs()
+    {
+        var rom = await RomFile.LoadAsync(FindWorkspaceRom());
+        var repository = new ImageAssetRepository();
+        var parts = new PartTableReader().ReadAll(rom);
+
+        var asset = repository.ReadLargePartDisplay(rom, parts[171]);
+
+        Assert.Equal(5, asset.Pieces.Count);
+        Assert.Equal(new[] { 31, 32, 33, 34, 35 }, asset.Pieces.Select(piece => piece.DescriptorId).ToArray());
+        Assert.Equal("F8EF834E2B7F0865548A35C5B505C5BD22ABFEF57AB97240D694E82996A65475", ComputeLargePartDisplaySignature(asset));
+    }
+
+    [Fact]
+    public async Task ImageRepository_ReadLargePartDisplay_ExtractsRealDeathcrawlerLegs()
+    {
+        var rom = await RomFile.LoadAsync(FindWorkspaceRom());
+        var repository = new ImageAssetRepository();
+        var parts = new PartTableReader().ReadAll(rom);
+
+        var asset = repository.ReadLargePartDisplay(rom, parts[131]);
+
+        Assert.Equal(5, asset.Pieces.Count);
+        Assert.Equal(new[] { 45, 46, 47, 48, 49 }, asset.Pieces.Select(piece => piece.DescriptorId).ToArray());
+        Assert.Equal("2A0B4A66CF4B2FB87C8E0988950D4CDC0A97ABEC9254658EF7E90009947141FC", ComputeLargePartDisplaySignature(asset));
+    }
+
     private static void WritePointer(byte[] romBytes, int offset, int fileOffset)
     {
         var pointer = BitConverter.GetBytes(GbaPointer.ToRomAddress(fileOffset));
         Array.Copy(pointer, 0, romBytes, offset, pointer.Length);
+    }
+
+    private static string ComputeLargePartDisplaySignature(LargePartDisplayAsset asset)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        writer.Write(asset.Pieces.Count);
+        foreach (var piece in asset.Pieces)
+        {
+            writer.Write(piece.DescriptorId);
+            writer.Write(piece.PaletteBank);
+            writer.Write(piece.LoadedTileCount);
+            writer.Write(piece.Image.TileWidth);
+            writer.Write(piece.Image.TileHeight);
+            writer.Write(piece.Image.PixelIndices.Length);
+            writer.Write(piece.Image.PixelIndices);
+        }
+
+        writer.Flush();
+        return Convert.ToHexString(SHA256.HashData(stream.ToArray()));
     }
 
     private static string FindWorkspaceRom()

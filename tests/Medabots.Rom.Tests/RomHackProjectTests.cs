@@ -26,6 +26,8 @@ public sealed class RomHackProjectTests
             project.EventLabels.Add(new EventLabelPatch(361, 0x25, "EquipBattleRifle"));
             project.EventLabels.Add(new EventLabelPatch(361, 0x47, "MissingBattleRifle"));
             project.EventScriptPatches.Add(new EventScriptPatch(40, [0x33, 0x12, 0x01, 0x00, 0x06]));
+            project.SplitLargeDisplayPartIds.Add(449);
+            project.SplitLargeDisplayPartIds.Add(450);
 
             await RomHackProjectSerializer.SaveAsync(project, tempFile);
             var loaded = await RomHackProjectSerializer.LoadAsync(tempFile);
@@ -49,6 +51,7 @@ public sealed class RomHackProjectTests
             Assert.Single(loaded.EventScriptPatches);
             Assert.Equal((short)40, loaded.EventScriptPatches[0].EventId);
             Assert.Equal([0x33, 0x12, 0x01, 0x00, 0x06], loaded.EventScriptPatches[0].ScriptBytes);
+            Assert.Equal([449, 450], loaded.SplitLargeDisplayPartIds.OrderBy(id => id).ToArray());
         }
         finally
         {

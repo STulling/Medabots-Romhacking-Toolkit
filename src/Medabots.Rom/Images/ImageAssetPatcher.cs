@@ -106,6 +106,34 @@ public sealed class ImageAssetPatcher
         ApplyBattleCompositeSpriteComponent(session, asset, imageOffset);
     }
 
+    public void ApplyLargePartDisplaySmart(RomHackSession session, LargePartDisplayAsset asset, int expansionStartOffset = DefaultExpansionStartOffset)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(asset);
+
+        var nextExpansionOffset = expansionStartOffset;
+        foreach (var piece in asset.Pieces)
+        {
+            if (piece.ImagePointerOffset <= 0)
+            {
+                continue;
+            }
+
+            var packed = TileImageCodec.Pack4BppTiles(piece.Image.PixelIndices);
+            var compressed = GbaLz77.Compress(packed);
+            var imageOffset = ResolveWriteOffset(session.RomFile, piece.ImageOffset, compressed.Length, nextExpansionOffset, GbaLz77.TryGetEncodedLength);
+            nextExpansionOffset = imageOffset == piece.ImageOffset
+                ? nextExpansionOffset
+                : Align(imageOffset + compressed.Length, 4);
+
+            session.ApplyPatch(RomPatchAction.Create(imageOffset, compressed, $"Write large part display {asset.PartId} variant {asset.VariantSelector} descriptor {piece.DescriptorId} image"));
+
+            Span<byte> pointer = stackalloc byte[4];
+            BitConverter.TryWriteBytes(pointer, GbaPointer.ToRomAddress(imageOffset));
+            session.ApplyPatch(RomPatchAction.Create(piece.ImagePointerOffset, pointer, $"Repoint large part display {asset.PartId} variant {asset.VariantSelector} descriptor {piece.DescriptorId} image"));
+        }
+    }
+
     private static int ResolveWriteOffset(RomFile romFile, int currentOffset, int newLength, int expansionStartOffset, Func<byte[], int, int?>? encodedLengthReader)
     {
         if (currentOffset > 0)

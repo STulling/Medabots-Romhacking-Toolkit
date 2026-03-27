@@ -494,9 +494,21 @@
                             </Grid.RowDefinitions>
                             <TextBox x:Name="SpriteFilterEntry" TextChanged="OnSpriteFilterChanged" />
                             <TreeView x:Name="SpriteTreeView" Grid.Row="1" Margin="0,10,0,0" SelectedItemChanged="OnSpriteSelectionChanged">
+                                <TreeView.ItemContainerStyle>
+                                    <Style TargetType="TreeViewItem">
+                                        <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                                    </Style>
+                                </TreeView.ItemContainerStyle>
                                 <TreeView.Resources>
                                     <HierarchicalDataTemplate DataType="{x:Type localModels:SpriteBrowserNode}" ItemsSource="{Binding Children}">
-                                        <TextBlock Text="{Binding Title}" />
+                                        <TextBlock Text="{Binding Title}" Tag="{Binding}">
+                                            <TextBlock.ContextMenu>
+                                                <ContextMenu>
+                                                    <MenuItem Header="Split Into Side-Specific Large Displays" Click="OnSplitLargeDisplayMenuClicked" CommandParameter="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                    <MenuItem Header="Merge Large Display Variants" Click="OnMergeLargeDisplayMenuClicked" CommandParameter="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                </ContextMenu>
+                                            </TextBlock.ContextMenu>
+                                        </TextBlock>
                                     </HierarchicalDataTemplate>
                                 </TreeView.Resources>
                             </TreeView>

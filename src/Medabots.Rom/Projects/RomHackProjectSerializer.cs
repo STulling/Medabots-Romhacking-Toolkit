@@ -45,7 +45,7 @@ public static class RomHackProjectSerializer
 
     private sealed class RomHackProjectDocument
     {
-        public int SchemaVersion { get; set; } = 4;
+        public int SchemaVersion { get; set; } = 5;
 
         public string Name { get; set; } = "New Medabots Hack";
 
@@ -61,9 +61,11 @@ public static class RomHackProjectSerializer
 
         public List<EventScriptPatchDocument> EventScriptPatches { get; set; } = [];
 
+        public List<int> SplitLargeDisplayPartIds { get; set; } = [];
+
         public RomHackProject ToProject(string? projectFilePath)
         {
-            if (SchemaVersion is not 1 and not 2 and not 3 and not 4)
+            if (SchemaVersion is not 1 and not 2 and not 3 and not 4 and not 5)
             {
                 throw new InvalidDataException($"Unsupported project schema version '{SchemaVersion}'.");
             }
@@ -94,6 +96,11 @@ public static class RomHackProjectSerializer
             foreach (var patch in EventScriptPatches)
             {
                 project.EventScriptPatches.Add(new EventScriptPatch((short)patch.EventId, Convert.FromBase64String(patch.ScriptBytesBase64)));
+            }
+
+            foreach (var partId in SplitLargeDisplayPartIds.Distinct())
+            {
+                project.SplitLargeDisplayPartIds.Add(partId);
             }
 
             return project;
@@ -136,6 +143,9 @@ public static class RomHackProjectSerializer
                         EventId = patch.EventId,
                         ScriptBytesBase64 = Convert.ToBase64String(patch.ScriptBytes)
                     })
+                    .ToList(),
+                SplitLargeDisplayPartIds = project.SplitLargeDisplayPartIds
+                    .Distinct()
                     .ToList()
             };
         }

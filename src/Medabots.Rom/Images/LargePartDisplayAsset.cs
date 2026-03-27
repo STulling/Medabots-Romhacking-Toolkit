@@ -6,6 +6,7 @@ public sealed record LargePartDisplayAsset(
     int PartId,
     int PartOrdinal,
     PartKind Kind,
+    int VariantSelector,
     int RootDescriptorId,
     int RootRecordOffset,
     IReadOnlyDictionary<int, byte[]> InitialPaletteBanks,
@@ -14,6 +15,8 @@ public sealed record LargePartDisplayAsset(
 public sealed record LargePartDisplayPieceAsset(
     int DescriptorId,
     int RecordOffset,
+    int ImagePointerOffset,
+    int PalettePointerOffset,
     int ImageOffset,
     int PaletteOffset,
     byte[] PaletteBytes,
