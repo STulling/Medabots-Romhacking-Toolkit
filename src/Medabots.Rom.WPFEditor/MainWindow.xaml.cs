@@ -70,13 +70,14 @@ public partial class MainWindow : Window
     private readonly BattleTableReader _battleTableReader = new();
     private readonly BattleActionOpcodeTableReader _battleActionOpcodeTableReader = new();
     private readonly BattleActionScriptTableReader _battleActionScriptTableReader = new();
-    private readonly BattlePatcher _battlePatcher = new();
+    private readonly BattleProjectEditor _battleProjectEditor = new();
     private readonly BattleActionRegistry _battleActionRegistry = BattleActionRegistry.LoadDefault();
     private readonly PartTableReader _partTableReader = new();
-    private readonly PartPatcher _partPatcher = new();
+    private readonly PartProjectEditor _partProjectEditor = new();
     private readonly ImageAssetRepository _imageAssetRepository = new();
     private readonly ImageAssetPatcher _imageAssetPatcher = new();
     private readonly MapOverlayRepository _mapOverlayRepository = new();
+    private readonly MapLayerProjectEditor _mapLayerProjectEditor = new();
     private readonly EncounterTableReader _encounterTableReader = new();
     private readonly EncounterPatcher _encounterPatcher = new();
     private readonly ShopTableReader _shopTableReader = new();
@@ -92,19 +93,17 @@ public partial class MainWindow : Window
     private readonly Dictionary<short, byte[]> _eventProjectScriptPatches = [];
     private readonly Dictionary<string, SpritePreviewState> _spritePreviewCache = [];
     private readonly Dictionary<int, SpriteAsset> _editedOverworldSpriteAssets = [];
-    private readonly Dictionary<int, SpriteAsset> _stagedOverworldSpriteAssets = [];
     private readonly Dictionary<(int CharacterId, int PortraitIndex), PortraitAsset> _editedPortraitAssets = [];
-    private readonly Dictionary<(int CharacterId, int PortraitIndex), PortraitAsset> _stagedPortraitAssets = [];
     private readonly Dictionary<(int MedabotId, int ComponentIndex), BattleCompositeSpriteComponentAsset> _editedBattleCompositeComponentAssets = [];
-    private readonly Dictionary<(int MedabotId, int ComponentIndex), BattleCompositeSpriteComponentAsset> _stagedBattleCompositeComponentAssets = [];
     private readonly Dictionary<(int PartId, int ComponentIndex), BattleCompositeSpriteComponentAsset> _battleCompositeComponentCache = [];
     private readonly Dictionary<(int PartId, int VariantSelector), LargePartDisplayAsset> _largePartDisplayAssetCache = [];
     private readonly Dictionary<(int PartId, int VariantSelector), LargePartDisplayAsset> _editedLargePartDisplayAssets = [];
-    private readonly Dictionary<(int PartId, int VariantSelector), LargePartDisplayAsset> _stagedLargePartDisplayAssets = [];
     private readonly Dictionary<int, Medabots.Rom.Maps.MapTilesetAsset> _mapTilesetCache = [];
     private readonly Dictionary<int, MapOverlayAsset> _mapOverlayCache = [];
     private readonly Dictionary<string, SpriteEditHistory> _spriteEditHistories = [];
     private readonly Dictionary<(int EntryLength, int ShopId), ShopDefinition> _shopCache = [];
+    private readonly Dictionary<int, BattleDefinition> _sourceBattleDefinitions = [];
+    private readonly Dictionary<int, PartDefinition> _sourcePartDefinitions = [];
     private readonly List<EventOperationOption> _eventOperationOptions = [];
     private readonly List<SpritePaletteFamilyOption> _spritePaletteFamilyOptions = [];
     private readonly List<BrowserItem> _partMedalOptions = [];
@@ -323,6 +322,8 @@ public partial class MainWindow : Window
         _eventCache.Clear();
         _eventViewCache.Clear();
         _shopCache.Clear();
+        _sourceBattleDefinitions.Clear();
+        _sourcePartDefinitions.Clear();
 
         SetLoadingState(true, "Preloading text...", 0.12);
         _loadedMessages = await Task.Run(() => _messageTableReader.ReadAll(_session.RomFile, profile.TextPointerTableOffset));
@@ -336,6 +337,18 @@ public partial class MainWindow : Window
         _loadedBattleActionOpcodes = _battleActionOpcodeTableReader.ReadAll(_session.RomFile);
         _loadedBattleActionScripts = _battleActionScriptTableReader.ReadAll(_session.RomFile);
         _loadedParts = _partTableReader.ReadAll(_session.RomFile);
+        foreach (var battle in _loadedBattles)
+        {
+            _sourceBattleDefinitions[battle.Id] = battle;
+        }
+
+        foreach (var part in _loadedParts)
+        {
+            _sourcePartDefinitions[part.Id] = part;
+        }
+
+        _loadedBattles = OverlayProjectBattleEdits(_loadedBattles);
+        _loadedParts = OverlayProjectPartEdits(_loadedParts);
         RefreshPartLegTypeOptions(_loadedParts);
         RefreshBattleLoadoutOptions();
         _loadedEncounters = _encounterTableReader.ReadAll(_session.RomFile);
@@ -346,13 +359,9 @@ public partial class MainWindow : Window
         _largePartDisplayAssetCache.Clear();
         _mapTilesetCache.Clear();
         _editedOverworldSpriteAssets.Clear();
-        _stagedOverworldSpriteAssets.Clear();
         _editedPortraitAssets.Clear();
-        _stagedPortraitAssets.Clear();
         _editedBattleCompositeComponentAssets.Clear();
-        _stagedBattleCompositeComponentAssets.Clear();
         _editedLargePartDisplayAssets.Clear();
-        _stagedLargePartDisplayAssets.Clear();
         _spriteEditHistories.Clear();
         _selectedSpriteNode = null;
         RefreshSpritePaletteFamilyOptions();
@@ -583,7 +592,7 @@ public partial class MainWindow : Window
 
     private async void OnApplyBattleClicked(object? sender, RoutedEventArgs e)
     {
-        if (_session is null || _loadedBattle is null)
+        if (_loadedBattle is null)
         {
             await DisplayAlertAsync("No Battle Loaded", "Select a battle first.", "OK");
             return;
@@ -592,10 +601,12 @@ public partial class MainWindow : Window
         try
         {
             var updated = BuildBattleFromEditor(_loadedBattle);
-            _battlePatcher.Apply(_session, updated);
-            _loadedBattles = _loadedBattles.Select(battle => battle.Id == updated.Id ? updated : battle).ToArray();
-            _loadedBattle = updated;
-            BattleEditor.Text = FormatBattle(updated);
+            var source = GetSourceBattleDefinition(updated.Id);
+            var staged = _battleProjectEditor.StageBattle(_project, source, updated);
+            var effective = staged ?? source;
+            _loadedBattles = _loadedBattles.Select(battle => battle.Id == effective.Id ? effective : battle).ToArray();
+            _loadedBattle = effective;
+            BattleEditor.Text = FormatBattle(effective);
             UpdateStatus();
         }
         catch (Exception ex)
@@ -606,7 +617,7 @@ public partial class MainWindow : Window
 
     private async void OnApplyPartClicked(object? sender, RoutedEventArgs e)
     {
-        if (_session is null || _loadedPart is null)
+        if (_loadedPart is null)
         {
             await DisplayAlertAsync("No Part Loaded", "Select a part first.", "OK");
             return;
@@ -615,10 +626,12 @@ public partial class MainWindow : Window
         try
         {
             var updated = BuildPartFromEditor(_loadedPart);
-            _partPatcher.Apply(_session, updated);
-            _loadedParts = _loadedParts.Select(part => part.Id == updated.Id ? updated : part).ToArray();
-            _loadedPart = updated;
-            PopulatePartEditor(updated);
+            var source = GetSourcePartDefinition(updated.Id);
+            var staged = _partProjectEditor.StagePart(_project, source, updated);
+            var effective = staged ?? source;
+            _loadedParts = _loadedParts.Select(part => part.Id == effective.Id ? effective : part).ToArray();
+            _loadedPart = effective;
+            PopulatePartEditor(effective);
             UpdateStatus();
         }
         catch (Exception ex)
@@ -807,17 +820,19 @@ public partial class MainWindow : Window
         AddRange("Map Spawn", _project.MapEntitySpawnPatches.Select(patch => $"Map {patch.MapId:D3} ({patch.Records.Count} records)"));
         AddRange("Map Warp", _project.MapWarpPatches.Select(patch => $"Map {patch.MapId:D3} ({patch.Records.Count} records)"));
         AddRange("Map Collision", _project.MapCollisionPatches.Select(patch => $"Map {patch.MapId:D3} ({patch.ColorAttributeBytes.Length} bytes)"));
+        AddRange("Map Layer", _project.MapLayerPatches.Select(patch => $"Map {patch.MapId:D3}, Layer {patch.LayerIndex + 1} ({patch.TileEntries.Length} tiles)"));
         AddRange("Map Metadata", BuildMapMetadataChangeDescriptions());
+        AddRange("Battle", _project.BattleEdits.Select(battle => $"Battle {battle.Id:D3}"));
+        AddRange("Part", _project.PartEdits.Select(part => $"Part {part.Id:D3}"));
         AddRange("Large Display Split", _project.SplitLargeDisplayPartIds.Select(id => $"Part {id:D3}"));
-        AddRange("Staged Overworld Sprite", _stagedOverworldSpriteAssets.Keys.Select(id => $"Sprite {id:D3}"));
-        AddRange("Staged Portrait", _stagedPortraitAssets.Keys.Select(key => $"Character {key.CharacterId:D3}, Portrait {key.PortraitIndex:D2}"));
-        AddRange("Staged Battle Sprite", _stagedBattleCompositeComponentAssets.Keys.Select(key => $"Medabot {key.MedabotId:D3}, Component {key.ComponentIndex}"));
-        AddRange("Staged Large Display", _stagedLargePartDisplayAssets.Keys.Select(key => $"Part {key.PartId:D3}, Variant {key.VariantSelector}"));
-        AddRange("Sprite Draft", _editedOverworldSpriteAssets.Keys.Where(id => !_stagedOverworldSpriteAssets.ContainsKey(id)).Select(id => $"Overworld {id:D3}"));
-        AddRange("Sprite Draft", _editedPortraitAssets.Keys.Where(key => !_stagedPortraitAssets.ContainsKey(key)).Select(key => $"Portrait {key.CharacterId:D3}:{key.PortraitIndex:D2}"));
-        AddRange("Sprite Draft", _editedBattleCompositeComponentAssets.Keys.Where(key => !_stagedBattleCompositeComponentAssets.ContainsKey(key)).Select(key => $"Battle {key.MedabotId:D3}/{key.ComponentIndex}"));
-        AddRange("Sprite Draft", _editedLargePartDisplayAssets.Keys.Where(key => !_stagedLargePartDisplayAssets.ContainsKey(key)).Select(key => $"Large {key.PartId:D3}/{key.VariantSelector}"));
-        AddRange("Edited Map Layer", _editedMapLayerEntries.Keys.Select(key => $"Map {key.MapId:D3}, Layer {key.LayerIndex + 1}"));
+        AddRange("Staged Overworld Sprite", _project.OverworldSpriteEdits.Select(asset => $"Sprite {asset.SpriteId:D3}"));
+        AddRange("Staged Portrait", _project.PortraitEdits.Select(asset => $"Character {asset.CharacterId:D3}, Portrait {asset.PortraitIndex:D2}"));
+        AddRange("Staged Battle Sprite", _project.BattleCompositeSpriteEdits.Select(asset => $"Medabot {asset.MedabotId:D3}, Component {asset.ComponentIndex}"));
+        AddRange("Staged Large Display", _project.LargePartDisplayEdits.Select(asset => $"Part {asset.PartId:D3}, Variant {asset.VariantSelector}"));
+        AddRange("Sprite Draft", _editedOverworldSpriteAssets.Keys.Where(id => !_project.OverworldSpriteEdits.Any(asset => asset.SpriteId == id)).Select(id => $"Overworld {id:D3}"));
+        AddRange("Sprite Draft", _editedPortraitAssets.Keys.Where(key => !_project.PortraitEdits.Any(asset => asset.CharacterId == key.CharacterId && asset.PortraitIndex == key.PortraitIndex)).Select(key => $"Portrait {key.CharacterId:D3}:{key.PortraitIndex:D2}"));
+        AddRange("Sprite Draft", _editedBattleCompositeComponentAssets.Keys.Where(key => !_project.BattleCompositeSpriteEdits.Any(asset => asset.MedabotId == key.MedabotId && asset.ComponentIndex == key.ComponentIndex)).Select(key => $"Battle {key.MedabotId:D3}/{key.ComponentIndex}"));
+        AddRange("Sprite Draft", _editedLargePartDisplayAssets.Keys.Where(key => !_project.LargePartDisplayEdits.Any(asset => asset.PartId == key.PartId && asset.VariantSelector == key.VariantSelector)).Select(key => $"Large {key.PartId:D3}/{key.VariantSelector}"));
         AddRange("Pending Patch Action", _project.PendingActions.Select(action => $"0x{action.Offset:X6} ({action.Data.Length} bytes) {action.Description}"));
 
         _visibleChangeItems.Clear();
@@ -827,7 +842,7 @@ public partial class MainWindow : Window
         }
 
         var totalCount = _allChangeItems.Count;
-        ChangesSummaryLabel.Text = $"Total staged changes: {totalCount}{Environment.NewLine}Messages: {stagedMessagePatchCount}  |  Event scripts: {_project.EventScriptPatches.Count}  |  Map metadata: {_project.MapMusicPatches.Count + _project.MapEncounterPatches.Count + _project.MapEncounterStatePatches.Count + _project.MapEventObjectResourcePatches.Count}  |  Map overlays: {_project.MapEntitySpawnPatches.Count + _project.MapWarpPatches.Count + _project.MapCollisionPatches.Count}  |  Staged sprites: {_stagedOverworldSpriteAssets.Count + _stagedPortraitAssets.Count + _stagedBattleCompositeComponentAssets.Count + _stagedLargePartDisplayAssets.Count}";
+        ChangesSummaryLabel.Text = $"Total staged changes: {totalCount}{Environment.NewLine}Messages: {stagedMessagePatchCount}  |  Event scripts: {_project.EventScriptPatches.Count}  |  Battles: {_project.BattleEdits.Count}  |  Parts: {_project.PartEdits.Count}  |  Map metadata: {_project.MapMusicPatches.Count + _project.MapEncounterPatches.Count + _project.MapEncounterStatePatches.Count + _project.MapEventObjectResourcePatches.Count}  |  Map overlays/layers: {_project.MapEntitySpawnPatches.Count + _project.MapWarpPatches.Count + _project.MapCollisionPatches.Count + _project.MapLayerPatches.Count}  |  Staged sprites: {_project.OverworldSpriteEdits.Count + _project.PortraitEdits.Count + _project.BattleCompositeSpriteEdits.Count + _project.LargePartDisplayEdits.Count}";
     }
 
     private IEnumerable<string> BuildMapMetadataChangeDescriptions()
@@ -1002,54 +1017,6 @@ public partial class MainWindow : Window
         }
 
         _project.PendingActions.Clear();
-        if (_session is not null)
-        {
-            foreach (var action in _session.AppliedActions)
-            {
-                _project.PendingActions.Add(new RomPatchAction(action.Offset, action.Data.ToArray(), action.Description));
-            }
-        }
-
-        AppendStagedSpriteActionsToProject();
-    }
-
-    private void AppendStagedSpriteActionsToProject()
-    {
-        var sourcePath = _project.SourceRomPath ?? _session?.RomFile.FilePath;
-        if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
-        {
-            return;
-        }
-
-        var tempRom = new RomFile(sourcePath, File.ReadAllBytes(sourcePath));
-        var tempSession = RomHackSession.FromRomFile(tempRom);
-
-        foreach (var sprite in _stagedOverworldSpriteAssets.OrderBy(pair => pair.Key).Select(pair => pair.Value))
-        {
-            _imageAssetPatcher.ApplySpriteSmart(tempSession, sprite);
-        }
-
-        foreach (var portrait in _stagedPortraitAssets.OrderBy(pair => pair.Key.Item1).ThenBy(pair => pair.Key.Item2).Select(pair => pair.Value))
-        {
-            _imageAssetPatcher.ApplyPortraitSmart(tempSession, portrait);
-        }
-
-        foreach (var component in _stagedBattleCompositeComponentAssets.OrderBy(pair => pair.Key.Item1).ThenBy(pair => pair.Key.Item2).Select(pair => pair.Value))
-        {
-            _imageAssetPatcher.ApplyBattleCompositeSpriteComponentSmart(tempSession, component);
-        }
-
-        foreach (var pair in _stagedLargePartDisplayAssets.OrderBy(pair => pair.Key.Item1).ThenBy(pair => pair.Key.Item2))
-        {
-            var part = GetRequiredPartDefinition(pair.Key.Item1);
-            var componentIndex = GetLargeDisplayComponentIndexForVariant(part.Kind, pair.Key.Item2);
-            ApplyLargeDisplayEdits(tempSession, part, componentIndex, pair.Value);
-        }
-
-        foreach (var action in tempSession.AppliedActions)
-        {
-            _project.PendingActions.Add(new RomPatchAction(action.Offset, action.Data.ToArray(), action.Description));
-        }
     }
 
     private static int GetLargeDisplayComponentIndexForVariant(PartKind kind, int variantSelector) => kind switch
@@ -1168,6 +1135,40 @@ public partial class MainWindow : Window
     {
         var profile = MedabotsRomTextProfiles.FindById(_project.TextProfileId);
         return profile?.Name ?? "not selected";
+    }
+
+    private IReadOnlyList<BattleDefinition> OverlayProjectBattleEdits(IReadOnlyList<BattleDefinition> sourceBattles)
+    {
+        return sourceBattles
+            .Select(battle => ProjectEditCollection.Find(_project, ProjectEditAdapters.Battle, battle.Id) ?? battle)
+            .ToArray();
+    }
+
+    private IReadOnlyList<PartDefinition> OverlayProjectPartEdits(IReadOnlyList<PartDefinition> sourceParts)
+    {
+        return sourceParts
+            .Select(part => ProjectEditCollection.Find(_project, ProjectEditAdapters.Part, part.Id) ?? part)
+            .ToArray();
+    }
+
+    private BattleDefinition GetSourceBattleDefinition(int battleId)
+    {
+        if (_sourceBattleDefinitions.TryGetValue(battleId, out var battle))
+        {
+            return battle;
+        }
+
+        throw new InvalidOperationException($"Could not resolve source battle {battleId}.");
+    }
+
+    private PartDefinition GetSourcePartDefinition(int partId)
+    {
+        if (_sourcePartDefinitions.TryGetValue(partId, out var part))
+        {
+            return part;
+        }
+
+        throw new InvalidOperationException($"Could not resolve source part {partId}.");
     }
 
     private void PopulatePatchEditor(MessagePatchItem? patch)

@@ -12,15 +12,16 @@ public sealed class SpriteProjectReplayTests
     {
         var sourceRom = await RomFile.LoadAsync(TestRomLocator.FindWorkspaceRom());
         var repository = new ImageAssetRepository();
-        var patcher = new ImageAssetPatcher();
-        var workingSession = RomHackSession.FromRomFile(new RomFile("working-project-overworld.gba", sourceRom.Data.ToArray()));
-
-        var sprite = repository.ReadSprite(workingSession.RomFile, 0);
+        var sprite = repository.ReadSprite(sourceRom, 0);
         sprite.Image.PixelIndices[0] = (byte)((sprite.Image.PixelIndices[0] + 1) & 0x0F);
         sprite.Image.PaletteBytes[2] ^= 0x1F;
-        patcher.ApplySpriteSmart(workingSession, sprite, 0x800000);
 
-        var loadedProject = await RoundTripProjectWithPendingActionsAsync(workingSession.AppliedActions);
+        var project = new RomHackProject
+        {
+            Name = "Sprite Project Replay"
+        };
+        project.OverworldSpriteEdits.Add(sprite);
+        var loadedProject = await RoundTripProjectAsync(project);
         var targetSession = RomHackSession.FromRomFile(new RomFile("target-project-overworld.gba", sourceRom.Data.ToArray()));
         new RomHackProjectApplicator().Apply(loadedProject, targetSession);
 
@@ -34,15 +35,16 @@ public sealed class SpriteProjectReplayTests
     {
         var sourceRom = await RomFile.LoadAsync(TestRomLocator.FindWorkspaceRom());
         var repository = new ImageAssetRepository();
-        var patcher = new ImageAssetPatcher();
-        var workingSession = RomHackSession.FromRomFile(new RomFile("working-project-portrait.gba", sourceRom.Data.ToArray()));
-
-        var portrait = repository.ReadPortrait(workingSession.RomFile, 0, 0);
+        var portrait = repository.ReadPortrait(sourceRom, 0, 0);
         portrait.Image.PixelIndices[0] = (byte)((portrait.Image.PixelIndices[0] + 3) & 0x0F);
         portrait.Image.PaletteBytes[2] ^= 0x1F;
-        patcher.ApplyPortraitSmart(workingSession, portrait, 0x800000);
 
-        var loadedProject = await RoundTripProjectWithPendingActionsAsync(workingSession.AppliedActions);
+        var project = new RomHackProject
+        {
+            Name = "Sprite Project Replay"
+        };
+        project.PortraitEdits.Add(portrait);
+        var loadedProject = await RoundTripProjectAsync(project);
         var targetSession = RomHackSession.FromRomFile(new RomFile("target-project-portrait.gba", sourceRom.Data.ToArray()));
         new RomHackProjectApplicator().Apply(loadedProject, targetSession);
 
@@ -56,13 +58,10 @@ public sealed class SpriteProjectReplayTests
     {
         var sourceRom = await RomFile.LoadAsync(TestRomLocator.FindWorkspaceRom());
         var repository = new ImageAssetRepository();
-        var patcher = new ImageAssetPatcher();
-        var workingSession = RomHackSession.FromRomFile(new RomFile("working-project-battle.gba", sourceRom.Data.ToArray()));
-
-        var component = repository.ReadBattleCompositeSpriteComponent(workingSession.RomFile, 0, 0);
+        var component = repository.ReadBattleCompositeSpriteComponent(sourceRom, 0, 0);
         component.Image.PixelIndices[0] = (byte)((component.Image.PixelIndices[0] + 5) & 0x0F);
         var nextFamily = (byte)((component.PaletteFamily + 1) % Medabots.Rom.Metadata.MedabotsRomSchema.CompositeBattleSpritePaletteCount);
-        var nextPalette = repository.ReadBattleCompositePaletteBytesForFamily(workingSession.RomFile, nextFamily);
+        var nextPalette = repository.ReadBattleCompositePaletteBytesForFamily(sourceRom, nextFamily);
         component = component with
         {
             PaletteFamily = nextFamily,
@@ -70,9 +69,13 @@ public sealed class SpriteProjectReplayTests
             PaletteSelector = (byte)(nextFamily + 4),
             Image = component.Image with { PaletteBytes = nextPalette.ToArray() }
         };
-        patcher.ApplyBattleCompositeSpriteComponentSmart(workingSession, component, 0x800000);
 
-        var loadedProject = await RoundTripProjectWithPendingActionsAsync(workingSession.AppliedActions);
+        var project = new RomHackProject
+        {
+            Name = "Sprite Project Replay"
+        };
+        project.BattleCompositeSpriteEdits.Add(component);
+        var loadedProject = await RoundTripProjectAsync(project);
         var targetSession = RomHackSession.FromRomFile(new RomFile("target-project-battle.gba", sourceRom.Data.ToArray()));
         new RomHackProjectApplicator().Apply(loadedProject, targetSession);
 
@@ -87,11 +90,8 @@ public sealed class SpriteProjectReplayTests
     {
         var sourceRom = await RomFile.LoadAsync(TestRomLocator.FindWorkspaceRom());
         var repository = new ImageAssetRepository();
-        var patcher = new ImageAssetPatcher();
         var parts = new PartTableReader().ReadAll(sourceRom);
-        var workingSession = RomHackSession.FromRomFile(new RomFile("working-project-large.gba", sourceRom.Data.ToArray()));
-
-        var asset = repository.ReadLargePartDisplay(workingSession.RomFile, parts[375]);
+        var asset = repository.ReadLargePartDisplay(sourceRom, parts[375]);
         asset.Pieces[0].Image.PixelIndices[0] = (byte)((asset.Pieces[0].Image.PixelIndices[0] + 7) & 0x0F);
         if (asset.Pieces[0].PaletteBytes.Length >= 4)
         {
@@ -99,9 +99,12 @@ public sealed class SpriteProjectReplayTests
             asset.Pieces[0].Image.PaletteBytes[2] ^= 0x1F;
         }
 
-        patcher.ApplyLargePartDisplaySmart(workingSession, asset, 0x800000);
-
-        var loadedProject = await RoundTripProjectWithPendingActionsAsync(workingSession.AppliedActions);
+        var project = new RomHackProject
+        {
+            Name = "Sprite Project Replay"
+        };
+        project.LargePartDisplayEdits.Add(asset);
+        var loadedProject = await RoundTripProjectAsync(project);
         var targetSession = RomHackSession.FromRomFile(new RomFile("target-project-large.gba", sourceRom.Data.ToArray()));
         new RomHackProjectApplicator().Apply(loadedProject, targetSession);
 
@@ -114,20 +117,11 @@ public sealed class SpriteProjectReplayTests
         }
     }
 
-    private static async Task<RomHackProject> RoundTripProjectWithPendingActionsAsync(IReadOnlyList<RomPatchAction> actions)
+    private static async Task<RomHackProject> RoundTripProjectAsync(RomHackProject project)
     {
         var tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.medahack.json");
         try
         {
-            var project = new RomHackProject
-            {
-                Name = "Sprite Project Replay"
-            };
-            foreach (var action in actions)
-            {
-                project.PendingActions.Add(new RomPatchAction(action.Offset, action.Data, action.Description));
-            }
-
             await RomHackProjectSerializer.SaveAsync(project, tempFile);
             return await RomHackProjectSerializer.LoadAsync(tempFile);
         }

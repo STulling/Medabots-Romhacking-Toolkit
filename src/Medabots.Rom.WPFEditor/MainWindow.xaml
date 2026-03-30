@@ -554,7 +554,7 @@
                                     </StackPanel>
                                 </Border>
 
-                                <Button Margin="0,12,0,0" HorizontalAlignment="Left" Click="OnApplyBattleClicked">Apply Battle Changes</Button>
+                                <Button Margin="0,12,0,0" HorizontalAlignment="Left" Click="OnApplyBattleClicked">Stage Battle Changes</Button>
                                 <TextBlock Margin="0,14,0,0" Text="Battle Summary" FontWeight="SemiBold" />
                                 <TextBox x:Name="BattleEditor" Margin="0,12,0,0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" MinHeight="150" />
                                 <Expander Margin="0,14,0,0" Header="Advanced / Unresolved Fields">
@@ -838,7 +838,7 @@
                                         </StackPanel>
                                     </Expander>
 
-                                    <Button Margin="0,12,0,0" HorizontalAlignment="Left" Click="OnApplyPartClicked">Apply Part Changes</Button>
+                                    <Button Margin="0,12,0,0" HorizontalAlignment="Left" Click="OnApplyPartClicked">Stage Part Changes</Button>
                                 </StackPanel>
                         </ScrollViewer>
                     </Border>

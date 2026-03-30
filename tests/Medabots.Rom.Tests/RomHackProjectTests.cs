@@ -1,7 +1,10 @@
+using System.Collections.Generic;
+using Medabots.Rom.Battles;
 using Medabots.Rom;
 using Medabots.Rom.Images;
 using Medabots.Rom.Maps;
 using Medabots.Rom.Metadata;
+using Medabots.Rom.Parts;
 using Medabots.Rom.Projects;
 using Xunit;
 
@@ -40,6 +43,36 @@ public sealed class RomHackProjectTests
             project.MapEncounterStatePatches.Add(new MapEncounterStatePatch(16, 1));
             project.MapMusicPatches.Add(new MapMusicPatch(16, 29));
             project.MapEventObjectResourcePatches.Add(new MapEventObjectResourcePatch(16, [0x00, 0x02, 0x03, 0xFF]));
+            project.OverworldSpriteEdits.Add(new SpriteAsset(7, 0x10, 0x20, 0x30, 0x40, new IndexedImage(1, 1, [1, 2, 3, 4, 5, 6, 7, 8], new byte[32])));
+            project.PortraitEdits.Add(new PortraitAsset(3, 1, 0x11, 0x21, 0x31, 0x41, new IndexedImage(1, 1, [8, 7, 6, 5, 4, 3, 2, 1], new byte[32])));
+            project.BattleCompositeSpriteEdits.Add(new BattleCompositeSpriteComponentAsset(12, 2, 0x12, 0x32, 0x22, 0x42, 5, 7, 9, new IndexedImage(1, 1, [0, 1, 2, 3, 4, 5, 6, 7], new byte[32])));
+            project.LargePartDisplayEdits.Add(new LargePartDisplayAsset(
+                449,
+                112,
+                PartKind.RightArm,
+                1,
+                4,
+                0x123456,
+                new Dictionary<int, byte[]> { [8] = [0x00, 0x01, 0x02, 0x03] },
+                new[]
+                {
+                    new LargePartDisplayPieceAsset(
+                        4,
+                        0x654321,
+                        0x15,
+                        0x25,
+                        0x35,
+                        0x45,
+                        [0x00, 0x01, 0x02, 0x03],
+                        8,
+                        1,
+                        2,
+                        1,
+                        new IndexedImage(1, 1, [1, 1, 1, 1, 1, 1, 1, 1], new byte[32]))
+                }));
+            project.BattleEdits.Add(new BattleDefinition(5, 0x1000, 0x2000, 17, 1, 3, 1, [new BattleBot(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0), new BattleBot(12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 0), new BattleBot(23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 0)]));
+            project.PartEdits.Add(new PartDefinition(9, 2, PartKind.RightArm, 0x3000, 1, 2, 3, 0, 4, 5, 6, 1, 7, 8, 9, 10, 11, 12, 13, 14));
+            project.MapLayerPatches.Add(new MapLayerPatch(16, 1, 30, 20, 0, 0, 0, 0, [0x0001, 0x1002, 0x2003, 0x3004]));
             project.SplitLargeDisplayPartIds.Add(449);
             project.SplitLargeDisplayPartIds.Add(450);
 
@@ -81,6 +114,28 @@ public sealed class RomHackProjectTests
             Assert.Equal((byte)29, loaded.MapMusicPatches[0].MusicId);
             Assert.Single(loaded.MapEventObjectResourcePatches);
             Assert.Equal([0x00, 0x02, 0x03, 0xFF], loaded.MapEventObjectResourcePatches[0].ResourceIds);
+            Assert.Single(loaded.OverworldSpriteEdits);
+            Assert.Equal(7, loaded.OverworldSpriteEdits[0].SpriteId);
+            Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8], loaded.OverworldSpriteEdits[0].Image.PixelIndices);
+            Assert.Single(loaded.PortraitEdits);
+            Assert.Equal(3, loaded.PortraitEdits[0].CharacterId);
+            Assert.Equal(1, loaded.PortraitEdits[0].PortraitIndex);
+            Assert.Single(loaded.BattleCompositeSpriteEdits);
+            Assert.Equal(12, loaded.BattleCompositeSpriteEdits[0].MedabotId);
+            Assert.Equal((byte)5, loaded.BattleCompositeSpriteEdits[0].PaletteFamily);
+            Assert.Single(loaded.LargePartDisplayEdits);
+            Assert.Equal(449, loaded.LargePartDisplayEdits[0].PartId);
+            Assert.Single(loaded.LargePartDisplayEdits[0].Pieces);
+            Assert.Single(loaded.BattleEdits);
+            Assert.Equal(5, loaded.BattleEdits[0].Id);
+            Assert.Equal((byte)17, loaded.BattleEdits[0].CharacterId);
+            Assert.Equal(3, loaded.BattleEdits[0].Bots.Count);
+            Assert.Single(loaded.PartEdits);
+            Assert.Equal(9, loaded.PartEdits[0].Id);
+            Assert.Equal(PartKind.RightArm, loaded.PartEdits[0].Kind);
+            Assert.Single(loaded.MapLayerPatches);
+            Assert.Equal(16, loaded.MapLayerPatches[0].MapId);
+            Assert.Equal([0x0001, 0x1002, 0x2003, 0x3004], loaded.MapLayerPatches[0].TileEntries);
             Assert.Equal([449, 450], loaded.SplitLargeDisplayPartIds.OrderBy(id => id).ToArray());
         }
         finally

@@ -1,7 +1,9 @@
+using Medabots.Rom.Battles;
 using Medabots.Rom.Events;
 using Medabots.Rom.Encounters;
 using Medabots.Rom.Maps;
 using Medabots.Rom.Metadata;
+using Medabots.Rom.Parts;
 using Medabots.Rom.Projects;
 using Xunit;
 
@@ -219,5 +221,60 @@ public sealed class EventAndMapProjectPlumbingE2ETests
         Assert.Equal((byte)4, rereadEncounter.Battle4);
         Assert.NotEqual(originalEncounter.Battle1, rereadEncounter.Battle1);
         Assert.NotEqual(originalMap.MusicId, rereadMap.MusicId);
+    }
+
+    [Fact]
+    public async Task Applicator_WritesProjectBackedBattlePartAndMapLayerEdits()
+    {
+        var rom = await RomFile.LoadAsync(TestRomLocator.FindWorkspaceRom());
+        var profile = Assert.IsType<MedabotsRomTextProfile>(MedabotsRomTextProfiles.Detect(rom));
+        var battleReader = new BattleTableReader();
+        var partReader = new PartTableReader();
+        var mapRepository = new MapTilesetRepository();
+        var sourceBattle = battleReader.ReadAll(rom, profile)[0];
+        var sourcePart = partReader.ReadAll(rom)[0];
+        var sourceMap = mapRepository.ReadMap(rom, 16);
+
+        var editedBattle = sourceBattle with
+        {
+            CharacterId = (byte)(sourceBattle.CharacterId == byte.MaxValue ? 0 : sourceBattle.CharacterId + 1)
+        };
+        var editedPart = sourcePart with
+        {
+            Armor = (byte)(sourcePart.Armor == byte.MaxValue ? 0 : sourcePart.Armor + 1)
+        };
+        var editedEntries = sourceMap.Layers[0].TileEntries.ToArray();
+        editedEntries[0] ^= 0x0001;
+        editedEntries[1] ^= 0x1000;
+
+        var project = new RomHackProject
+        {
+            Name = "Unified Structured Edits",
+            TextProfileId = profile.Id
+        };
+        project.BattleEdits.Add(editedBattle);
+        project.PartEdits.Add(editedPart);
+        project.MapLayerPatches.Add(new MapLayerPatch(
+            sourceMap.MapId,
+            sourceMap.Layers[0].LayerIndex,
+            sourceMap.Layers[0].HeaderWidthInTiles,
+            sourceMap.Layers[0].HeaderHeightInTiles,
+            sourceMap.Layers[0].HeaderOriginX,
+            sourceMap.Layers[0].HeaderOriginY,
+            sourceMap.Layers[0].HeaderOriginX2,
+            sourceMap.Layers[0].HeaderOriginY2,
+            editedEntries));
+
+        var session = RomHackSession.FromRomFile(new RomFile("unified-structured-edits.gba", rom.Data.ToArray()));
+        new RomHackProjectApplicator().Apply(project, session);
+
+        var rereadBattle = battleReader.ReadAll(session.RomFile, profile)[0];
+        var rereadPart = partReader.ReadSingle(session.RomFile, sourcePart.Id, sourcePart.DataOffset);
+        var rereadMap = mapRepository.ReadMap(session.RomFile, 16);
+
+        Assert.Equal(editedBattle.CharacterId, rereadBattle.CharacterId);
+        Assert.Equal(editedPart.Armor, rereadPart.Armor);
+        Assert.Equal(editedEntries, rereadMap.Layers[0].TileEntries);
+        Assert.True(rereadMap.Layers[0].DataOffset >= 0x800000);
     }
 }

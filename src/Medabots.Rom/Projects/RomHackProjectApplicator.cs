@@ -8,13 +8,21 @@ public sealed partial class RomHackProjectApplicator
     private readonly Events.EventInstructionPatcher _eventInstructionPatcher;
     private readonly Encounters.EncounterTableReader _encounterTableReader;
     private readonly Maps.MapOverlayPatcher _mapOverlayPatcher;
+    private readonly Maps.MapLayerPatcher _mapLayerPatcher;
+    private readonly Images.ImageAssetPatcher _imageAssetPatcher;
+    private readonly Battles.BattlePatcher _battlePatcher;
+    private readonly Parts.PartPatcher _partPatcher;
 
-    public RomHackProjectApplicator(Text.MedabotsTextPatcher? textPatcher = null, Events.EventInstructionPatcher? eventInstructionPatcher = null, Maps.MapOverlayPatcher? mapOverlayPatcher = null)
+    public RomHackProjectApplicator(Text.MedabotsTextPatcher? textPatcher = null, Events.EventInstructionPatcher? eventInstructionPatcher = null, Maps.MapOverlayPatcher? mapOverlayPatcher = null, Maps.MapLayerPatcher? mapLayerPatcher = null, Images.ImageAssetPatcher? imageAssetPatcher = null, Battles.BattlePatcher? battlePatcher = null, Parts.PartPatcher? partPatcher = null)
     {
         _textPatcher = textPatcher ?? new Text.MedabotsTextPatcher();
         _eventInstructionPatcher = eventInstructionPatcher ?? new Events.EventInstructionPatcher();
         _encounterTableReader = new Encounters.EncounterTableReader();
         _mapOverlayPatcher = mapOverlayPatcher ?? new Maps.MapOverlayPatcher();
+        _mapLayerPatcher = mapLayerPatcher ?? new Maps.MapLayerPatcher();
+        _imageAssetPatcher = imageAssetPatcher ?? new Images.ImageAssetPatcher();
+        _battlePatcher = battlePatcher ?? new Battles.BattlePatcher();
+        _partPatcher = partPatcher ?? new Parts.PartPatcher();
     }
 
     public void Apply(RomHackProject project, RomHackSession session)
@@ -33,6 +41,10 @@ public sealed partial class RomHackProjectApplicator
         ApplyMapEntitySpawnPatches(project, session);
         ApplyMapWarpPatches(project, session);
         ApplyMapCollisionPatches(project, session);
+        ApplyMapLayerPatches(project, session);
+        ApplyBattleEdits(project, session);
+        ApplyPartEdits(project, session);
+        ApplySpriteEdits(project, session);
     }
 
     private MedabotsRomTextProfile? ResolveTextProfile(RomHackProject project)

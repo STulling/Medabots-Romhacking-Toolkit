@@ -36,5 +36,19 @@ public sealed class RomHackProject
 
     public IList<Maps.MapEventObjectResourcePatch> MapEventObjectResourcePatches { get; } = new List<Maps.MapEventObjectResourcePatch>();
 
+    public IList<Images.SpriteAsset> OverworldSpriteEdits { get; } = new List<Images.SpriteAsset>();
+
+    public IList<Images.PortraitAsset> PortraitEdits { get; } = new List<Images.PortraitAsset>();
+
+    public IList<Images.BattleCompositeSpriteComponentAsset> BattleCompositeSpriteEdits { get; } = new List<Images.BattleCompositeSpriteComponentAsset>();
+
+    public IList<Images.LargePartDisplayAsset> LargePartDisplayEdits { get; } = new List<Images.LargePartDisplayAsset>();
+
+    public IList<Battles.BattleDefinition> BattleEdits { get; } = new List<Battles.BattleDefinition>();
+
+    public IList<Parts.PartDefinition> PartEdits { get; } = new List<Parts.PartDefinition>();
+
+    public IList<Maps.MapLayerPatch> MapLayerPatches { get; } = new List<Maps.MapLayerPatch>();
+
     public IList<int> SplitLargeDisplayPartIds { get; } = new List<int>();
 }

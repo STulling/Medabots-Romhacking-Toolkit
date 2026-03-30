@@ -146,6 +146,19 @@ public sealed partial class RomHackProjectApplicator
         }
     }
 
+    private void ApplyMapLayerPatches(RomHackProject project, RomHackSession session)
+    {
+        if (project.MapLayerPatches.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var patch in project.MapLayerPatches.OrderBy(patch => patch.MapId).ThenBy(patch => patch.LayerIndex))
+        {
+            _mapLayerPatcher.RewriteLayer(session, patch, $"Apply map {patch.MapId} layer {patch.LayerIndex + 1} patch");
+        }
+    }
+
     private void ApplyMapEncounterPatches(RomHackProject project, RomHackSession session)
     {
         if (project.MapEncounterPatches.Count == 0)
@@ -199,6 +212,45 @@ public sealed partial class RomHackProjectApplicator
         foreach (var patch in project.MapEventObjectResourcePatches.OrderBy(patch => patch.MapId))
         {
             _mapOverlayPatcher.RewriteEventObjectResources(session, patch, $"Apply map {patch.MapId} sprite slot patch");
+        }
+    }
+
+    private void ApplySpriteEdits(RomHackProject project, RomHackSession session)
+    {
+        foreach (var sprite in project.OverworldSpriteEdits.OrderBy(asset => asset.SpriteId))
+        {
+            _imageAssetPatcher.ApplySpriteSmart(session, sprite);
+        }
+
+        foreach (var portrait in project.PortraitEdits.OrderBy(asset => asset.CharacterId).ThenBy(asset => asset.PortraitIndex))
+        {
+            _imageAssetPatcher.ApplyPortraitSmart(session, portrait);
+        }
+
+        foreach (var component in project.BattleCompositeSpriteEdits.OrderBy(asset => asset.MedabotId).ThenBy(asset => asset.ComponentIndex))
+        {
+            _imageAssetPatcher.ApplyBattleCompositeSpriteComponentSmart(session, component);
+        }
+
+        foreach (var asset in project.LargePartDisplayEdits.OrderBy(entry => entry.PartId).ThenBy(entry => entry.VariantSelector))
+        {
+            _imageAssetPatcher.ApplyLargePartDisplaySmart(session, asset);
+        }
+    }
+
+    private void ApplyBattleEdits(RomHackProject project, RomHackSession session)
+    {
+        foreach (var battle in project.BattleEdits.OrderBy(edit => edit.Id))
+        {
+            _battlePatcher.Apply(session, battle);
+        }
+    }
+
+    private void ApplyPartEdits(RomHackProject project, RomHackSession session)
+    {
+        foreach (var part in project.PartEdits.OrderBy(edit => edit.Id))
+        {
+            _partPatcher.Apply(session, part);
         }
     }
 }

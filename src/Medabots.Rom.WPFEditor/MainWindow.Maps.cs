@@ -11,6 +11,7 @@ using Medabots.Rom.Events;
 using Medabots.Rom.Images;
 using Medabots.Rom.Maps;
 using Medabots.Rom.Metadata;
+using Medabots.Rom.Projects;
 using Medabots.Rom.WPFEditor.Models;
 
 namespace Medabots.Rom.WPFEditor;
@@ -82,7 +83,6 @@ public partial class MainWindow
     private int? _mapSpriteSlotEditorMapId;
     private MapOverlayRecordItem? _selectedMapOverlayRecord;
     private readonly Dictionary<int, int> _selectedMapTilesetSourceMapIds = [];
-    private readonly Dictionary<(int MapId, int LayerIndex), ushort[]> _editedMapLayerEntries = [];
     private readonly Dictionary<int, MapTilesetAsset> _sourceMapTilesetCache = [];
     private bool _isPanningMapPreview;
     private System.Windows.Point _mapPanStartPoint;
@@ -2478,9 +2478,13 @@ public partial class MainWindow
 
     private ushort[] GetEffectiveMapLayerEntries(MapLayerAsset layer)
     {
-        if (_loadedMapTileset is not null && _editedMapLayerEntries.TryGetValue((_loadedMapTileset.MapId, layer.LayerIndex), out var edited))
+        if (_loadedMapTileset is not null)
         {
-            return edited;
+            var patch = ProjectEditCollection.Find(_project, ProjectEditAdapters.MapLayer, (_loadedMapTileset.MapId, layer.LayerIndex));
+            if (patch is not null)
+            {
+                return patch.TileEntries.ToArray();
+            }
         }
 
         return layer.TileEntries.ToArray();
@@ -2513,11 +2517,7 @@ public partial class MainWindow
             return false;
         }
 
-        if (!_editedMapLayerEntries.TryGetValue((_loadedMapTileset.MapId, layerIndex), out var edited))
-        {
-            edited = layer.TileEntries.ToArray();
-            _editedMapLayerEntries[(_loadedMapTileset.MapId, layerIndex)] = edited;
-        }
+        var edited = GetEffectiveMapLayerEntries(layer);
 
         var tilesetAsset = GetSelectedMapTilesetAsset();
         var selection = GetSelectedMapTilesetTileSelection(tilesetAsset);
@@ -2540,6 +2540,7 @@ public partial class MainWindow
             }
         }
 
+        _mapLayerProjectEditor.StageLayer(_project, _loadedMapTileset.MapId, layer, edited);
         return true;
     }
 
