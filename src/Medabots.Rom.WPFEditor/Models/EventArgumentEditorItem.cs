@@ -13,6 +13,7 @@ public sealed class EventArgumentEditorItem : INotifyPropertyChanged
     private int _selectedJumpTargetIndex = -1;
     private int _moveDirectionIndex;
     private string _moveDistanceText = "0";
+    private bool _isMoveUnused;
     private string _trackedObjectSlotText = "0";
     private string _packedFlagsText = "0x00";
 
@@ -122,6 +123,21 @@ public sealed class EventArgumentEditorItem : INotifyPropertyChanged
         }
     }
 
+    public bool IsMoveUnused
+    {
+        get => _isMoveUnused;
+        set
+        {
+            if (_isMoveUnused == value)
+            {
+                return;
+            }
+
+            _isMoveUnused = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string TrackedObjectSlotText
     {
         get => _trackedObjectSlotText;
@@ -183,28 +199,41 @@ public sealed class EventArgumentEditorItem : INotifyPropertyChanged
 
             case EventArgumentType.Direction:
                 item.IsEnumEditor = true;
-                item.EnumOptions.Add("north");
-                item.EnumOptions.Add("south");
-                item.EnumOptions.Add("west");
-                item.EnumOptions.Add("east");
+                item.EnumOptions.Add("North");
+                item.EnumOptions.Add("South");
+                item.EnumOptions.Add("West");
+                item.EnumOptions.Add("East");
                 item.SelectedEnumIndex = Math.Clamp(argument.RawValue, 0, item.EnumOptions.Count - 1);
                 break;
 
             case EventArgumentType.Part:
                 item.IsEnumEditor = true;
-                item.EnumOptions.Add("head");
-                item.EnumOptions.Add("right");
-                item.EnumOptions.Add("left");
-                item.EnumOptions.Add("legs");
+                item.EnumOptions.Add("Head");
+                item.EnumOptions.Add("Right Arm");
+                item.EnumOptions.Add("Left Arm");
+                item.EnumOptions.Add("Legs");
+                item.SelectedEnumIndex = Math.Clamp(argument.RawValue, 0, item.EnumOptions.Count - 1);
+                break;
+
+            case EventArgumentType.Bot:
+                item.IsEnumEditor = true;
+                PopulateEnumOptions(item.EnumOptions, MedabotsMetadata.Default.Catalog.Bots);
+                item.SelectedEnumIndex = Math.Clamp(argument.RawValue, 0, item.EnumOptions.Count - 1);
+                break;
+
+            case EventArgumentType.Medal:
+                item.IsEnumEditor = true;
+                PopulateEnumOptions(item.EnumOptions, MedabotsMetadata.Default.Catalog.Medals);
                 item.SelectedEnumIndex = Math.Clamp(argument.RawValue, 0, item.EnumOptions.Count - 1);
                 break;
 
             case EventArgumentType.Move:
                 item.IsMoveEditor = true;
-                item.EnumOptions.Add("north");
-                item.EnumOptions.Add("south");
-                item.EnumOptions.Add("west");
-                item.EnumOptions.Add("east");
+                item.EnumOptions.Add("North");
+                item.EnumOptions.Add("South");
+                item.EnumOptions.Add("West");
+                item.EnumOptions.Add("East");
+                item.IsMoveUnused = argument.RawValue == MedabotsRomSchema.EventMoveNone;
                 item.MoveDirectionIndex = (argument.RawValue & MedabotsRomSchema.EventMoveMask) switch
                 {
                     MedabotsRomSchema.EventMoveNorth => 0,
@@ -258,6 +287,11 @@ public sealed class EventArgumentEditorItem : INotifyPropertyChanged
 
         if (IsMoveEditor)
         {
+            if (IsMoveUnused)
+            {
+                return MedabotsRomSchema.EventMoveNone;
+            }
+
             if (!int.TryParse(MoveDistanceText, out var distance) || distance < 0 || distance > MedabotsRomSchema.EventMoveDistanceMask)
             {
                 throw new InvalidOperationException($"{Name} distance must be between 0 and {MedabotsRomSchema.EventMoveDistanceMask}.");
@@ -311,6 +345,15 @@ public sealed class EventArgumentEditorItem : INotifyPropertyChanged
         }
 
         throw new InvalidOperationException($"{fieldName} must be a non-negative integer or 0x-prefixed hex value.");
+    }
+
+    private static void PopulateEnumOptions(ObservableCollection<string> target, IReadOnlyList<string> values)
+    {
+        for (var index = 0; index < values.Count; index++)
+        {
+            var name = string.IsNullOrWhiteSpace(values[index]) ? $"Unknown #{index}" : values[index];
+            target.Add($"{index:D3}  {name}");
+        }
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)

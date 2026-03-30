@@ -15,20 +15,31 @@ public sealed class MapTilesetRepositoryTests
         var asset = repository.ReadMap(rom, 0, "Town");
 
         Assert.Equal(0, asset.MapId);
+        Assert.Equal(MedabotsRomSchema.MapEncounterSettingsTableOffset, asset.EncounterSettingsDataOffset);
+        Assert.Equal((byte)0x00, asset.EncounterEnabledByte);
+        Assert.False(asset.HasEncounters);
         Assert.Equal(MedabotsRomSchema.MapTilesetGraphicsPointerTableOffset, asset.GraphicsPointerOffset);
         Assert.Equal(0x5FC6D0, asset.GraphicsDataOffset);
         Assert.Equal(MedabotsRomSchema.MapTilesetPalettePointerTableOffset, asset.PalettePointerOffset);
         Assert.Equal(0x5FC0C0, asset.PaletteDataOffset);
+        Assert.Equal(MedabotsRomSchema.MapMusicTableOffset, asset.MusicDataOffset);
+        Assert.Equal((byte)0x1D, asset.MusicId);
         Assert.Equal(MedabotsRomSchema.MapColorAttributePointerTableOffset, asset.ColorAttributePointerOffset);
         Assert.Equal(0x5FC260, asset.ColorAttributeDataOffset);
+        Assert.Equal(MedabotsRomSchema.MapEventObjectResourcePointerTableOffset, asset.EventObjectResourcePointerOffset);
+        Assert.Equal(0x413480, asset.EventObjectResourceDataOffset);
         Assert.Equal(58, asset.WidthInTiles);
         Assert.Equal(56, asset.HeightInTiles);
         Assert.Equal(3, asset.Layers.Count);
         Assert.Equal(0x60007C, asset.Layers[0].DataOffset);
         Assert.Equal(0x600594, asset.Layers[1].DataOffset);
         Assert.Equal(0x600F74, asset.Layers[2].DataOffset);
+        Assert.NotEmpty(asset.RawTilesetPixelIndices);
         Assert.NotEmpty(asset.TilesetSheet.PixelIndices);
         Assert.Equal(MedabotsRomSchema.MapPaletteSize, asset.PaletteBytes.Length);
+        Assert.NotEmpty(asset.EventObjectResourceIds);
+        Assert.Equal((byte)0x00, asset.EventObjectResourceIds[0]);
+        Assert.Equal((byte)0x02, asset.EventObjectResourceIds[1]);
         Assert.True(asset.WidthInTiles > 0);
         Assert.True(asset.HeightInTiles > 0);
         Assert.All(asset.Layers, layer =>

@@ -5,7 +5,7 @@ public sealed record BattleDefinition(
     int PointerOffset,
     int DataOffset,
     byte CharacterId,
-    byte Unknown1,
+    byte InitializationMode,
     byte NumberOfBots,
-    IReadOnlyList<BattleBot> Bots,
-    byte AlwaysZero);
+    byte TemplateFlags,
+    IReadOnlyList<BattleBot> Bots);

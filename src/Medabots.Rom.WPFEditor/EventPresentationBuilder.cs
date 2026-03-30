@@ -409,8 +409,12 @@ internal sealed class EventPresentationBuilder(
 
         var arguments = instruction.Arguments
             .Where(argument => argument.Type != EventArgumentType.Jump)
+            .Where(argument => argument.Type != EventArgumentType.Move || argument.RawValue != MedabotsRomSchema.EventMoveNone)
             .Select(argument => $"{argument.Name}: {FormatFriendlyArgument(argument)}");
-        return $"{friendlyName} ({string.Join(", ", arguments)})";
+        var argumentList = arguments.ToArray();
+        return argumentList.Length == 0
+            ? friendlyName
+            : $"{friendlyName} ({string.Join(", ", argumentList)})";
     }
 
     private string FormatFriendlyArgument(EventArgumentValue argument)
@@ -420,6 +424,23 @@ internal sealed class EventPresentationBuilder(
             EventArgumentType.Bot => $"{metadata.GetBotName(argument.RawValue)} ({argument.RawValue})",
             EventArgumentType.Medal => $"{metadata.GetMedalName(argument.RawValue)} ({argument.RawValue})",
             EventArgumentType.Music => $"{metadata.GetSongName(argument.RawValue)} ({argument.RawValue})",
+            EventArgumentType.Part => argument.RawValue switch
+            {
+                0 => "Head",
+                1 => "Right Arm",
+                2 => "Left Arm",
+                3 => "Legs",
+                _ => argument.DisplayValue
+            },
+            EventArgumentType.Direction => argument.RawValue switch
+            {
+                0 => "North",
+                1 => "South",
+                2 => "West",
+                3 => "East",
+                _ => argument.DisplayValue
+            },
+            EventArgumentType.Move => FormatMoveArgument(argument.RawValue),
             EventArgumentType.PackedTrackedObjectId => new PackedTrackedObjectId((byte)argument.RawValue).Flags == 0
                 ? $"slot {new PackedTrackedObjectId((byte)argument.RawValue).TrackedObjectSlot}"
                 : $"slot {new PackedTrackedObjectId((byte)argument.RawValue).TrackedObjectSlot}, flags 0x{new PackedTrackedObjectId((byte)argument.RawValue).Flags:X2}",
@@ -428,6 +449,25 @@ internal sealed class EventPresentationBuilder(
             EventArgumentType.PostBattleModeFlags => $"0x{argument.RawValue:X2}",
             _ => argument.DisplayValue
         };
+    }
+
+    private static string FormatMoveArgument(int rawValue)
+    {
+        if (rawValue == MedabotsRomSchema.EventMoveNone)
+        {
+            return "Unused";
+        }
+
+        var direction = (rawValue & MedabotsRomSchema.EventMoveMask) switch
+        {
+            MedabotsRomSchema.EventMoveNorth => "North",
+            MedabotsRomSchema.EventMoveSouth => "South",
+            MedabotsRomSchema.EventMoveWest => "West",
+            MedabotsRomSchema.EventMoveEast => "East",
+            _ => "Unknown"
+        };
+        var distance = rawValue & MedabotsRomSchema.EventMoveDistanceMask;
+        return $"{direction} x{distance}";
     }
 
     private static string SanitizeMessageText(string text)

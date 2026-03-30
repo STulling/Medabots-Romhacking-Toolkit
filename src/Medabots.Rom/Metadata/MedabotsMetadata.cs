@@ -42,7 +42,51 @@ public sealed class MedabotsMetadata
 
     public string GetMedalName(int id) => GetName(Catalog.Medals, id, "medal");
 
+    public string GetPartAttributeName(int id) => id switch
+    {
+        0 => "Grapple",
+        1 => "Shoot",
+        2 => "Optic",
+        3 => "Bomb",
+        4 => "Gravity",
+        5 => "Formation",
+        6 => "Movement",
+        7 => "Stop",
+        8 => "Bind",
+        9 => "Flow",
+        10 => "Release",
+        11 => "Cancel",
+        12 => "Defense",
+        13 => "Heal",
+        14 => "Revive",
+        15 => "Anti-Air",
+        16 => "Anti-Sea",
+        17 => "Scout",
+        18 => "Conceal",
+        19 => "Time",
+        20 => "Interrupt",
+        21 => "Destroy",
+        22 => "Regenerate",
+        23 => "Teamwork",
+        24 => "Counterattack",
+        25 => "Transform",
+        26 => "Nothing",
+        _ => $"Unknown part attribute #{id}"
+    };
+
     public string GetSongName(int id) => GetName(Catalog.SongNames, id, "song");
+
+    public string GetLegTypeName(int id) => id switch
+    {
+        100 => "Flying",
+        101 => "Hover",
+        102 => "Multi-Leg",
+        103 => "Bipedal",
+        104 => "Wheeled",
+        105 => "Tank",
+        106 => "Aquatic",
+        _ => $"Unknown leg type #{id}"
+    };
 
     public bool TryGetBestMedalId(int botId, out int medalId) => _bestMedalByBot.TryGetValue(botId, out medalId);
 

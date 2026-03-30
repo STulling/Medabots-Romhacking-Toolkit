@@ -15,6 +15,7 @@ using WpfMouseEventArgs = System.Windows.Input.MouseEventArgs;
 using WpfTextBox = System.Windows.Controls.TextBox;
 using WpfButton = System.Windows.Controls.Button;
 using WpfMenuItem = System.Windows.Controls.MenuItem;
+using WpfTextBlock = System.Windows.Controls.TextBlock;
 using WpfCursors = System.Windows.Input.Cursors;
 using WpfMessageBox = System.Windows.MessageBox;
 using Win32OpenFileDialog = Microsoft.Win32.OpenFileDialog;
@@ -49,6 +50,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<SpriteBrowserNode> _visibleSpriteNodes = [];
     private readonly ObservableCollection<BrowserItem> _visibleEncounterItems = [];
     private readonly ObservableCollection<BrowserItem> _visibleShopItems = [];
+    private readonly ObservableCollection<BrowserItem> _visibleChangeItems = [];
 
     private readonly List<MessagePatchItem> _allPatchItems = [];
     private readonly List<EventBrowserItem> _allEventItems = [];
@@ -58,6 +60,7 @@ public partial class MainWindow : Window
     private readonly List<SpriteBrowserNode> _allSpriteNodes = [];
     private readonly List<BrowserItem> _allEncounterItems = [];
     private readonly List<BrowserItem> _allShopItems = [];
+    private readonly List<BrowserItem> _allChangeItems = [];
 
     private readonly RomHackProjectApplicator _projectApplicator = new();
     private readonly MedabotsMessageTableReader _messageTableReader = new();
@@ -89,17 +92,33 @@ public partial class MainWindow : Window
     private readonly Dictionary<short, byte[]> _eventProjectScriptPatches = [];
     private readonly Dictionary<string, SpritePreviewState> _spritePreviewCache = [];
     private readonly Dictionary<int, SpriteAsset> _editedOverworldSpriteAssets = [];
+    private readonly Dictionary<int, SpriteAsset> _stagedOverworldSpriteAssets = [];
     private readonly Dictionary<(int CharacterId, int PortraitIndex), PortraitAsset> _editedPortraitAssets = [];
+    private readonly Dictionary<(int CharacterId, int PortraitIndex), PortraitAsset> _stagedPortraitAssets = [];
     private readonly Dictionary<(int MedabotId, int ComponentIndex), BattleCompositeSpriteComponentAsset> _editedBattleCompositeComponentAssets = [];
+    private readonly Dictionary<(int MedabotId, int ComponentIndex), BattleCompositeSpriteComponentAsset> _stagedBattleCompositeComponentAssets = [];
     private readonly Dictionary<(int PartId, int ComponentIndex), BattleCompositeSpriteComponentAsset> _battleCompositeComponentCache = [];
     private readonly Dictionary<(int PartId, int VariantSelector), LargePartDisplayAsset> _largePartDisplayAssetCache = [];
     private readonly Dictionary<(int PartId, int VariantSelector), LargePartDisplayAsset> _editedLargePartDisplayAssets = [];
+    private readonly Dictionary<(int PartId, int VariantSelector), LargePartDisplayAsset> _stagedLargePartDisplayAssets = [];
     private readonly Dictionary<int, Medabots.Rom.Maps.MapTilesetAsset> _mapTilesetCache = [];
     private readonly Dictionary<int, MapOverlayAsset> _mapOverlayCache = [];
     private readonly Dictionary<string, SpriteEditHistory> _spriteEditHistories = [];
     private readonly Dictionary<(int EntryLength, int ShopId), ShopDefinition> _shopCache = [];
     private readonly List<EventOperationOption> _eventOperationOptions = [];
     private readonly List<SpritePaletteFamilyOption> _spritePaletteFamilyOptions = [];
+    private readonly List<BrowserItem> _partMedalOptions = [];
+    private readonly List<BrowserItem> _partSpecialityOptions = [];
+    private readonly List<BrowserItem> _partTechniqueOptions = [];
+    private readonly List<BrowserItem> _partGenderOptions = [];
+    private readonly List<BrowserItem> _partLegTypeOptions = [];
+    private readonly List<BrowserItem> _battleCycleEntryOptions = [];
+    private readonly List<BattleLoadoutOption> _battleHeadOptions = [];
+    private readonly List<BattleLoadoutOption> _battleRightOptions = [];
+    private readonly List<BattleLoadoutOption> _battleLeftOptions = [];
+    private readonly List<BattleLoadoutOption> _battleLegsOptions = [];
+    private readonly List<BrowserItem> _battleMedalOptions = [];
+    private readonly List<BrowserItem> _battleLevelOptions = [];
 
     private RomHackSession? _session;
     private RomHackProject _project = new();
@@ -147,8 +166,24 @@ public partial class MainWindow : Window
         SpriteTreeView.ItemsSource = _visibleSpriteNodes;
         EncounterCollectionView.ItemsSource = _visibleEncounterItems;
         ShopCollectionView.ItemsSource = _visibleShopItems;
+        ChangesCollectionView.ItemsSource = _visibleChangeItems;
         SpritePaletteFamilyComboBox.SelectedValuePath = nameof(SpritePaletteFamilyOption.Value);
         RefreshSpritePaletteFamilyOptions();
+        _partMedalOptions.AddRange(Enumerable.Range(0, 27).Select(id => new BrowserItem(id, $"{id:D3}  {_metadata.GetPartAttributeName(id)}")));
+        _partSpecialityOptions.AddRange(Enumerable.Range(0, _metadata.Catalog.Specialities.Count).Select(id => new BrowserItem(id, $"{id:D3}  {_metadata.GetSpecialityName(id)}")));
+        _partTechniqueOptions.AddRange(Enumerable.Range(0, _metadata.Catalog.Techniques.Count).Select(id => new BrowserItem(id, $"{id:D3}  {_metadata.GetTechniqueName(id)}")));
+        _partGenderOptions.Add(new BrowserItem(0, "000  Male / Default"));
+        _partGenderOptions.Add(new BrowserItem(1, "001  Female / Alternate"));
+        _battleCycleEntryOptions.AddRange(Enumerable.Range(0, 16).Select(value => new BrowserItem(value, $"{value:D2}  {GetBattleCycleEntryName((byte)value)}")));
+        _battleMedalOptions.AddRange(Enumerable.Range(0, _metadata.Catalog.Medals.Count).Select(id => new BrowserItem(id, $"{id:D3}  {_metadata.GetMedalName(id)}")));
+        _battleLevelOptions.AddRange(Enumerable.Range(0, 101).Select(level => new BrowserItem(level, $"Level {level:D3}")));
+        PartMedalCompatibilityComboBox.ItemsSource = _partMedalOptions;
+        PartSpecialityComboBox.ItemsSource = _partSpecialityOptions;
+        PartTechniqueComboBox.ItemsSource = _partTechniqueOptions;
+        PartGenderComboBox.ItemsSource = _partGenderOptions;
+        PartLegTypeComboBox.ItemsSource = _partLegTypeOptions;
+        InitializeBattleCycleComboBoxes();
+        InitializeBattleLoadoutComboBoxes();
         _eventOperationOptions.AddRange(_eventOperationRegistry.Definitions
             .OrderBy(definition => definition.Opcode)
             .Select(definition => new EventOperationOption
@@ -175,6 +210,7 @@ public partial class MainWindow : Window
     private void OnEncountersTabClicked(object? sender, EventArgs e) => SetActiveSection("Encounters");
     private void OnShopsTabClicked(object? sender, EventArgs e) => SetActiveSection("Shops");
     private void OnStarterTabClicked(object? sender, EventArgs e) => SetActiveSection("Starter");
+    private void OnChangesTabClicked(object? sender, EventArgs e) => SetActiveSection("Changes");
 
     private async void OnLoadProjectClicked(object? sender, RoutedEventArgs e)
     {
@@ -300,6 +336,8 @@ public partial class MainWindow : Window
         _loadedBattleActionOpcodes = _battleActionOpcodeTableReader.ReadAll(_session.RomFile);
         _loadedBattleActionScripts = _battleActionScriptTableReader.ReadAll(_session.RomFile);
         _loadedParts = _partTableReader.ReadAll(_session.RomFile);
+        RefreshPartLegTypeOptions(_loadedParts);
+        RefreshBattleLoadoutOptions();
         _loadedEncounters = _encounterTableReader.ReadAll(_session.RomFile);
         _loadedPart = null;
         _loadedMapTileset = null;
@@ -308,9 +346,13 @@ public partial class MainWindow : Window
         _largePartDisplayAssetCache.Clear();
         _mapTilesetCache.Clear();
         _editedOverworldSpriteAssets.Clear();
+        _stagedOverworldSpriteAssets.Clear();
         _editedPortraitAssets.Clear();
+        _stagedPortraitAssets.Clear();
         _editedBattleCompositeComponentAssets.Clear();
+        _stagedBattleCompositeComponentAssets.Clear();
         _editedLargePartDisplayAssets.Clear();
+        _stagedLargePartDisplayAssets.Clear();
         _spriteEditHistories.Clear();
         _selectedSpriteNode = null;
         RefreshSpritePaletteFamilyOptions();
@@ -392,7 +434,7 @@ public partial class MainWindow : Window
     private void OnShopFilterChanged(object? sender, TextChangedEventArgs e) => RefreshShopFilter();
 
     private void RefreshMessageFilter() => RefreshCollection(_visiblePatchItems, _allPatchItems.Where(item => MatchesFilter($"{item.DisplayName} {item.Preview} {item.OriginalText}", MessageFilterEntry.Text)));
-    private void RefreshEventFilter() => RefreshCollection(_visibleEventItems, _allEventItems.Where(item => MatchesFilter(item.FilterText, EventFilterEntry.Text)));
+    private void RefreshEventFilter() => RefreshCollection(_visibleEventItems, _allEventItems.Where(item => MatchesEventFilter(item, EventFilterEntry.Text)));
     private void RefreshBattleFilter() => RefreshCollection(_visibleBattleItems, _allBattleItems.Where(item => MatchesFilter(item.FilterText, BattleFilterEntry.Text)));
     private void RefreshPartFilter() => RefreshCollection(_visiblePartItems, _allPartItems.Where(item => MatchesFilter(item.FilterText, PartFilterEntry.Text)));
     private void RefreshMapFilter() => RefreshCollection(_visibleMapItems, _allMapItems.Where(item => MatchesFilter(item.FilterText, MapFilterEntry.Text)));
@@ -419,6 +461,80 @@ public partial class MainWindow : Window
     private static bool MatchesFilter(string text, string? filter)
     {
         return string.IsNullOrWhiteSpace(filter) || text.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool MatchesEventFilter(EventBrowserItem item, string? filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter))
+        {
+            return true;
+        }
+
+        var tokens = filter.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var token in tokens)
+        {
+            if (token.StartsWith("op:", StringComparison.OrdinalIgnoreCase) ||
+                token.StartsWith("opcode:", StringComparison.OrdinalIgnoreCase))
+            {
+                var separatorIndex = token.IndexOf(':');
+                var opcodeQuery = separatorIndex >= 0 ? token[(separatorIndex + 1)..].Trim() : string.Empty;
+                if (!MatchesEventOpcodeQuery(item, opcodeQuery))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (!item.FilterText.Contains(token, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool MatchesEventOpcodeQuery(EventBrowserItem item, string query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return true;
+        }
+
+        query = query.Trim();
+        if (item.OpcodeFilterText.Contains(query, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (TryParseByteQuery(query, out var opcode))
+        {
+            return item.OpcodeFilterText.Contains($"0x{opcode:X2}", StringComparison.OrdinalIgnoreCase) ||
+                   item.OpcodeFilterText.Contains($" {opcode} ", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    private static bool TryParseByteQuery(string text, out byte value)
+    {
+        if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            return byte.TryParse(text[2..], System.Globalization.NumberStyles.HexNumber, null, out value);
+        }
+
+        if (byte.TryParse(text, out value))
+        {
+            return true;
+        }
+
+        if (text.Length <= 2)
+        {
+            return byte.TryParse(text, System.Globalization.NumberStyles.HexNumber, null, out value);
+        }
+
+        return false;
     }
 
 
@@ -479,7 +595,7 @@ public partial class MainWindow : Window
             _battlePatcher.Apply(_session, updated);
             _loadedBattles = _loadedBattles.Select(battle => battle.Id == updated.Id ? updated : battle).ToArray();
             _loadedBattle = updated;
-            BattleEditor.Text = FormatBattle(updated, _metadata);
+            BattleEditor.Text = FormatBattle(updated);
             UpdateStatus();
         }
         catch (Exception ex)
@@ -502,8 +618,7 @@ public partial class MainWindow : Window
             _partPatcher.Apply(_session, updated);
             _loadedParts = _loadedParts.Select(part => part.Id == updated.Id ? updated : part).ToArray();
             _loadedPart = updated;
-            PartEditor.Text = FormatPart(updated, _metadata);
-            PartActionAnalysisEditor.Text = FormatPartActionAnalysis(updated);
+            PopulatePartEditor(updated);
             UpdateStatus();
         }
         catch (Exception ex)
@@ -662,14 +777,161 @@ public partial class MainWindow : Window
         ProfileStatusLabel.Text = $"Text profile: {ResolveProfileName()}";
         SessionStatusLabel.Text = _session is null ? "No ROM loaded." : $"Loaded: {_session.RomFile.FilePath}";
         RomSizeLabel.Text = _session is null ? "ROM size: n/a" : $"ROM size: {_session.RomFile.Length:N0} bytes";
-        PatchCountLabel.Text = $"Message patches: {_allPatchItems.Count} | Event patches: {_eventProjectScriptPatches.Count} | Applied actions: {_session?.AppliedActions.Count ?? 0}";
+        PatchCountLabel.Text = $"Message patches: {_allPatchItems.Count} | Event patches: {_eventProjectScriptPatches.Count} | Pending patch actions: {_project.PendingActions.Count}";
         FooterProjectLabel.Text = $"Project: {projectDisplayName}";
-        FooterChangesLabel.Text = $"Staged changes: messages {stagedMessagePatchCount}, events {_eventProjectScriptPatches.Count}, applied actions {_session?.AppliedActions.Count ?? 0}";
+        FooterChangesLabel.Text = $"Staged changes: messages {stagedMessagePatchCount}, events {_eventProjectScriptPatches.Count}, pending patch actions {_project.PendingActions.Count}";
         FooterPathLabel.Text = romFileName;
         OpenRomCommandButton.IsEnabled = _session is null;
         OpenProjectCommandButton.IsEnabled = true;
         SaveProjectCommandButton.IsEnabled = true;
         ExportRomCommandButton.IsEnabled = _session is not null;
+        RefreshChangesView(stagedMessagePatchCount);
+    }
+
+    private void RefreshChangesView(int stagedMessagePatchCount)
+    {
+        _allChangeItems.Clear();
+
+        void AddRange(string prefix, IEnumerable<string> values)
+        {
+            foreach (var value in values)
+            {
+                _allChangeItems.Add(new BrowserItem(_allChangeItems.Count, $"{prefix}: {value}"));
+            }
+        }
+
+        AddRange("Message", _project.MessagePatches.Select(patch => $"Bank {patch.Id.Bank:D3}, Index {patch.Id.Index:D3}"));
+        AddRange("Event Script", _project.EventScriptPatches.Select(patch => $"Event {patch.EventId:D4}"));
+        AddRange("Deleted Event", _project.DeletedEventScriptIds.Select(id => $"Event {id:D4}"));
+        AddRange("Event Label", _project.EventLabels.Select(label => $"Event {label.EventId:D4} @ {label.Offset:X} -> {label.Label}"));
+        AddRange("Map Spawn", _project.MapEntitySpawnPatches.Select(patch => $"Map {patch.MapId:D3} ({patch.Records.Count} records)"));
+        AddRange("Map Warp", _project.MapWarpPatches.Select(patch => $"Map {patch.MapId:D3} ({patch.Records.Count} records)"));
+        AddRange("Map Collision", _project.MapCollisionPatches.Select(patch => $"Map {patch.MapId:D3} ({patch.ColorAttributeBytes.Length} bytes)"));
+        AddRange("Map Metadata", BuildMapMetadataChangeDescriptions());
+        AddRange("Large Display Split", _project.SplitLargeDisplayPartIds.Select(id => $"Part {id:D3}"));
+        AddRange("Staged Overworld Sprite", _stagedOverworldSpriteAssets.Keys.Select(id => $"Sprite {id:D3}"));
+        AddRange("Staged Portrait", _stagedPortraitAssets.Keys.Select(key => $"Character {key.CharacterId:D3}, Portrait {key.PortraitIndex:D2}"));
+        AddRange("Staged Battle Sprite", _stagedBattleCompositeComponentAssets.Keys.Select(key => $"Medabot {key.MedabotId:D3}, Component {key.ComponentIndex}"));
+        AddRange("Staged Large Display", _stagedLargePartDisplayAssets.Keys.Select(key => $"Part {key.PartId:D3}, Variant {key.VariantSelector}"));
+        AddRange("Sprite Draft", _editedOverworldSpriteAssets.Keys.Where(id => !_stagedOverworldSpriteAssets.ContainsKey(id)).Select(id => $"Overworld {id:D3}"));
+        AddRange("Sprite Draft", _editedPortraitAssets.Keys.Where(key => !_stagedPortraitAssets.ContainsKey(key)).Select(key => $"Portrait {key.CharacterId:D3}:{key.PortraitIndex:D2}"));
+        AddRange("Sprite Draft", _editedBattleCompositeComponentAssets.Keys.Where(key => !_stagedBattleCompositeComponentAssets.ContainsKey(key)).Select(key => $"Battle {key.MedabotId:D3}/{key.ComponentIndex}"));
+        AddRange("Sprite Draft", _editedLargePartDisplayAssets.Keys.Where(key => !_stagedLargePartDisplayAssets.ContainsKey(key)).Select(key => $"Large {key.PartId:D3}/{key.VariantSelector}"));
+        AddRange("Edited Map Layer", _editedMapLayerEntries.Keys.Select(key => $"Map {key.MapId:D3}, Layer {key.LayerIndex + 1}"));
+        AddRange("Pending Patch Action", _project.PendingActions.Select(action => $"0x{action.Offset:X6} ({action.Data.Length} bytes) {action.Description}"));
+
+        _visibleChangeItems.Clear();
+        foreach (var item in _allChangeItems)
+        {
+            _visibleChangeItems.Add(item);
+        }
+
+        var totalCount = _allChangeItems.Count;
+        ChangesSummaryLabel.Text = $"Total staged changes: {totalCount}{Environment.NewLine}Messages: {stagedMessagePatchCount}  |  Event scripts: {_project.EventScriptPatches.Count}  |  Map metadata: {_project.MapMusicPatches.Count + _project.MapEncounterPatches.Count + _project.MapEncounterStatePatches.Count + _project.MapEventObjectResourcePatches.Count}  |  Map overlays: {_project.MapEntitySpawnPatches.Count + _project.MapWarpPatches.Count + _project.MapCollisionPatches.Count}  |  Staged sprites: {_stagedOverworldSpriteAssets.Count + _stagedPortraitAssets.Count + _stagedBattleCompositeComponentAssets.Count + _stagedLargePartDisplayAssets.Count}";
+    }
+
+    private IEnumerable<string> BuildMapMetadataChangeDescriptions()
+    {
+        var mapIds = _project.MapEncounterPatches.Select(patch => patch.MapId)
+            .Concat(_project.MapEncounterStatePatches.Select(patch => patch.MapId))
+            .Concat(_project.MapMusicPatches.Select(patch => patch.MapId))
+            .Concat(_project.MapEventObjectResourcePatches.Select(patch => patch.MapId))
+            .Distinct()
+            .OrderBy(id => id)
+            .ToArray();
+
+        foreach (var mapId in mapIds)
+        {
+            var sourceAsset = TryGetSourceMapTilesetAsset(mapId);
+            var title = $"Map {mapId:D3}";
+            if (sourceAsset is null)
+            {
+                yield return title;
+                continue;
+            }
+
+            var parts = new List<string>();
+            var encounterStatePatch = _project.MapEncounterStatePatches.FirstOrDefault(candidate => candidate.MapId == mapId);
+            if (encounterStatePatch is not null && encounterStatePatch.EncounterEnabledByte != sourceAsset.EncounterEnabledByte)
+            {
+                parts.Add($"encounters {(encounterStatePatch.EncounterEnabledByte != 0 ? "enabled" : "disabled")}");
+            }
+
+            var musicPatch = _project.MapMusicPatches.FirstOrDefault(candidate => candidate.MapId == mapId);
+            if (musicPatch is not null && musicPatch.MusicId != sourceAsset.MusicId)
+            {
+                parts.Add($"music {_metadata.GetSongName(musicPatch.MusicId)} ({musicPatch.MusicId})");
+            }
+
+            var encounterPatch = _project.MapEncounterPatches.FirstOrDefault(candidate => candidate.MapId == mapId);
+            if (encounterPatch is not null)
+            {
+                parts.Add($"encounters [{encounterPatch.Battle1:D3}, {encounterPatch.Battle2:D3}, {encounterPatch.Battle3:D3}, {encounterPatch.Battle4:D3}]");
+            }
+
+            var resourcePatch = _project.MapEventObjectResourcePatches.FirstOrDefault(candidate => candidate.MapId == mapId);
+            if (resourcePatch is not null)
+            {
+                var sourceResources = sourceAsset.EventObjectResourceIds.Take(16)
+                    .Concat(Enumerable.Repeat((byte)0xFF, Math.Max(0, 16 - sourceAsset.EventObjectResourceIds.Count)))
+                    .Take(16)
+                    .ToArray();
+                var changedSlots = resourcePatch.ResourceIds
+                    .Take(16)
+                    .Select((value, index) => (Value: value, Index: index))
+                    .Where(entry => entry.Index >= sourceResources.Length || entry.Value != sourceResources[entry.Index])
+                    .Select(entry => $"S{entry.Index:X}:{(entry.Value == 0xFF ? "--" : entry.Value.ToString("X2"))}")
+                    .ToArray();
+                if (changedSlots.Length > 0)
+                {
+                    parts.Add($"sprite slots {string.Join(", ", changedSlots)}");
+                }
+            }
+
+            if (parts.Count > 0)
+            {
+                yield return $"{title} -> {string.Join(" | ", parts)}";
+            }
+        }
+
+        if (_mapMetadataDraftMapId.HasValue && _loadedMapTileset is not null)
+        {
+            var draftMapId = _mapMetadataDraftMapId.Value;
+            var sourceAsset = TryGetSourceMapTilesetAsset(draftMapId) ?? _loadedMapTileset;
+            var draftParts = new List<string>();
+
+            if (_mapMetadataDraftEncounterEnabledByte.HasValue && _mapMetadataDraftEncounterEnabledByte.Value != sourceAsset.EncounterEnabledByte)
+            {
+                draftParts.Add($"encounters {(_mapMetadataDraftEncounterEnabledByte.Value != 0 ? "enabled" : "disabled")}");
+            }
+
+            if (_mapMetadataDraftMusicId.HasValue && _mapMetadataDraftMusicId.Value != sourceAsset.MusicId)
+            {
+                draftParts.Add($"music {_metadata.GetSongName(_mapMetadataDraftMusicId.Value)} ({_mapMetadataDraftMusicId.Value})");
+            }
+
+            if (_mapMetadataDraftEventObjectResourceIds is { Length: > 0 } draftResources)
+            {
+                var sourceResources = sourceAsset.EventObjectResourceIds.Take(16)
+                    .Concat(Enumerable.Repeat((byte)0xFF, Math.Max(0, 16 - sourceAsset.EventObjectResourceIds.Count)))
+                    .Take(16)
+                    .ToArray();
+                var changedSlots = draftResources.Take(16)
+                    .Select((value, index) => (Value: value, Index: index))
+                    .Where(entry => entry.Index >= sourceResources.Length || entry.Value != sourceResources[entry.Index])
+                    .Select(entry => $"S{entry.Index:X}:{(entry.Value == 0xFF ? "--" : entry.Value.ToString("X2"))}")
+                    .ToArray();
+                if (changedSlots.Length > 0)
+                {
+                    draftParts.Add($"sprite slots {string.Join(", ", changedSlots)}");
+                }
+            }
+
+            if (draftParts.Count > 0)
+            {
+                yield return $"Draft Map Metadata: Map {draftMapId:D3} -> {string.Join(" | ", draftParts)}";
+            }
+        }
     }
 
     private bool TrySyncPatchEditorIntoSelection(out string errorMessage)
@@ -747,7 +1009,57 @@ public partial class MainWindow : Window
                 _project.PendingActions.Add(new RomPatchAction(action.Offset, action.Data.ToArray(), action.Description));
             }
         }
+
+        AppendStagedSpriteActionsToProject();
     }
+
+    private void AppendStagedSpriteActionsToProject()
+    {
+        var sourcePath = _project.SourceRomPath ?? _session?.RomFile.FilePath;
+        if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
+        {
+            return;
+        }
+
+        var tempRom = new RomFile(sourcePath, File.ReadAllBytes(sourcePath));
+        var tempSession = RomHackSession.FromRomFile(tempRom);
+
+        foreach (var sprite in _stagedOverworldSpriteAssets.OrderBy(pair => pair.Key).Select(pair => pair.Value))
+        {
+            _imageAssetPatcher.ApplySpriteSmart(tempSession, sprite);
+        }
+
+        foreach (var portrait in _stagedPortraitAssets.OrderBy(pair => pair.Key.Item1).ThenBy(pair => pair.Key.Item2).Select(pair => pair.Value))
+        {
+            _imageAssetPatcher.ApplyPortraitSmart(tempSession, portrait);
+        }
+
+        foreach (var component in _stagedBattleCompositeComponentAssets.OrderBy(pair => pair.Key.Item1).ThenBy(pair => pair.Key.Item2).Select(pair => pair.Value))
+        {
+            _imageAssetPatcher.ApplyBattleCompositeSpriteComponentSmart(tempSession, component);
+        }
+
+        foreach (var pair in _stagedLargePartDisplayAssets.OrderBy(pair => pair.Key.Item1).ThenBy(pair => pair.Key.Item2))
+        {
+            var part = GetRequiredPartDefinition(pair.Key.Item1);
+            var componentIndex = GetLargeDisplayComponentIndexForVariant(part.Kind, pair.Key.Item2);
+            ApplyLargeDisplayEdits(tempSession, part, componentIndex, pair.Value);
+        }
+
+        foreach (var action in tempSession.AppliedActions)
+        {
+            _project.PendingActions.Add(new RomPatchAction(action.Offset, action.Data.ToArray(), action.Description));
+        }
+    }
+
+    private static int GetLargeDisplayComponentIndexForVariant(PartKind kind, int variantSelector) => kind switch
+    {
+        PartKind.RightArm => variantSelector == 0 ? 1 : 2,
+        PartKind.LeftArm => variantSelector == 0 ? 3 : 4,
+        PartKind.Head => 0,
+        PartKind.Legs => 5,
+        _ => 0
+    };
 
     private void TryDetectTextProfile()
     {
@@ -880,14 +1192,17 @@ public partial class MainWindow : Window
 
     private void ClearPartEditor()
     {
-        PartMedalCompatibilityEntry.Text = string.Empty;
-        PartSpecialityEntry.Text = string.Empty;
-        PartGenderEntry.Text = string.Empty;
+        PartMedalCompatibilityComboBox.SelectedIndex = -1;
+        PartSpecialityComboBox.SelectedIndex = -1;
+        PartGenderComboBox.SelectedIndex = -1;
         PartArmorEntry.Text = string.Empty;
         PartValue1Entry.Text = string.Empty;
+        PartTechniqueComboBox.SelectedIndex = -1;
+        PartLegTypeComboBox.SelectedIndex = -1;
         PartValue2Entry.Text = string.Empty;
         PartValue3Entry.Text = string.Empty;
         PartValue4Entry.Text = string.Empty;
+        PartValue4CheckBox.IsChecked = false;
         PartValue5Entry.Text = string.Empty;
         PartUnknown2Entry.Text = string.Empty;
         PartUnknown3Entry.Text = string.Empty;
@@ -896,8 +1211,24 @@ public partial class MainWindow : Window
         PartUnknown6Entry.Text = string.Empty;
         PartUnknown7Entry.Text = string.Empty;
         PartUnknown8Entry.Text = string.Empty;
-        PartEditor.Text = "Select a part to inspect its decoded stats.";
-        PartActionAnalysisEditor.Text = "Select a combat part to inspect its action family, opcode route, and known sequence notes.";
+        PartOverviewLabel.Text = "No part selected.";
+        PartOverviewHintLabel.Text = "Select a part to inspect its role, stats, and unresolved raw bytes.";
+        PartMedalCompatibilityHintLabel.Text = string.Empty;
+        PartSpecialityHintLabel.Text = string.Empty;
+        PartGenderHintLabel.Text = string.Empty;
+        PartArmorHintLabel.Text = string.Empty;
+        PartValue1HintLabel.Text = string.Empty;
+        PartValue2HintLabel.Text = string.Empty;
+        PartValue3HintLabel.Text = string.Empty;
+        PartValue4HintLabel.Text = string.Empty;
+        PartValue5HintLabel.Text = string.Empty;
+        PartUnknown2Label.Text = "Unknown2";
+        PartUnknown3Label.Text = "Bot Shared Value";
+        PartUnknown2HintLabel.Text = string.Empty;
+        PartUnknown3HintLabel.Text = string.Empty;
+        PartUnknown4Label.Text = "Unknown4";
+        PartUnknown5Label.Text = "Unknown5";
+        PartUnknown45HintLabel.Text = string.Empty;
         ResetPartEditorLabels(PartKind.Head);
     }
 
@@ -911,47 +1242,111 @@ public partial class MainWindow : Window
         var firstInstruction = script.Instructions[0];
         return $"{firstInstruction.Name} ({script.Instructions.Count} instructions)";
     }
+
+    private static string BuildEventOpcodeFilterText(EventScript script)
+    {
+        if (script.Instructions.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var uniqueEntries = script.Instructions
+            .GroupBy(instruction => instruction.Opcode)
+            .Select(group => group.First())
+            .OrderBy(instruction => instruction.Opcode)
+            .Select(instruction => $"0x{instruction.Opcode:X2} {instruction.Opcode} {instruction.Name}");
+
+        return $" {string.Join(" ", uniqueEntries)} ";
+    }
+
     private void PopulateBattleEditor(BattleDefinition battle)
     {
+        BattleOverviewLabel.Text = $"{battle.Id:D3}  Battle";
+        BattleOverviewHintLabel.Text = $"Character: {_metadata.GetCharacterName(battle.CharacterId)} ({battle.CharacterId})   Data: 0x{battle.DataOffset:X}   Pointer: 0x{battle.PointerOffset:X}";
         BattleCharacterEntry.Text = battle.CharacterId.ToString();
         BattleBotCountEntry.Text = battle.NumberOfBots.ToString();
+        BattleCharacterHintLabel.Text = $"Battle owner / script-facing character: {_metadata.GetCharacterName(battle.CharacterId)} ({battle.CharacterId}).";
+        BattleBotCountHintLabel.Text = "Number of active bot slots used by this encounter. The ROM stores three loadout slots total.";
         PopulateBattleBotEntries(battle.Bots[0], BattleBot1HeadEntry, BattleBot1RightEntry, BattleBot1LeftEntry, BattleBot1LegsEntry, BattleBot1MedalEntry, BattleBot1LevelEntry);
         PopulateBattleBotEntries(battle.Bots[1], BattleBot2HeadEntry, BattleBot2RightEntry, BattleBot2LeftEntry, BattleBot2LegsEntry, BattleBot2MedalEntry, BattleBot2LevelEntry);
         PopulateBattleBotEntries(battle.Bots[2], BattleBot3HeadEntry, BattleBot3RightEntry, BattleBot3LeftEntry, BattleBot3LegsEntry, BattleBot3MedalEntry, BattleBot3LevelEntry);
+        BattleBot1SummaryLabel.Text = BuildBattleBotSummary(battle.Bots[0].HeadPartId, battle.Bots[0].RightArmPartId, battle.Bots[0].LeftArmPartId, battle.Bots[0].LegsPartId, battle.Bots[0].MedalId, battle.Bots[0].MedalLevel);
+        BattleBot2SummaryLabel.Text = BuildBattleBotSummary(battle.Bots[1].HeadPartId, battle.Bots[1].RightArmPartId, battle.Bots[1].LeftArmPartId, battle.Bots[1].LegsPartId, battle.Bots[1].MedalId, battle.Bots[1].MedalLevel);
+        BattleBot3SummaryLabel.Text = BuildBattleBotSummary(battle.Bots[2].HeadPartId, battle.Bots[2].RightArmPartId, battle.Bots[2].LeftArmPartId, battle.Bots[2].LegsPartId, battle.Bots[2].MedalId, battle.Bots[2].MedalLevel);
+        RefreshBattleDerivedLabels();
+        BattleAdvancedHintLabel.Text = "Initialization Mode: 0 = normal battle setup from the current player state, 1 = reuse preinitialized battle-side state. Part Loadout Mode: 0 = reroll from four candidate tier ids, 1 = use the stored loadout bytes directly. Each packed speciality seed byte contains two 4-bit speciality seed values that expand into the live 8-slot speciality cycle.";
+        BattleUnknown1Entry.Text = $"{battle.InitializationMode} ({GetBattleInitializationModeName(battle.InitializationMode)})";
+        BattleAlwaysZeroEntry.Text = $"{battle.TemplateFlags} ({GetBattleTemplateFlagName(battle.TemplateFlags)})";
+        PopulateBattleUnknownEntries(battle.Bots[0], battle.Bots[0].MedalId, battle.Bots[0].MedalLevel, [BattleBot1Cycle1ComboBox, BattleBot1Cycle2ComboBox, BattleBot1Cycle3ComboBox, BattleBot1Cycle4ComboBox, BattleBot1Cycle5ComboBox, BattleBot1Cycle6ComboBox, BattleBot1Cycle7ComboBox, BattleBot1Cycle8ComboBox], [BattleBot1Unknown0Entry, BattleBot1Unknown2Entry, BattleBot1Unknown4Entry, BattleBot1Cycle4Label, BattleBot1Cycle5Label, BattleBot1Cycle6Label, BattleBot1Cycle7Label, BattleBot1Cycle8Label], [BattleBot1Unknown1Entry, BattleBot1Unknown3Entry, BattleBot1Unknown5Entry, BattleBot1Cycle4ValueLabel, BattleBot1Cycle5ValueLabel, BattleBot1Cycle6ValueLabel, BattleBot1Cycle7ValueLabel, BattleBot1Cycle8ValueLabel], BattleBot1CycleResetEntry, BattleBot1ReservedEntry);
+        PopulateBattleUnknownEntries(battle.Bots[1], battle.Bots[1].MedalId, battle.Bots[1].MedalLevel, [BattleBot2Cycle1ComboBox, BattleBot2Cycle2ComboBox, BattleBot2Cycle3ComboBox, BattleBot2Cycle4ComboBox, BattleBot2Cycle5ComboBox, BattleBot2Cycle6ComboBox, BattleBot2Cycle7ComboBox, BattleBot2Cycle8ComboBox], [BattleBot2Unknown0Entry, BattleBot2Unknown2Entry, BattleBot2Unknown4Entry, BattleBot2Cycle4Label, BattleBot2Cycle5Label, BattleBot2Cycle6Label, BattleBot2Cycle7Label, BattleBot2Cycle8Label], [BattleBot2Unknown1Entry, BattleBot2Unknown3Entry, BattleBot2Unknown5Entry, BattleBot2Cycle4ValueLabel, BattleBot2Cycle5ValueLabel, BattleBot2Cycle6ValueLabel, BattleBot2Cycle7ValueLabel, BattleBot2Cycle8ValueLabel], BattleBot2CycleResetEntry, BattleBot2ReservedEntry);
+        PopulateBattleUnknownEntries(battle.Bots[2], battle.Bots[2].MedalId, battle.Bots[2].MedalLevel, [BattleBot3Cycle1ComboBox, BattleBot3Cycle2ComboBox, BattleBot3Cycle3ComboBox, BattleBot3Cycle4ComboBox, BattleBot3Cycle5ComboBox, BattleBot3Cycle6ComboBox, BattleBot3Cycle7ComboBox, BattleBot3Cycle8ComboBox], [BattleBot3Unknown0Entry, BattleBot3Unknown2Entry, BattleBot3Unknown4Entry, BattleBot3Cycle4Label, BattleBot3Cycle5Label, BattleBot3Cycle6Label, BattleBot3Cycle7Label, BattleBot3Cycle8Label], [BattleBot3Unknown1Entry, BattleBot3Unknown3Entry, BattleBot3Unknown5Entry, BattleBot3Cycle4ValueLabel, BattleBot3Cycle5ValueLabel, BattleBot3Cycle6ValueLabel, BattleBot3Cycle7ValueLabel, BattleBot3Cycle8ValueLabel], BattleBot3CycleResetEntry, BattleBot3ReservedEntry);
     }
 
-    private static void PopulateBattleBotEntries(BattleBot bot, WpfTextBox head, WpfTextBox right, WpfTextBox left, WpfTextBox legs, WpfTextBox medal, WpfTextBox level)
+    private string BuildBattleBotSummary(byte headFamilyId, byte rightFamilyId, byte leftFamilyId, byte legsFamilyId, byte medalId, byte medalLevel)
     {
-        head.Text = bot.HeadPartId.ToString();
-        right.Text = bot.RightArmPartId.ToString();
-        left.Text = bot.LeftArmPartId.ToString();
-        legs.Text = bot.LegsPartId.ToString();
-        medal.Text = bot.MedalId.ToString();
-        level.Text = bot.MedalLevel.ToString();
+        return $"Head {GetBattleSlotDisplayName(PartKind.Head, headFamilyId)} ({headFamilyId}), Right {GetBattleSlotDisplayName(PartKind.RightArm, rightFamilyId)} ({rightFamilyId}), Left {GetBattleSlotDisplayName(PartKind.LeftArm, leftFamilyId)} ({leftFamilyId}), Legs {GetBattleSlotDisplayName(PartKind.Legs, legsFamilyId)} ({legsFamilyId}), Medal {_metadata.GetMedalName(medalId)} ({medalId}), Level {medalLevel}.";
+    }
+
+    private static void PopulateBattleBotEntries(BattleBot bot, System.Windows.Controls.ComboBox head, System.Windows.Controls.ComboBox right, System.Windows.Controls.ComboBox left, System.Windows.Controls.ComboBox legs, System.Windows.Controls.ComboBox medal, System.Windows.Controls.ComboBox level)
+    {
+        head.SelectedValue = (int)bot.HeadPartId;
+        right.SelectedValue = (int)bot.RightArmPartId;
+        left.SelectedValue = (int)bot.LeftArmPartId;
+        legs.SelectedValue = (int)bot.LegsPartId;
+        medal.SelectedValue = (int)bot.MedalId;
+        level.SelectedValue = (int)bot.MedalLevel;
+    }
+
+    private void PopulateBattleUnknownEntries(BattleBot bot, byte medalId, byte medalLevel, System.Windows.Controls.ComboBox[] cycleCombos, WpfTextBlock[] cycleLabels, WpfTextBlock[] valueLabels, WpfTextBox cycleResetEntry, WpfTextBox reservedEntry)
+    {
+        var cycleEntries = BattleSpecialityTemplateHelper.UnpackCycleEntries(bot);
+        var scaledValues = _session is null
+            ? Enumerable.Repeat((byte)1, BattleSpecialityTemplateHelper.CycleSlotCount).ToArray()
+            : BattleSpecialityTemplateHelper.ComputeScaledMedalSlotValues(_session.RomFile, medalId, medalLevel);
+
+        for (var index = 0; index < BattleSpecialityTemplateHelper.CycleSlotCount; index++)
+        {
+            cycleLabels[index].Text = GetBattleDerivedSpecialityName(index);
+            valueLabels[index].Text = $"In-game value: {scaledValues[index]}";
+            cycleCombos[index].SelectedValue = (int)cycleEntries[index];
+        }
+
+        cycleResetEntry.Text = bot.SpecialityCycleResetValue.ToString();
+        reservedEntry.Text = bot.ReservedZeroByte.ToString();
     }
 
     private BattleDefinition BuildBattleFromEditor(BattleDefinition original)
     {
         BattleBot[] bots =
         [
-            BuildBattleBot(original.Bots[0], BattleBot1HeadEntry, BattleBot1RightEntry, BattleBot1LeftEntry, BattleBot1LegsEntry, BattleBot1MedalEntry, BattleBot1LevelEntry),
-            BuildBattleBot(original.Bots[1], BattleBot2HeadEntry, BattleBot2RightEntry, BattleBot2LeftEntry, BattleBot2LegsEntry, BattleBot2MedalEntry, BattleBot2LevelEntry),
-            BuildBattleBot(original.Bots[2], BattleBot3HeadEntry, BattleBot3RightEntry, BattleBot3LeftEntry, BattleBot3LegsEntry, BattleBot3MedalEntry, BattleBot3LevelEntry)
+            BuildBattleBot(original.Bots[0], BattleBot1HeadEntry, BattleBot1RightEntry, BattleBot1LeftEntry, BattleBot1LegsEntry, BattleBot1MedalEntry, BattleBot1LevelEntry, [BattleBot1Cycle1ComboBox, BattleBot1Cycle2ComboBox, BattleBot1Cycle3ComboBox, BattleBot1Cycle4ComboBox, BattleBot1Cycle5ComboBox, BattleBot1Cycle6ComboBox, BattleBot1Cycle7ComboBox, BattleBot1Cycle8ComboBox]),
+            BuildBattleBot(original.Bots[1], BattleBot2HeadEntry, BattleBot2RightEntry, BattleBot2LeftEntry, BattleBot2LegsEntry, BattleBot2MedalEntry, BattleBot2LevelEntry, [BattleBot2Cycle1ComboBox, BattleBot2Cycle2ComboBox, BattleBot2Cycle3ComboBox, BattleBot2Cycle4ComboBox, BattleBot2Cycle5ComboBox, BattleBot2Cycle6ComboBox, BattleBot2Cycle7ComboBox, BattleBot2Cycle8ComboBox]),
+            BuildBattleBot(original.Bots[2], BattleBot3HeadEntry, BattleBot3RightEntry, BattleBot3LeftEntry, BattleBot3LegsEntry, BattleBot3MedalEntry, BattleBot3LevelEntry, [BattleBot3Cycle1ComboBox, BattleBot3Cycle2ComboBox, BattleBot3Cycle3ComboBox, BattleBot3Cycle4ComboBox, BattleBot3Cycle5ComboBox, BattleBot3Cycle6ComboBox, BattleBot3Cycle7ComboBox, BattleBot3Cycle8ComboBox])
         ];
 
-        return new BattleDefinition(original.Id, original.PointerOffset, original.DataOffset, ParseByte(BattleCharacterEntry.Text, "Battle character"), original.Unknown1, ParseByte(BattleBotCountEntry.Text, "Battle bot count"), bots, original.AlwaysZero);
+        return new BattleDefinition(original.Id, original.PointerOffset, original.DataOffset, ParseByte(BattleCharacterEntry.Text, "Battle character"), original.InitializationMode, ParseByte(BattleBotCountEntry.Text, "Battle bot count"), original.TemplateFlags, bots);
     }
 
-    private static BattleBot BuildBattleBot(BattleBot original, WpfTextBox head, WpfTextBox right, WpfTextBox left, WpfTextBox legs, WpfTextBox medal, WpfTextBox level)
+    private static BattleBot BuildBattleBot(BattleBot original, System.Windows.Controls.ComboBox head, System.Windows.Controls.ComboBox right, System.Windows.Controls.ComboBox left, System.Windows.Controls.ComboBox legs, System.Windows.Controls.ComboBox medal, System.Windows.Controls.ComboBox level, System.Windows.Controls.ComboBox[] cycleCombos)
     {
-        return new BattleBot(original.Unknown, ParseByte(head.Text, "Head part"), ParseByte(right.Text, "Right arm part"), ParseByte(left.Text, "Left arm part"), ParseByte(legs.Text, "Leg part"), ParseByte(medal.Text, "Medal"), ParseByte(level.Text, "Medal level"), original.Unknown1, original.Unknown2, original.Unknown3, original.Unknown4, original.Unknown5);
+        var cycleEntries = cycleCombos.Select((comboBox, index) => ParseCycleEntry(comboBox, index)).ToArray();
+        var packed = BattleSpecialityTemplateHelper.PackCycleEntries(cycleEntries);
+        return new BattleBot(ParseComboBoxByte(head, "Head part"), ParseComboBoxByte(right, "Right arm part"), ParseComboBoxByte(left, "Left arm part"), ParseComboBoxByte(legs, "Leg part"), ParseComboBoxByte(medal, "Medal"), ParseComboBoxByte(level, "Medal level"), packed[0], packed[1], packed[2], packed[3], original.SpecialityCycleResetValue, original.ReservedZeroByte);
+    }
+
+    private void OnBattleLoadoutSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        RefreshBattleDerivedLabels();
+        RefreshBattleBotSummariesFromSelections();
     }
 
     private void PopulatePartEditor(PartDefinition part)
     {
-        PartMedalCompatibilityEntry.Text = part.MedalCompatibility.ToString();
-        PartSpecialityEntry.Text = part.Speciality.ToString();
-        PartGenderEntry.Text = part.Gender.ToString();
+        PartOverviewLabel.Text = $"{part.Id:D3}  {_metadata.GetPartName(part.Id)}";
+        PartOverviewHintLabel.Text = $"Kind: {part.Kind}   Medabot: {_metadata.GetBotName(part.MedabotId)} ({part.MedabotId})   Data: 0x{part.DataOffset:X}";
+        PartMedalCompatibilityComboBox.SelectedValue = part.MedalCompatibility;
+        PartSpecialityComboBox.SelectedValue = part.Speciality;
+        PartGenderComboBox.SelectedValue = part.Gender;
         PartArmorEntry.Text = part.Armor.ToString();
         PartUnknown2Entry.Text = part.Unknown2.ToString();
         PartUnknown3Entry.Text = part.Unknown3.ToString();
@@ -965,44 +1360,152 @@ public partial class MainWindow : Window
         if (part.IsLegPart)
         {
             var stats = part.AsLegPartStats();
+            PartTechniqueComboBox.Visibility = Visibility.Collapsed;
+            PartLegTypeComboBox.Visibility = Visibility.Visible;
+            PartValue1Entry.Visibility = Visibility.Collapsed;
+            PartLegTypeComboBox.SelectedValue = stats.LegType;
             PartValue1Entry.Text = stats.LegType.ToString();
             PartValue2Entry.Text = stats.Propulsion.ToString();
             PartValue3Entry.Text = stats.Evasion.ToString();
+            PartValue4CheckBox.Visibility = Visibility.Collapsed;
+            PartValue4Entry.Visibility = Visibility.Visible;
             PartValue4Entry.Text = stats.Defense.ToString();
             PartValue5Entry.Text = stats.Conceal.ToString();
+            RefreshPartEditorHelp(part);
             return;
         }
 
         var combat = part.AsCombatPartStats();
+        PartTechniqueComboBox.Visibility = Visibility.Visible;
+        PartLegTypeComboBox.Visibility = Visibility.Collapsed;
+        PartValue1Entry.Visibility = Visibility.Collapsed;
+        PartTechniqueComboBox.SelectedValue = combat.Technique;
         PartValue1Entry.Text = combat.Technique.ToString();
         PartValue2Entry.Text = combat.Success.ToString();
         PartValue3Entry.Text = combat.Power.ToString();
-        PartValue4Entry.Text = combat.ChargeOrChainReaction.ToString();
+        PartValue4Entry.Visibility = Visibility.Collapsed;
+        PartValue4CheckBox.Visibility = Visibility.Visible;
+        PartValue4CheckBox.IsChecked = combat.ChargeOrChainReaction != 0;
         PartValue5Entry.Text = combat.Uses.ToString();
+        RefreshPartEditorHelp(part);
     }
 
     private void ResetPartEditorLabels(PartKind kind)
     {
         if (kind == PartKind.Legs)
         {
+            PartTechniqueComboBox.Visibility = Visibility.Collapsed;
+            PartLegTypeComboBox.Visibility = Visibility.Visible;
+            PartValue4CheckBox.Visibility = Visibility.Collapsed;
+            PartValue4Entry.Visibility = Visibility.Visible;
+            PartValue1Entry.Visibility = Visibility.Collapsed;
             PartValue1Label.Text = "Leg Type";
             PartValue2Label.Text = "Propulsion";
             PartValue3Label.Text = "Evasion";
             PartValue4Label.Text = "Defense";
-            PartValue5Label.Text = "Conceal";
+            PartValue5Label.Text = "Proximity";
+            PartUnknown2Label.Text = "Remoteness";
+            PartUnknown4Label.Text = "Price (x100)";
+            PartUnknown5Label.Text = "Attack Scalar";
             return;
         }
 
+        PartTechniqueComboBox.Visibility = Visibility.Visible;
+        PartLegTypeComboBox.Visibility = Visibility.Collapsed;
+        PartValue4Entry.Visibility = Visibility.Collapsed;
+        PartValue4CheckBox.Visibility = Visibility.Visible;
+        PartValue1Entry.Visibility = Visibility.Collapsed;
         PartValue1Label.Text = "Technique";
-        PartValue2Label.Text = "Success";
+        PartValue2Label.Text = "Rate of Success";
         PartValue3Label.Text = "Power";
-        PartValue4Label.Text = "Charge / CR";
-        PartValue5Label.Text = "Uses";
+        PartValue4Label.Text = "Chain Reaction";
+        PartValue5Label.Text = kind == PartKind.Head ? "Uses" : "Charge";
+        PartUnknown2Label.Text = "Radiation";
+        PartUnknown4Label.Text = "Price (x100)";
+        PartUnknown5Label.Text = "Attack Scalar";
+    }
+
+    private void RefreshPartEditorHelp(PartDefinition part)
+    {
+        PartMedalCompatibilityHintLabel.Text = $"Compatibility attribute: {_metadata.GetPartAttributeName(part.MedalCompatibility)} ({part.MedalCompatibility}). Matching this against the bot's medal class contributes the medal-part compatibility bonus and drives the attribute name shown in the part-detail UI.";
+        PartSpecialityHintLabel.Text = $"Speciality grouping: {_metadata.GetSpecialityName(part.Speciality)} ({part.Speciality}).";
+        PartGenderHintLabel.Text = part.Gender switch
+        {
+            0 => "Male / default gender restriction value.",
+            1 => "Female / alternate gender restriction value.",
+            _ => $"Unexpected gender restriction value: {part.Gender}."
+        };
+        PartArmorHintLabel.Text = "Armor is the part HP value contributed in battle.";
+
+        if (part.IsLegPart)
+        {
+            PartValue1HintLabel.Text = $"Leg type is the movement/chassis family used by movement formulas: {_metadata.GetLegTypeName(part.TechniqueOrLegType)} ({part.TechniqueOrLegType}).";
+            PartValue2HintLabel.Text = "Propulsion controls movement performance and speed-related handling.";
+            PartValue3HintLabel.Text = "Evasion affects how well the Medabot avoids incoming attacks.";
+            PartValue4HintLabel.Text = "Defense affects how well the legs absorb or mitigate hits.";
+            PartValue5HintLabel.Text = "Proximity is the legs-derived bonus used for close-range specialities.";
+            PartUnknown2HintLabel.Text = "Remoteness is the legs-derived bonus used for ranged specialities.";
+            PartUnknown45HintLabel.Text = "Price is stored in units of 100 currency. The attack-scalar slot is still present in the raw record, but its battle meaning is not proven for legs yet.";
+            PartUnknown3HintLabel.Text = "Bot Shared Value is duplicated across the full 4-part set for each Medabot, but its exact gameplay meaning is still unresolved.";
+            return;
+        }
+
+        var combat = part.AsCombatPartStats();
+        PartValue1HintLabel.Text = $"Technique selects the action family: {_metadata.GetTechniqueName(combat.Technique)} ({combat.Technique}).";
+        PartValue2HintLabel.Text = "Rate of Success is the base accuracy / reliability stat for the action.";
+        PartValue3HintLabel.Text = "Power is the base damage or effect strength.";
+        PartValue4HintLabel.Text = "Chain Reaction is a boolean toggle stored in the shared slot-specific stat byte at record offset +7.";
+        PartValue5HintLabel.Text = part.Kind == PartKind.Head
+            ? "Uses is the head ammo / remaining-use count. Battle code clamps head consumption against this byte."
+            : "Charge is the arm action charge value. This shares the same raw record byte that heads use for Uses.";
+        PartUnknown2HintLabel.Text = "Radiation is a per-part scalar used by combat logic for radiation-type interactions.";
+        PartUnknown45HintLabel.Text = "Price is stored in units of 100 currency. Attack Scalar is the per-part coefficient used by battle damage/attack scaling code.";
+        PartUnknown3HintLabel.Text = "Bot Shared Value is duplicated across the full 4-part set for each Medabot, but its exact gameplay meaning is still unresolved.";
     }
 
     private PartDefinition BuildPartFromEditor(PartDefinition original)
     {
-        return new PartDefinition(original.Id, original.MedabotId, original.Kind, original.DataOffset, ParseByte(PartMedalCompatibilityEntry.Text, "Medal compatibility"), ParseByte(PartValue1Entry.Text, PartValue1Label.Text), ParseByte(PartSpecialityEntry.Text, "Speciality"), ParseByte(PartGenderEntry.Text, "Gender"), ParseByte(PartArmorEntry.Text, "Armor"), ParseByte(PartValue2Entry.Text, PartValue2Label.Text), ParseByte(PartValue3Entry.Text, PartValue3Label.Text), ParseByte(PartValue4Entry.Text, PartValue4Label.Text), ParseByte(PartValue5Entry.Text, PartValue5Label.Text), ParseByte(PartUnknown2Entry.Text, "Unknown2"), ParseByte(PartUnknown3Entry.Text, "Unknown3"), ParseByte(PartUnknown4Entry.Text, "Unknown4"), ParseByte(PartUnknown5Entry.Text, "Unknown5"), ParseByte(PartUnknown6Entry.Text, "Unknown6"), ParseByte(PartUnknown7Entry.Text, "Unknown7"), ParseByte(PartUnknown8Entry.Text, "Unknown8"));
+        var medalCompatibility = ParseComboBoxByte(PartMedalCompatibilityComboBox, "Compatibility attribute");
+        var speciality = ParseComboBoxByte(PartSpecialityComboBox, "Speciality");
+        var gender = ParseComboBoxByte(PartGenderComboBox, "Gender");
+        var value1 = original.Kind == PartKind.Legs
+            ? ParseComboBoxByte(PartLegTypeComboBox, PartValue1Label.Text)
+            : ParseComboBoxByte(PartTechniqueComboBox, PartValue1Label.Text);
+
+        var value4 = original.Kind == PartKind.Legs
+            ? ParseByte(PartValue4Entry.Text, PartValue4Label.Text)
+            : (byte)(PartValue4CheckBox.IsChecked == true ? 1 : 0);
+
+        return new PartDefinition(original.Id, original.MedabotId, original.Kind, original.DataOffset, medalCompatibility, value1, speciality, gender, ParseByte(PartArmorEntry.Text, "Armor"), ParseByte(PartValue2Entry.Text, PartValue2Label.Text), ParseByte(PartValue3Entry.Text, PartValue3Label.Text), value4, ParseByte(PartValue5Entry.Text, PartValue5Label.Text), ParseByte(PartUnknown2Entry.Text, "Unknown2"), ParseByte(PartUnknown3Entry.Text, "Unknown3"), ParseByte(PartUnknown4Entry.Text, "Unknown4"), ParseByte(PartUnknown5Entry.Text, "Unknown5"), ParseByte(PartUnknown6Entry.Text, "Unknown6"), ParseByte(PartUnknown7Entry.Text, "Unknown7"), ParseByte(PartUnknown8Entry.Text, "Unknown8"));
+    }
+
+    private void RefreshPartLegTypeOptions(IReadOnlyList<PartDefinition> parts)
+    {
+        _partLegTypeOptions.Clear();
+
+        foreach (var legType in parts
+                     .Where(part => part.Kind == PartKind.Legs)
+                     .Select(part => (int)part.TechniqueOrLegType)
+                     .Distinct()
+                     .OrderBy(value => value))
+        {
+            _partLegTypeOptions.Add(new BrowserItem(legType, $"{legType:D3}  {_metadata.GetLegTypeName(legType)}"));
+        }
+    }
+
+    private static byte ParseComboBoxByte(System.Windows.Controls.ComboBox comboBox, string fieldName)
+    {
+        if (comboBox.SelectedValue is int intValue && intValue >= 0 && intValue <= byte.MaxValue)
+        {
+            return (byte)intValue;
+        }
+
+        if (comboBox.SelectedValue is byte byteValue)
+        {
+            return byteValue;
+        }
+
+        throw new InvalidOperationException($"{fieldName} must be selected from the dropdown.");
     }
 
     private void PopulateStarterEditor(StarterDefinition starter)
@@ -1020,31 +1523,20 @@ public partial class MainWindow : Window
         EncounterBattle4Entry.Text = encounter.Battle4.ToString();
     }
 
-    private static string FormatBattle(BattleDefinition battle, MedabotsMetadata metadata)
+    private string FormatBattle(BattleDefinition battle)
     {
         var builder = new StringBuilder();
         builder.AppendLine($"Battle {battle.Id} @ 0x{battle.DataOffset:X}");
-        builder.AppendLine($"Character: {metadata.GetCharacterName(battle.CharacterId)} ({battle.CharacterId})");
+        builder.AppendLine($"Character: {_metadata.GetCharacterName(battle.CharacterId)} ({battle.CharacterId})");
+        builder.AppendLine($"InitializationMode: {battle.InitializationMode} ({GetBattleInitializationModeName(battle.InitializationMode)})");
         builder.AppendLine($"NumberOfBots: {battle.NumberOfBots}");
+        builder.AppendLine($"PartLoadoutMode: {battle.TemplateFlags} ({GetBattleTemplateFlagName(battle.TemplateFlags)})");
         for (var index = 0; index < battle.Bots.Count; index++)
         {
             var bot = battle.Bots[index];
-            builder.AppendLine($"Bot {index + 1}: head={metadata.GetPartName(bot.HeadPartId)} ({bot.HeadPartId}), right={metadata.GetPartName(bot.RightArmPartId)} ({bot.RightArmPartId}), left={metadata.GetPartName(bot.LeftArmPartId)} ({bot.LeftArmPartId}), legs={metadata.GetPartName(bot.LegsPartId)} ({bot.LegsPartId}), medal={metadata.GetMedalName(bot.MedalId)} ({bot.MedalId}), level={bot.MedalLevel}");
+            builder.AppendLine($"Bot {index + 1}: head={GetBattleSlotDisplayName(PartKind.Head, bot.HeadPartId)} ({bot.HeadPartId}), right={GetBattleSlotDisplayName(PartKind.RightArm, bot.RightArmPartId)} ({bot.RightArmPartId}), left={GetBattleSlotDisplayName(PartKind.LeftArm, bot.LeftArmPartId)} ({bot.LeftArmPartId}), legs={GetBattleSlotDisplayName(PartKind.Legs, bot.LegsPartId)} ({bot.LegsPartId}), medal={_metadata.GetMedalName(bot.MedalId)} ({bot.MedalId}), level={bot.MedalLevel}");
         }
 
-        return builder.ToString().TrimEnd();
-    }
-
-    private static string FormatPart(PartDefinition part, MedabotsMetadata metadata)
-    {
-        var builder = new StringBuilder();
-        builder.AppendLine($"Part {part.Id} - {metadata.GetPartName(part.Id)} ({part.Kind}) @ 0x{part.DataOffset:X}");
-        builder.AppendLine($"Medabot: {metadata.GetBotName(part.MedabotId)} ({part.MedabotId})");
-        builder.AppendLine($"MedalCompatibility: {metadata.GetMedalName(part.MedalCompatibility)} ({part.MedalCompatibility})");
-        builder.AppendLine($"Speciality: {metadata.GetSpecialityName(part.Speciality)} ({part.Speciality})");
-        builder.AppendLine($"Gender: {part.Gender}");
-        builder.AppendLine($"Armor: {part.Armor}");
-        AppendPartKindSpecificFields(builder, part, metadata);
         return builder.ToString().TrimEnd();
     }
 
@@ -1058,152 +1550,270 @@ public partial class MainWindow : Window
         return $"Encounter {encounter.Id} @ 0x{encounter.DataOffset:X}{Environment.NewLine}Battles: {encounter.Battle1}, {encounter.Battle2}, {encounter.Battle3}, {encounter.Battle4}";
     }
 
-    private static void AppendPartKindSpecificFields(StringBuilder builder, PartDefinition part, MedabotsMetadata metadata)
+
+    private static string FormatBytes(IEnumerable<byte> bytes) => string.Join(" ", bytes.Select(value => value.ToString("X2")));
+    private static string GetBattleInitializationModeName(byte value) => value switch
     {
-        if (part.IsLegPart)
+        0 => "Normal initialization",
+        1 => "Reuse preinitialized battle state",
+        _ => $"Unknown mode {value}"
+    };
+
+    private static string GetBattleTemplateFlagName(byte value) => value switch
+    {
+        0 => "Reroll from candidate tiers",
+        1 => "Use stored loadout directly",
+        _ => $"Unknown mode {value}"
+    };
+
+    private void InitializeBattleCycleComboBoxes()
+    {
+        foreach (var comboBox in new[]
+                 {
+                     BattleBot1Cycle1ComboBox, BattleBot1Cycle2ComboBox, BattleBot1Cycle3ComboBox, BattleBot1Cycle4ComboBox,
+                     BattleBot1Cycle5ComboBox, BattleBot1Cycle6ComboBox, BattleBot1Cycle7ComboBox, BattleBot1Cycle8ComboBox,
+                     BattleBot2Cycle1ComboBox, BattleBot2Cycle2ComboBox, BattleBot2Cycle3ComboBox, BattleBot2Cycle4ComboBox,
+                     BattleBot2Cycle5ComboBox, BattleBot2Cycle6ComboBox, BattleBot2Cycle7ComboBox, BattleBot2Cycle8ComboBox,
+                     BattleBot3Cycle1ComboBox, BattleBot3Cycle2ComboBox, BattleBot3Cycle3ComboBox, BattleBot3Cycle4ComboBox,
+                     BattleBot3Cycle5ComboBox, BattleBot3Cycle6ComboBox, BattleBot3Cycle7ComboBox, BattleBot3Cycle8ComboBox
+                 })
         {
-            var stats = part.AsLegPartStats();
-            builder.AppendLine($"LegType: {stats.LegType}");
-            builder.AppendLine($"Propulsion: {stats.Propulsion}");
-            builder.AppendLine($"Evasion: {stats.Evasion}");
-            builder.AppendLine($"Defense: {stats.Defense}");
-            builder.AppendLine($"Conceal: {stats.Conceal}");
+            comboBox.ItemsSource = _battleCycleEntryOptions;
+            comboBox.DisplayMemberPath = nameof(BrowserItem.Title);
+            comboBox.SelectedValuePath = nameof(BrowserItem.Id);
+        }
+    }
+
+    private static string GetBattleCycleEntryName(byte value) => value switch
+    {
+        0 => "No action",
+        1 => "Head part action",
+        2 => "Right arm action",
+        3 => "Left arm action",
+        4 => "Head fallback",
+        5 => "Medaforce 1",
+        6 => "Medaforce 2",
+        7 => "Medaforce 3",
+        _ => $"Unknown cycle entry {value}"
+    };
+
+    private static byte ParseCycleEntry(System.Windows.Controls.ComboBox comboBox, int slotIndex)
+    {
+        if (comboBox.SelectedValue is int intValue && intValue >= 0 && intValue <= 0x0F)
+        {
+            return (byte)intValue;
+        }
+
+        if (comboBox.SelectedValue is byte byteValue && byteValue <= 0x0F)
+        {
+            return byteValue;
+        }
+
+        throw new InvalidOperationException($"Battle cycle slot {slotIndex + 1} must be selected from the dropdown.");
+    }
+
+    private void RefreshBattleDerivedLabels()
+    {
+        if (_session is null)
+        {
+            BattleBot1DerivedLabel.Text = string.Empty;
+            BattleBot2DerivedLabel.Text = string.Empty;
+            BattleBot3DerivedLabel.Text = string.Empty;
             return;
         }
 
-        var combat = part.AsCombatPartStats();
-        builder.AppendLine($"Technique: {metadata.GetTechniqueName(combat.Technique)} ({combat.Technique})");
-        builder.AppendLine($"Success: {combat.Success}");
-        builder.AppendLine($"Power: {combat.Power}");
-        builder.AppendLine($"ChargeOrChainReaction: {combat.ChargeOrChainReaction}");
-        builder.AppendLine($"Uses: {combat.Uses}");
+        BattleBot1DerivedLabel.Text = BuildBattleDerivedLabel(BattleBot1MedalEntry, BattleBot1LevelEntry, [BattleBot1Cycle1ComboBox, BattleBot1Cycle2ComboBox, BattleBot1Cycle3ComboBox, BattleBot1Cycle4ComboBox, BattleBot1Cycle5ComboBox, BattleBot1Cycle6ComboBox, BattleBot1Cycle7ComboBox, BattleBot1Cycle8ComboBox]);
+        BattleBot2DerivedLabel.Text = BuildBattleDerivedLabel(BattleBot2MedalEntry, BattleBot2LevelEntry, [BattleBot2Cycle1ComboBox, BattleBot2Cycle2ComboBox, BattleBot2Cycle3ComboBox, BattleBot2Cycle4ComboBox, BattleBot2Cycle5ComboBox, BattleBot2Cycle6ComboBox, BattleBot2Cycle7ComboBox, BattleBot2Cycle8ComboBox]);
+        BattleBot3DerivedLabel.Text = BuildBattleDerivedLabel(BattleBot3MedalEntry, BattleBot3LevelEntry, [BattleBot3Cycle1ComboBox, BattleBot3Cycle2ComboBox, BattleBot3Cycle3ComboBox, BattleBot3Cycle4ComboBox, BattleBot3Cycle5ComboBox, BattleBot3Cycle6ComboBox, BattleBot3Cycle7ComboBox, BattleBot3Cycle8ComboBox]);
     }
 
-    private string FormatPartActionAnalysis(PartDefinition part)
+    private string BuildBattleDerivedLabel(System.Windows.Controls.ComboBox medalComboBox, System.Windows.Controls.ComboBox levelComboBox, System.Windows.Controls.ComboBox[] cycleCombos)
     {
-        var builder = new StringBuilder();
-        builder.AppendLine($"Part {part.Id} - {_metadata.GetPartName(part.Id)}");
-
-        if (part.IsLegPart)
+        if (!TryGetComboBoxByte(medalComboBox, out var medalId) || !TryGetComboBoxByte(levelComboBox, out var medalLevel))
         {
-            builder.AppendLine("Leg parts do not use battle action script routes.");
-            builder.AppendLine($"Leg type: {part.AsLegPartStats().LegType}");
-            return builder.ToString().TrimEnd();
+            return "Derived medal slots: enter a valid medal id and medal level.";
         }
 
-        var actionId = part.AsCombatPartStats().Technique;
-        var actionName = _metadata.GetTechniqueName(actionId);
-        var analysis = _battleActionRegistry.Analyze(actionId, actionName, _loadedBattleActionOpcodes, _loadedBattleActionScripts);
-
-        builder.AppendLine($"Technique: {analysis.ActionName} (0x{analysis.ActionId:X2})");
-
-        if (analysis.Route is null && analysis.Script is null)
-        {
-            builder.AppendLine("No documented action route or parsed script yet.");
-            return builder.ToString().TrimEnd();
-        }
-
-        if (analysis.Script is not null)
-        {
-            builder.AppendLine($"Script id: 0x{analysis.Script.ActionScriptId:X2}");
-            builder.AppendLine($"Script @ 0x{analysis.Script.ScriptRomAddress:X8} (file 0x{analysis.Script.ScriptOffset:X})");
-            builder.AppendLine($"Script length: 0x{analysis.Script.ScriptLength:X}");
-            builder.AppendLine();
-            builder.AppendLine("Actual action script:");
-
-            foreach (var node in analysis.ScriptNodes)
-            {
-                if (node.IsLabel)
-                {
-                    builder.AppendLine($"  +0x{node.RelativeOffset:X2}  {node.DisplayName}");
-                    continue;
-                }
-
-                builder.AppendLine($"  +0x{node.RelativeOffset:X2}  0x{node.Value:X2}  {node.DisplayName}");
-                if (node.InlineArguments.Count > 0)
-                {
-                    builder.AppendLine($"    args: {string.Join(' ', node.InlineArguments.Select(value => $"0x{value:X2}"))}");
-                }
-
-                builder.AppendLine($"    {node.Summary}");
-                if (node.HandlerRomAddress != 0)
-                {
-                    builder.AppendLine($"    handler @ 0x{node.HandlerRomAddress:X8} (file 0x{node.HandlerOffset:X})");
-                }
-            }
-        }
-
-        if (analysis.Route is null)
-        {
-            return builder.ToString().TrimEnd();
-        }
-
-        builder.AppendLine();
-        builder.AppendLine("Documented route notes:");
-        builder.AppendLine($"Family handler: {analysis.Route.FamilyHandler}");
-        builder.AppendLine($"Family summary: {analysis.Route.FamilySummary}");
-
-        if (!string.IsNullOrWhiteSpace(analysis.Route.FamilySubsequence))
-        {
-            builder.AppendLine($"Family subsequence: {analysis.Route.FamilySubsequence}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(analysis.Route.SharedScriptName))
-        {
-            builder.AppendLine($"Shared script: {analysis.Route.SharedScriptName}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(analysis.Route.SharedScriptSummary))
-        {
-            builder.AppendLine($"Script summary: {analysis.Route.SharedScriptSummary}");
-        }
-
-        builder.AppendLine();
-        builder.AppendLine("Curated opcode summary:");
-
-        if (analysis.Opcodes.Count == 0)
-        {
-            builder.AppendLine("  No curated opcode summary yet.");
-        }
-        else
-        {
-            foreach (var opcode in analysis.Opcodes)
-            {
-                builder.AppendLine($"  0x{opcode.Opcode:X2}  {opcode.Name}");
-                builder.AppendLine($"    {opcode.HandlerName}");
-                builder.AppendLine($"    inline args: {opcode.InlineArgumentCount}");
-                builder.AppendLine($"    {opcode.Summary}");
-                if (opcode.HandlerRomAddress != 0)
-                {
-                    builder.AppendLine($"    handler @ 0x{opcode.HandlerRomAddress:X8} (file 0x{opcode.HandlerOffset:X})");
-                }
-            }
-        }
-
-        if (analysis.Route.ActualFlow.Count > 0)
-        {
-            builder.AppendLine();
-            builder.AppendLine("Actual flow:");
-            foreach (var step in analysis.Route.ActualFlow)
-            {
-                builder.AppendLine($"  - {step}");
-            }
-        }
-
-        if (analysis.Route.Notes.Count > 0)
-        {
-            builder.AppendLine();
-            builder.AppendLine("Notes:");
-            foreach (var note in analysis.Route.Notes)
-            {
-                builder.AppendLine($"  - {note}");
-            }
-        }
-
-        return builder.ToString().TrimEnd();
+        var scaledValues = BattleSpecialityTemplateHelper.ComputeScaledMedalSlotValues(_session!.RomFile, medalId, medalLevel);
+        return string.Join(Environment.NewLine, scaledValues.Select((value, index) => $"{GetBattleDerivedSpecialityName(index)}: {value}"));
     }
 
-    private static string FormatBytes(IEnumerable<byte> bytes) => string.Join(" ", bytes.Select(value => value.ToString("X2")));
+    private void InitializeBattleLoadoutComboBoxes()
+    {
+        foreach (var comboBox in new[] { BattleBot1MedalEntry, BattleBot2MedalEntry, BattleBot3MedalEntry })
+        {
+            comboBox.ItemsSource = _battleMedalOptions;
+        }
+
+        foreach (var comboBox in new[] { BattleBot1LevelEntry, BattleBot2LevelEntry, BattleBot3LevelEntry })
+        {
+            comboBox.ItemsSource = _battleLevelOptions;
+        }
+    }
+
+    private void RefreshBattleLoadoutOptions()
+    {
+        _battleHeadOptions.Clear();
+        _battleRightOptions.Clear();
+        _battleLeftOptions.Clear();
+        _battleLegsOptions.Clear();
+
+        if (_session is null)
+        {
+            return;
+        }
+
+        foreach (var part in _loadedParts.Where(static part => part.Kind == PartKind.Head).OrderBy(part => part.MedabotId))
+        {
+            _battleHeadOptions.Add(BuildBattleLoadoutOption(part, 0));
+        }
+
+        foreach (var part in _loadedParts.Where(static part => part.Kind == PartKind.RightArm).OrderBy(part => part.MedabotId))
+        {
+            _battleRightOptions.Add(BuildBattleLoadoutOption(part, 1));
+        }
+
+        foreach (var part in _loadedParts.Where(static part => part.Kind == PartKind.LeftArm).OrderBy(part => part.MedabotId))
+        {
+            _battleLeftOptions.Add(BuildBattleLoadoutOption(part, 3));
+        }
+
+        foreach (var part in _loadedParts.Where(static part => part.Kind == PartKind.Legs).OrderBy(part => part.MedabotId))
+        {
+            _battleLegsOptions.Add(BuildBattleLoadoutOption(part, 5));
+        }
+
+        foreach (var comboBox in new[] { BattleBot1HeadEntry, BattleBot2HeadEntry, BattleBot3HeadEntry })
+        {
+            comboBox.ItemsSource = _battleHeadOptions;
+        }
+
+        foreach (var comboBox in new[] { BattleBot1RightEntry, BattleBot2RightEntry, BattleBot3RightEntry })
+        {
+            comboBox.ItemsSource = _battleRightOptions;
+        }
+
+        foreach (var comboBox in new[] { BattleBot1LeftEntry, BattleBot2LeftEntry, BattleBot3LeftEntry })
+        {
+            comboBox.ItemsSource = _battleLeftOptions;
+        }
+
+        foreach (var comboBox in new[] { BattleBot1LegsEntry, BattleBot2LegsEntry, BattleBot3LegsEntry })
+        {
+            comboBox.ItemsSource = _battleLegsOptions;
+        }
+    }
+
+    private BattleLoadoutOption BuildBattleLoadoutOption(PartDefinition part, int componentIndex)
+    {
+        var bitmap = CreateBattleLoadoutThumbnail(part, componentIndex);
+        var title = _metadata.GetPartName(part.Id);
+        var subtitle = part.MedabotId < ImageAssetRepository.CompositeBattleSpritePartCount
+            ? $"Bot {part.MedabotId:D3}  Part {part.Id:D3}"
+            : $"Uninitialized family {part.MedabotId:D3}  Part {part.Id:D3}";
+        return new BattleLoadoutOption(part.MedabotId, part.Id, title, subtitle, bitmap);
+    }
+
+    private BitmapSource CreateBattleLoadoutThumbnail(PartDefinition part, int componentIndex)
+    {
+        if (part.MedabotId < 0 || part.MedabotId >= ImageAssetRepository.CompositeBattleSpritePartCount)
+        {
+            return CreateBattleLoadoutPlaceholderBitmap();
+        }
+
+        var asset = GetCurrentBattleCompositeComponentAsset(part.MedabotId, componentIndex);
+        var image = componentIndex == 5 ? GetBattleLoadoutLegPreviewImage(asset.Image) : asset.Image;
+        var swatches = BuildPaletteSwatches(image.PaletteBytes);
+        return CreateBitmapSource(image.PixelIndices, image.TileWidth, swatches);
+    }
+
+    private static BitmapSource CreateBattleLoadoutPlaceholderBitmap()
+    {
+        const int width = 16;
+        const int height = 16;
+        const int stride = width * 4;
+        var pixels = new byte[height * stride];
+
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var index = (y * stride) + (x * 4);
+                var dark = ((x / 4) + (y / 4)) % 2 == 0;
+                var shade = dark ? (byte)0x9C : (byte)0xD1;
+                pixels[index + 0] = shade;
+                pixels[index + 1] = shade;
+                pixels[index + 2] = shade;
+                pixels[index + 3] = 0xFF;
+            }
+        }
+
+        return BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, stride);
+    }
+
+    private static IndexedImage GetBattleLoadoutLegPreviewImage(IndexedImage image)
+    {
+        if (image.TileHeight < 3)
+        {
+            return image;
+        }
+
+        var firstSegmentTileHeight = Math.Max(1, image.TileHeight / 3);
+        var tileCount = image.TileWidth * firstSegmentTileHeight;
+        var pixelLength = tileCount * 64;
+        var croppedPixels = new byte[pixelLength];
+        Array.Copy(image.PixelIndices, 0, croppedPixels, 0, Math.Min(pixelLength, image.PixelIndices.Length));
+        return new IndexedImage(image.TileWidth, firstSegmentTileHeight, croppedPixels, image.PaletteBytes);
+    }
+
+    private void RefreshBattleBotSummariesFromSelections()
+    {
+        BattleBot1SummaryLabel.Text = BuildBattleBotSummary(GetSelectedBattleFamilyId(BattleBot1HeadEntry), GetSelectedBattleFamilyId(BattleBot1RightEntry), GetSelectedBattleFamilyId(BattleBot1LeftEntry), GetSelectedBattleFamilyId(BattleBot1LegsEntry), GetSelectedBattleMedalId(BattleBot1MedalEntry), GetSelectedBattleLevel(BattleBot1LevelEntry));
+        BattleBot2SummaryLabel.Text = BuildBattleBotSummary(GetSelectedBattleFamilyId(BattleBot2HeadEntry), GetSelectedBattleFamilyId(BattleBot2RightEntry), GetSelectedBattleFamilyId(BattleBot2LeftEntry), GetSelectedBattleFamilyId(BattleBot2LegsEntry), GetSelectedBattleMedalId(BattleBot2MedalEntry), GetSelectedBattleLevel(BattleBot2LevelEntry));
+        BattleBot3SummaryLabel.Text = BuildBattleBotSummary(GetSelectedBattleFamilyId(BattleBot3HeadEntry), GetSelectedBattleFamilyId(BattleBot3RightEntry), GetSelectedBattleFamilyId(BattleBot3LeftEntry), GetSelectedBattleFamilyId(BattleBot3LegsEntry), GetSelectedBattleMedalId(BattleBot3MedalEntry), GetSelectedBattleLevel(BattleBot3LevelEntry));
+    }
+
+    private string GetBattleSlotDisplayName(PartKind kind, int familyId)
+    {
+        var partId = ResolveBattleSlotPartId(kind, familyId);
+        return partId >= 0 ? _metadata.GetPartName(partId) : _metadata.GetBotName(familyId);
+    }
+
+    private int ResolveBattleSlotPartId(PartKind kind, int familyId)
+    {
+        var match = _loadedParts.FirstOrDefault(part => part.MedabotId == familyId && part.Kind == kind);
+        return match?.Id ?? -1;
+    }
+
+    private static bool TryGetComboBoxByte(System.Windows.Controls.ComboBox comboBox, out byte value)
+    {
+        if (comboBox.SelectedValue is int intValue && intValue >= 0 && intValue <= byte.MaxValue)
+        {
+            value = (byte)intValue;
+            return true;
+        }
+
+        if (comboBox.SelectedValue is byte byteValue)
+        {
+            value = byteValue;
+            return true;
+        }
+
+        value = 0;
+        return false;
+    }
+
+    private static byte GetSelectedBattleFamilyId(System.Windows.Controls.ComboBox comboBox) => TryGetComboBoxByte(comboBox, out var value) ? value : (byte)0;
+    private static byte GetSelectedBattleMedalId(System.Windows.Controls.ComboBox comboBox) => TryGetComboBoxByte(comboBox, out var value) ? value : (byte)0;
+    private static byte GetSelectedBattleLevel(System.Windows.Controls.ComboBox comboBox) => TryGetComboBoxByte(comboBox, out var value) ? value : (byte)0;
+    private static string GetSelectedBattleCycleEntryName(System.Windows.Controls.ComboBox comboBox) => TryGetComboBoxByte(comboBox, out var value) ? GetBattleCycleEntryName(value) : "Unselected";
+
+    private string GetBattleDerivedSpecialityName(int index)
+    {
+        return index >= 0 && index < _metadata.Catalog.Specialities.Count
+            ? _metadata.GetSpecialityName(index)
+            : $"Speciality {index + 1}";
+    }
     private static int ParseIntOrDefault(string? text, int fallback) => int.TryParse(text, out var value) && value >= 0 ? value : fallback;
 
     private static byte[] ParseBytes(string? text)

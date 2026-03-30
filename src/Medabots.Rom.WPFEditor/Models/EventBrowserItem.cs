@@ -6,6 +6,7 @@ namespace Medabots.Rom.Editor;
 public sealed class EventBrowserItem : INotifyPropertyChanged
 {
     private string _summary = "Not loaded";
+    private string _opcodeFilterText = string.Empty;
     private bool _isCached;
     private bool _isPatched;
 
@@ -67,7 +68,23 @@ public sealed class EventBrowserItem : INotifyPropertyChanged
 
     public string PatchStatus => IsPatched ? "Patched" : string.Empty;
 
-    public string FilterText => $"{Id} {Summary} {CacheStatus} {PatchStatus}";
+    public string OpcodeFilterText
+    {
+        get => _opcodeFilterText;
+        set
+        {
+            if (string.Equals(_opcodeFilterText, value, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _opcodeFilterText = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(FilterText));
+        }
+    }
+
+    public string FilterText => $"{Id} {Summary} {CacheStatus} {PatchStatus} {OpcodeFilterText}";
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {

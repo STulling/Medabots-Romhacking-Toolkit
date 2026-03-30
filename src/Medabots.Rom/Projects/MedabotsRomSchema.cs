@@ -10,9 +10,13 @@ public static class MedabotsRomSchema
     public const int PaletteSize = 0x20;
     public const int BattleSize = 0x28;
     public const int BattleBotCount = 3;
-    public const int BattleBotOffset = 3;
+    public const int BattleHeaderSize = 4;
+    public const int BattleBotOffset = BattleHeaderSize;
     public const int BattleBotSize = 12;
-    public const int BattleFooterOffset = 0x27;
+    public const int MedalCount = 27;
+    public const int MedalInfoSize = 0x10;
+    public const int MedalInfoTableOffset = 0x3B62F8;
+    public const int MedalClassSpecialityBaseTableOffset = 0x3AD3A0;
     public const int BattleActionScriptTableOffset = 0x3C6CC8;
     public const int BattleActionScriptCount = 0x78;
     public const int BattleActionOpcodeHandlerTableOffset = 0x3AF1A0;
@@ -27,13 +31,16 @@ public static class MedabotsRomSchema
     public const int MapPaletteSize = 0x200;
     public const int MapTilemapHeaderSize = 0x10;
     public const int MapTilesetSheetTileWidth = 16;
+    public const int MapEncounterSettingsTableOffset = 0x3BEC30;
     public const int MapDimensionsInMetaTilesTableOffset = 0x3F8920;
     public const int MapTilesetGraphicsPointerTableOffset = 0x3F8AA0;
     public const int MapColorAttributePointerTableOffset = 0x3F8DA0;
     public const int MapLayerTilemapPointerTableOffset = 0x3F90A0;
     public const int MapTilesetPalettePointerTableOffset = 0x3F99A0;
+    public const int MapCollisionPointerTableOffset = 0x404354;
     public const int MapWarpPointerTableOffset = 0x412E80;
     public const int MapEventObjectResourcePointerTableOffset = 0x413180;
+    public const int MapMusicTableOffset = 0x47E664;
     public const int MapEntitySpawnPointerTableOffset = 0x483254;
 
     public const byte EventConditionalMultiJumpOpcode = 0x2F;

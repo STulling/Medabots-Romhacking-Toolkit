@@ -11,7 +11,7 @@ public sealed partial class EventInstructionPatcher
 
         var (pointerBytes, bankByte) = BuildEventTableEntry(profile, destination);
         var pointerOffset = profile.EventTableOffset + (eventId * 2);
-        var bankOffset = profile.EventTableOffset + MedabotsRomSchema.EventBankTableOffset + eventId;
+        var bankOffset = profile.EventTableOffset + (profile.EventCount * 2) + eventId;
 
         session.ApplyPatch(RomPatchAction.Create(pointerOffset, pointerBytes, $"Update event pointer for {eventId}"));
         session.ApplyPatch(RomPatchAction.Create(bankOffset, [bankByte], $"Update event bank for {eventId}"));

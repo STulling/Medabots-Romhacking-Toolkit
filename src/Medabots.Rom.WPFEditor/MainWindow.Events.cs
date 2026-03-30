@@ -86,6 +86,7 @@ public partial class MainWindow : Window
             var scripts = new EventScript[profile.EventCount];
             var visualStates = new EventVisualState[profile.EventCount];
             var summaries = new string[profile.EventCount];
+            var opcodeFilters = new string[profile.EventCount];
             var completed = 0;
 
             Parallel.For(0, profile.EventCount, eventIndex =>
@@ -95,6 +96,7 @@ public partial class MainWindow : Window
                 scripts[eventIndex] = script;
                 visualStates[eventIndex] = BuildEventVisualState((short)eventIndex, script);
                 summaries[eventIndex] = BuildEventSummary(script);
+                opcodeFilters[eventIndex] = BuildEventOpcodeFilterText(script);
 
                 var finished = Interlocked.Increment(ref completed);
                 if (finished % 8 == 0 || finished == profile.EventCount)
@@ -104,7 +106,7 @@ public partial class MainWindow : Window
                 }
             });
 
-            return (scripts, visualStates, summaries);
+            return (scripts, visualStates, summaries, opcodeFilters);
         });
 
         _eventCache.Clear();
@@ -123,8 +125,11 @@ public partial class MainWindow : Window
         {
             var item = _allEventItems[index];
             item.Summary = preloadResult.summaries[index];
+            item.OpcodeFilterText = preloadResult.opcodeFilters[index];
             item.IsCached = true;
         }
+
+        RefreshEventFilter();
     }
 
     private void PopulateEventInstructionEditor(EventInstructionItem? instructionItem)
@@ -262,10 +267,12 @@ public partial class MainWindow : Window
         EventsSection.IsSelected = string.Equals(section, "Events", StringComparison.Ordinal);
         BattlesSection.IsSelected = string.Equals(section, "Battles", StringComparison.Ordinal);
         PartsSection.IsSelected = string.Equals(section, "Parts", StringComparison.Ordinal);
+        MapsSection.IsSelected = string.Equals(section, "Maps", StringComparison.Ordinal);
         SpritesSection.IsSelected = string.Equals(section, "Sprites", StringComparison.Ordinal);
         EncountersSection.IsSelected = string.Equals(section, "Encounters", StringComparison.Ordinal);
         ShopsSection.IsSelected = string.Equals(section, "Shops", StringComparison.Ordinal);
         StarterSection.IsSelected = string.Equals(section, "Starter", StringComparison.Ordinal);
+        ChangesSection.IsSelected = string.Equals(section, "Changes", StringComparison.Ordinal);
     }
 
     private async void OnEventSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -296,6 +303,7 @@ public partial class MainWindow : Window
                 _eventCache[eventId] = script;
                 item.IsCached = true;
                 item.Summary = BuildEventSummary(script);
+                item.OpcodeFilterText = BuildEventOpcodeFilterText(script);
             }
 
             if (!_eventViewCache.TryGetValue(eventId, out var visualState))
@@ -323,7 +331,7 @@ public partial class MainWindow : Window
 
         _loadedBattle = _loadedBattles[item.Id];
         PopulateBattleEditor(_loadedBattle);
-        BattleEditor.Text = FormatBattle(_loadedBattle, _metadata);
+        BattleEditor.Text = FormatBattle(_loadedBattle);
         await Task.CompletedTask;
     }
 
@@ -336,8 +344,6 @@ public partial class MainWindow : Window
 
         _loadedPart = _loadedParts[item.Id];
         PopulatePartEditor(_loadedPart);
-        PartEditor.Text = FormatPart(_loadedPart, _metadata);
-        PartActionAnalysisEditor.Text = FormatPartActionAnalysis(_loadedPart);
         await Task.CompletedTask;
     }
 
@@ -476,6 +482,101 @@ public partial class MainWindow : Window
 
         SelectContextInstruction(instructionItem);
         await ApplyStructuralEventEditAsync(instructionItem, "Delete Instruction", script => _eventScriptRewriter.DeleteInstruction(_session!.RomFile, script, _selectedEventVisualState!.LabelMap, instructionItem.Offset));
+    }
+
+    private async void OnSelectedEventInsertNopBeforeClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_selectedEventInstruction is null)
+        {
+            await DisplayAlertAsync("No Action Selected", "Select an event row first.", "OK");
+            return;
+        }
+
+        await ApplyStructuralEventEditAsync(_selectedEventInstruction, "Insert Nop Before", script => _eventScriptRewriter.InsertNopBefore(_session!.RomFile, script, _selectedEventVisualState!.LabelMap, _selectedEventInstruction.Offset));
+    }
+
+    private async void OnSelectedEventInsertNopAfterClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_selectedEventInstruction is null)
+        {
+            await DisplayAlertAsync("No Action Selected", "Select an event row first.", "OK");
+            return;
+        }
+
+        await ApplyStructuralEventEditAsync(_selectedEventInstruction, "Insert Nop After", script => _eventScriptRewriter.InsertNopAfter(_session!.RomFile, script, _selectedEventVisualState!.LabelMap, _selectedEventInstruction.Offset));
+    }
+
+    private async void OnSelectedEventInsertOperationBeforeClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_selectedEventInstruction is null)
+        {
+            await DisplayAlertAsync("No Action Selected", "Select an event row first.", "OK");
+            return;
+        }
+
+        if (_selectedEventOperationDefinition is null)
+        {
+            await DisplayAlertAsync("No Operation Selected", "Choose an event operation in the action editor first.", "OK");
+            return;
+        }
+
+        await ApplyStructuralEventEditAsync(
+            _selectedEventInstruction,
+            $"Insert {_selectedEventOperationDefinition.Name} Before",
+            script => _eventScriptRewriter.InsertInstructionBefore(_session!.RomFile, script, _selectedEventVisualState!.LabelMap, _selectedEventInstruction.Offset, _selectedEventOperationDefinition));
+    }
+
+    private async void OnSelectedEventInsertOperationAfterClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_selectedEventInstruction is null)
+        {
+            await DisplayAlertAsync("No Action Selected", "Select an event row first.", "OK");
+            return;
+        }
+
+        if (_selectedEventOperationDefinition is null)
+        {
+            await DisplayAlertAsync("No Operation Selected", "Choose an event operation in the action editor first.", "OK");
+            return;
+        }
+
+        await ApplyStructuralEventEditAsync(
+            _selectedEventInstruction,
+            $"Insert {_selectedEventOperationDefinition.Name} After",
+            script => _eventScriptRewriter.InsertInstructionAfter(_session!.RomFile, script, _selectedEventVisualState!.LabelMap, _selectedEventInstruction.Offset, _selectedEventOperationDefinition));
+    }
+
+    private async void OnSelectedEventMoveUpClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_selectedEventInstruction is null)
+        {
+            await DisplayAlertAsync("No Action Selected", "Select an event row first.", "OK");
+            return;
+        }
+
+        await ApplyStructuralEventEditAsync(_selectedEventInstruction, "Move Instruction Up", script => _eventScriptRewriter.MoveInstructionUp(_session!.RomFile, script, _selectedEventVisualState!.LabelMap, _selectedEventInstruction.Offset));
+    }
+
+    private async void OnSelectedEventMoveDownClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_selectedEventInstruction is null)
+        {
+            await DisplayAlertAsync("No Action Selected", "Select an event row first.", "OK");
+            return;
+        }
+
+        await ApplyStructuralEventEditAsync(_selectedEventInstruction, "Move Instruction Down", script => _eventScriptRewriter.MoveInstructionDown(_session!.RomFile, script, _selectedEventVisualState!.LabelMap, _selectedEventInstruction.Offset));
+    }
+
+    private async void OnSelectedEventDeleteClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_selectedEventInstruction is null)
+        {
+            await DisplayAlertAsync("No Action Selected", "Select an event row first.", "OK");
+            return;
+        }
+
+        await ApplyStructuralEventEditAsync(_selectedEventInstruction, "Delete Instruction", script => _eventScriptRewriter.DeleteInstruction(_session!.RomFile, script, _selectedEventVisualState!.LabelMap, _selectedEventInstruction.Offset));
     }
 
     private void OnEventOperationSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -637,6 +738,23 @@ public partial class MainWindow : Window
 
     private EventVisualState BuildEventVisualState(short eventId, EventScript script) => CreateEventPresentationBuilder().BuildVisualState(eventId, script);
 
+    private EventVisualState EnsureEventVisualState(short eventId)
+    {
+        if (_eventViewCache.TryGetValue(eventId, out var cachedVisualState))
+        {
+            return cachedVisualState;
+        }
+
+        var profile = RequireProfile() ?? throw new InvalidOperationException("No ROM profile is loaded.");
+        var script = _eventCache.TryGetValue(eventId, out var cachedScript)
+            ? cachedScript
+            : ReadEventScriptForEditor(eventId, profile);
+        _eventCache[eventId] = script;
+        var visualState = BuildEventVisualState(eventId, script);
+        _eventViewCache[eventId] = visualState;
+        return visualState;
+    }
+
     private void ApplyEventVisualState(EventVisualState visualState)
     {
         _selectedEventVisualState = visualState;
@@ -784,6 +902,7 @@ public partial class MainWindow : Window
             if (item is not null)
             {
                 item.Summary = BuildEventSummary(originalScript);
+                item.OpcodeFilterText = BuildEventOpcodeFilterText(originalScript);
                 item.IsCached = true;
             }
 
@@ -888,6 +1007,239 @@ public partial class MainWindow : Window
         _selectedEventInstruction = instructionItem;
         EventInstructionCollectionView.SelectedItem = instructionItem;
         PopulateEventInstructionEditor(instructionItem);
+    }
+
+    private void ApplyEventLabelChangeForEditorWindow(short eventId, int offset, string? labelTextRaw)
+    {
+        var labelText = (labelTextRaw ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(labelText) && !IsValidEventLabel(labelText))
+        {
+            throw new InvalidOperationException("Labels must start with a letter or underscore and use only letters, digits, or underscores.");
+        }
+
+        if (!_eventCustomLabels.TryGetValue(eventId, out var customLabels))
+        {
+            customLabels = [];
+            _eventCustomLabels[eventId] = customLabels;
+        }
+
+        if (!string.IsNullOrWhiteSpace(labelText) &&
+            customLabels.Any(pair => pair.Key != offset && string.Equals(pair.Value, labelText, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException($"The label '{labelText}' is already used in this event.");
+        }
+
+        if (string.IsNullOrWhiteSpace(labelText))
+        {
+            customLabels.Remove(offset);
+        }
+        else
+        {
+            customLabels[offset] = labelText;
+        }
+
+        _eventViewCache.Remove(eventId);
+        if (_eventCache.TryGetValue(eventId, out var script))
+        {
+            _eventViewCache[eventId] = BuildEventVisualState(eventId, script);
+        }
+    }
+
+    private void ApplyEventActionChangeForEditorWindow(short eventId, EventInstruction instruction, EventOperationDefinition targetDefinition, Dictionary<string, int> updatedArguments)
+    {
+        if (_session is null)
+        {
+            throw new InvalidOperationException("No ROM session is open.");
+        }
+
+        var profile = RequireProfile() ?? throw new InvalidOperationException("No ROM profile is loaded.");
+        var currentScript = _eventCache.TryGetValue(eventId, out var cachedScript)
+            ? cachedScript
+            : ReadEventScriptForEditor(eventId, profile);
+
+        var previewSession = CreatePreviewSession();
+        _eventInstructionPatcher.Apply(previewSession, profile, currentScript, instruction, targetDefinition, updatedArguments);
+        StoreEventScriptPatch(eventId, ResolvePatchedEventBytes(previewSession.RomFile, profile, eventId));
+        RefreshEditedEventView(eventId, profile);
+        UpdateEventBrowserPatchStatus(eventId);
+    }
+
+    private void ApplyStructuralEventEditForEditorWindow(short eventId, int preferredOffset, Func<EventScript, byte[]> rewriteOperation)
+    {
+        if (_session is null)
+        {
+            throw new InvalidOperationException("No ROM session is open.");
+        }
+
+        var profile = RequireProfile() ?? throw new InvalidOperationException("No ROM profile is loaded.");
+        var script = _eventCache.TryGetValue(eventId, out var cachedScript)
+            ? cachedScript
+            : ReadEventScriptForEditor(eventId, profile);
+        var rewrittenBytes = rewriteOperation(script);
+        StoreEventScriptPatch(eventId, rewrittenBytes);
+        RefreshEditedEventView(eventId, profile);
+        UpdateEventBrowserPatchStatus(eventId);
+    }
+
+    private void OpenDetailedEventScriptEditor(short eventId)
+    {
+        var profile = RequireProfile();
+        if (profile is null)
+        {
+            return;
+        }
+
+        var window = new EventScriptEditorWindow(
+            eventId,
+            EnsureEventVisualState(eventId),
+            _eventOperationOptions,
+            () => EnsureEventVisualState(eventId),
+            () => _eventProjectScriptPatches.ContainsKey(eventId)
+                ? "Patch status: this event is overridden in the project and will be relocated on ROM export."
+                : "Patch status: using the original ROM event script.",
+            (offset, labelText) =>
+            {
+                ApplyEventLabelChangeForEditorWindow(eventId, offset, labelText);
+                if (_selectedEventId == eventId)
+                {
+                    var visualState = EnsureEventVisualState(eventId);
+                    ApplyEventVisualState(visualState);
+                    UpdateSelectedEventPatchStatus(eventId);
+                    ReselectEventInstruction(offset);
+                }
+
+                UpdateStatus();
+            },
+            (instruction, targetDefinition, arguments) =>
+            {
+                ApplyEventActionChangeForEditorWindow(eventId, instruction, targetDefinition, arguments);
+                if (_selectedEventId == eventId)
+                {
+                    var visualState = EnsureEventVisualState(eventId);
+                    ApplyEventVisualState(visualState);
+                    UpdateSelectedEventPatchStatus(eventId);
+                    ReselectEventInstruction(instruction.Offset);
+                }
+
+                UpdateStatus();
+            },
+            (offset, targetDefinition) =>
+            {
+                ApplyStructuralEventEditForEditorWindow(
+                    eventId,
+                    offset,
+                    script => _eventScriptRewriter.InsertInstructionBefore(_session!.RomFile, script, EnsureEventVisualState(eventId).LabelMap, offset, targetDefinition));
+                if (_selectedEventId == eventId)
+                {
+                    var visualState = EnsureEventVisualState(eventId);
+                    ApplyEventVisualState(visualState);
+                    UpdateSelectedEventPatchStatus(eventId);
+                    ReselectEventInstruction(offset);
+                }
+
+                UpdateStatus();
+            },
+            (offset, targetDefinition) =>
+            {
+                ApplyStructuralEventEditForEditorWindow(
+                    eventId,
+                    offset,
+                    script => _eventScriptRewriter.InsertInstructionAfter(_session!.RomFile, script, EnsureEventVisualState(eventId).LabelMap, offset, targetDefinition));
+                if (_selectedEventId == eventId)
+                {
+                    var visualState = EnsureEventVisualState(eventId);
+                    ApplyEventVisualState(visualState);
+                    UpdateSelectedEventPatchStatus(eventId);
+                    ReselectEventInstruction(offset);
+                }
+
+                UpdateStatus();
+            },
+            offset =>
+            {
+                ApplyStructuralEventEditForEditorWindow(
+                    eventId,
+                    offset,
+                    script => _eventScriptRewriter.InsertNopBefore(_session!.RomFile, script, EnsureEventVisualState(eventId).LabelMap, offset));
+                if (_selectedEventId == eventId)
+                {
+                    var visualState = EnsureEventVisualState(eventId);
+                    ApplyEventVisualState(visualState);
+                    UpdateSelectedEventPatchStatus(eventId);
+                    ReselectEventInstruction(offset);
+                }
+
+                UpdateStatus();
+            },
+            offset =>
+            {
+                ApplyStructuralEventEditForEditorWindow(
+                    eventId,
+                    offset,
+                    script => _eventScriptRewriter.InsertNopAfter(_session!.RomFile, script, EnsureEventVisualState(eventId).LabelMap, offset));
+                if (_selectedEventId == eventId)
+                {
+                    var visualState = EnsureEventVisualState(eventId);
+                    ApplyEventVisualState(visualState);
+                    UpdateSelectedEventPatchStatus(eventId);
+                    ReselectEventInstruction(offset);
+                }
+
+                UpdateStatus();
+            },
+            offset =>
+            {
+                ApplyStructuralEventEditForEditorWindow(
+                    eventId,
+                    offset,
+                    script => _eventScriptRewriter.MoveInstructionUp(_session!.RomFile, script, EnsureEventVisualState(eventId).LabelMap, offset));
+                if (_selectedEventId == eventId)
+                {
+                    var visualState = EnsureEventVisualState(eventId);
+                    ApplyEventVisualState(visualState);
+                    UpdateSelectedEventPatchStatus(eventId);
+                    ReselectEventInstruction(offset);
+                }
+
+                UpdateStatus();
+            },
+            offset =>
+            {
+                ApplyStructuralEventEditForEditorWindow(
+                    eventId,
+                    offset,
+                    script => _eventScriptRewriter.MoveInstructionDown(_session!.RomFile, script, EnsureEventVisualState(eventId).LabelMap, offset));
+                if (_selectedEventId == eventId)
+                {
+                    var visualState = EnsureEventVisualState(eventId);
+                    ApplyEventVisualState(visualState);
+                    UpdateSelectedEventPatchStatus(eventId);
+                    ReselectEventInstruction(offset);
+                }
+
+                UpdateStatus();
+            },
+            offset =>
+            {
+                ApplyStructuralEventEditForEditorWindow(
+                    eventId,
+                    offset,
+                    script => _eventScriptRewriter.DeleteInstruction(_session!.RomFile, script, EnsureEventVisualState(eventId).LabelMap, offset));
+                if (_selectedEventId == eventId)
+                {
+                    var visualState = EnsureEventVisualState(eventId);
+                    ApplyEventVisualState(visualState);
+                    UpdateSelectedEventPatchStatus(eventId);
+                    ReselectEventInstruction(offset);
+                }
+
+                UpdateStatus();
+            })
+        {
+            Owner = this
+        };
+
+        window.Show();
     }
 
 }

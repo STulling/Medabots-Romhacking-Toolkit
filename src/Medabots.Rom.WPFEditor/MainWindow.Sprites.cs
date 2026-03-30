@@ -287,10 +287,10 @@ public partial class MainWindow : Window
 
         preview = node.AssetKind switch
         {
-            SpriteAssetKind.OverworldEventObject => BuildOverworldSpritePreviewState(GetCurrentOverworldSpriteAsset(node.PrimaryId)),
-            SpriteAssetKind.Portrait => BuildPortraitPreviewState(GetCurrentPortraitAsset(node.PrimaryId, node.SecondaryId)),
+            SpriteAssetKind.OverworldEventObject => BuildOverworldSpritePreviewState(GetPreviewOverworldSpriteAsset(node.PrimaryId)),
+            SpriteAssetKind.Portrait => BuildPortraitPreviewState(GetPreviewPortraitAsset(node.PrimaryId, node.SecondaryId)),
             SpriteAssetKind.MapTileset => BuildMapTilesetPreviewState(GetCurrentMapTilesetAsset(node.PrimaryId)),
-            SpriteAssetKind.BattleCompositePartComponent => BuildBattleCompositeComponentPreviewState(GetCurrentBattleCompositeComponentAsset(node.PrimaryId, node.SecondaryId)),
+            SpriteAssetKind.BattleCompositePartComponent => BuildBattleCompositeComponentPreviewState(GetPreviewBattleCompositeComponentAsset(node.PrimaryId, node.SecondaryId)),
             SpriteAssetKind.PartCompositePreview => BuildPartCompositePreviewState(GetRequiredPartDefinition(node.PrimaryId), node.SecondaryId),
             _ => throw new InvalidOperationException("Unsupported sprite asset kind.")
         };
@@ -341,7 +341,7 @@ public partial class MainWindow : Window
 
     private SpritePreviewState BuildPartCompositePreviewState(PartDefinition part, int variantComponentIndex)
     {
-        var asset = GetCurrentLargePartDisplayAsset(part.Id, variantComponentIndex);
+        var asset = GetPreviewLargePartDisplayAsset(part.Id, variantComponentIndex);
         var renderedPieces = BuildRenderedLargeDisplayPieces(asset, part.Kind);
         var finalBanks = GetFinalLargeDisplayPaletteBankMap(asset);
         var paletteBytes = ResolveDisplayedLargeDisplayPalette(asset, finalBanks);
@@ -733,9 +733,9 @@ public partial class MainWindow : Window
 
     private SpriteAsset GetCurrentOverworldSpriteAsset(int spriteId)
     {
-        if (_editedOverworldSpriteAssets.TryGetValue(spriteId, out var edited))
+        if (_stagedOverworldSpriteAssets.TryGetValue(spriteId, out var staged))
         {
-            return edited;
+            return staged;
         }
 
         if (_session is null)
@@ -765,9 +765,9 @@ public partial class MainWindow : Window
 
     private PortraitAsset GetCurrentPortraitAsset(int characterId, int portraitIndex)
     {
-        if (_editedPortraitAssets.TryGetValue((characterId, portraitIndex), out var edited))
+        if (_stagedPortraitAssets.TryGetValue((characterId, portraitIndex), out var staged))
         {
-            return edited;
+            return staged;
         }
 
         if (_session is null)
@@ -780,9 +780,9 @@ public partial class MainWindow : Window
 
     private BattleCompositeSpriteComponentAsset GetCurrentBattleCompositeComponentAsset(int medabotId, int componentIndex)
     {
-        if (_editedBattleCompositeComponentAssets.TryGetValue((medabotId, componentIndex), out var edited))
+        if (_stagedBattleCompositeComponentAssets.TryGetValue((medabotId, componentIndex), out var staged))
         {
-            return edited;
+            return staged;
         }
 
         if (_battleCompositeComponentCache.TryGetValue((medabotId, componentIndex), out var cached))
@@ -820,9 +820,9 @@ public partial class MainWindow : Window
     {
         var part = GetRequiredPartDefinition(partId);
         var variantSelector = PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, componentIndex);
-        if (_editedLargePartDisplayAssets.TryGetValue((partId, variantSelector), out var edited))
+        if (_stagedLargePartDisplayAssets.TryGetValue((partId, variantSelector), out var staged))
         {
-            return edited;
+            return staged;
         }
 
         if (_largePartDisplayAssetCache.TryGetValue((partId, variantSelector), out var cached))
@@ -886,15 +886,31 @@ public partial class MainWindow : Window
         return node.AssetKind switch
         {
             SpriteAssetKind.OverworldEventObject when _editedOverworldSpriteAssets.ContainsKey(node.PrimaryId)
-                => "Status: imported changes are staged in memory. Use Apply Changes to write them into the ROM session.",
+                => _stagedOverworldSpriteAssets.ContainsKey(node.PrimaryId)
+                    ? "Status: this asset has draft edits and an older staged version. Stage Changes to update the staged version."
+                    : "Status: this asset has draft edits. Stage Changes to make other tabs and export use them.",
             SpriteAssetKind.Portrait when _editedPortraitAssets.ContainsKey((node.PrimaryId, node.SecondaryId))
-                => "Status: imported changes are staged in memory. Use Apply Changes to write them into the ROM session.",
+                => _stagedPortraitAssets.ContainsKey((node.PrimaryId, node.SecondaryId))
+                    ? "Status: this asset has draft edits and an older staged version. Stage Changes to update the staged version."
+                    : "Status: this asset has draft edits. Stage Changes to make other tabs and export use them.",
+            SpriteAssetKind.BattleCompositePartComponent when _editedBattleCompositeComponentAssets.ContainsKey((node.PrimaryId, node.SecondaryId))
+                => _stagedBattleCompositeComponentAssets.ContainsKey((node.PrimaryId, node.SecondaryId))
+                    ? "Status: this asset has draft edits and an older staged version. Stage Changes to update the staged version."
+                    : "Status: this asset has draft edits. Stage Changes to make other tabs and export use them.",
+            SpriteAssetKind.PartCompositePreview when _editedLargePartDisplayAssets.ContainsKey((node.PrimaryId, PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(GetRequiredPartDefinition(node.PrimaryId).Kind, node.SecondaryId)))
+                => _stagedLargePartDisplayAssets.ContainsKey((node.PrimaryId, PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(GetRequiredPartDefinition(node.PrimaryId).Kind, node.SecondaryId)))
+                    ? "Status: this asset has draft edits and an older staged version. Stage Changes to update the staged version."
+                    : "Status: this asset has draft edits. Stage Changes to make other tabs and export use them.",
+            SpriteAssetKind.OverworldEventObject when _stagedOverworldSpriteAssets.ContainsKey(node.PrimaryId)
+                => "Status: this overworld sprite is staged. Other tabs and export use the staged version.",
+            SpriteAssetKind.Portrait when _stagedPortraitAssets.ContainsKey((node.PrimaryId, node.SecondaryId))
+                => "Status: this portrait is staged. Other tabs and export use the staged version.",
             SpriteAssetKind.MapTileset
                 => "Status: showing map tileset graphics. Editing/writeback is not wired yet; use this as the future tile picker surface.",
-            SpriteAssetKind.BattleCompositePartComponent when _editedBattleCompositeComponentAssets.ContainsKey((node.PrimaryId, node.SecondaryId))
-                => "Status: staged Medabot component edits are in memory. Apply Changes writes the component image and its shared family palette into the ROM session.",
-            SpriteAssetKind.PartCompositePreview when _editedLargePartDisplayAssets.ContainsKey((node.PrimaryId, PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(GetRequiredPartDefinition(node.PrimaryId).Kind, node.SecondaryId)))
-                => "Status: staged Large Display edits are in memory. Apply Changes writes the descriptor-selected large-display piece blobs and uploaded palettes into the ROM session.",
+            SpriteAssetKind.BattleCompositePartComponent when _stagedBattleCompositeComponentAssets.ContainsKey((node.PrimaryId, node.SecondaryId))
+                => "Status: this Medabot component sprite is staged. Other tabs and export use the staged version.",
+            SpriteAssetKind.PartCompositePreview when _stagedLargePartDisplayAssets.ContainsKey((node.PrimaryId, PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(GetRequiredPartDefinition(node.PrimaryId).Kind, node.SecondaryId)))
+                => "Status: this Large Display sprite is staged. Other tabs and export use the staged version.",
             SpriteAssetKind.BattleCompositePartComponent
                 => "Status: editing a Medabot/component battle sprite family. Palette changes affect every part using that shared family palette.",
             SpriteAssetKind.PartCompositePreview
@@ -932,8 +948,8 @@ public partial class MainWindow : Window
     {
         return node.AssetKind switch
         {
-            SpriteAssetKind.BattleCompositePartComponent => GetCurrentBattleCompositeComponentAsset(node.PrimaryId, node.SecondaryId),
-            SpriteAssetKind.PartCompositePreview => GetCurrentBattleCompositeComponentAsset(GetRequiredPartDefinition(node.PrimaryId).MedabotId, node.SecondaryId),
+            SpriteAssetKind.BattleCompositePartComponent => GetPreviewBattleCompositeComponentAsset(node.PrimaryId, node.SecondaryId),
+            SpriteAssetKind.PartCompositePreview => GetPreviewBattleCompositeComponentAsset(GetRequiredPartDefinition(node.PrimaryId).MedabotId, node.SecondaryId),
             _ => throw new InvalidOperationException("The selected sprite node does not use a composite component asset.")
         };
     }
@@ -1157,7 +1173,7 @@ public partial class MainWindow : Window
         _editedBattleCompositeComponentAssets[(updated.MedabotId, updated.ComponentIndex)] = updated;
         _hasCapturedUndoForCurrentStroke = false;
         InvalidateSelectedSpritePreview();
-        SpritePatchStatusLabel.Text = $"Status: staged palette family {family} for this Medabot component. Apply Changes will patch the family selector byte in the ROM.";
+        SpritePatchStatusLabel.Text = $"Status: staged palette family {family} for this Medabot component. Export ROM will patch the family selector byte.";
     }
 
     private async void OnEditPaletteColorMenuClicked(object? sender, RoutedEventArgs e)
@@ -1439,10 +1455,10 @@ public partial class MainWindow : Window
 
         var image = _selectedSpriteNode.AssetKind switch
         {
-            SpriteAssetKind.OverworldEventObject => GetCurrentOverworldSpriteAsset(_selectedSpriteNode.PrimaryId).Image,
-            SpriteAssetKind.Portrait => GetCurrentPortraitAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId).Image,
+            SpriteAssetKind.OverworldEventObject => GetPreviewOverworldSpriteAsset(_selectedSpriteNode.PrimaryId).Image,
+            SpriteAssetKind.Portrait => GetPreviewPortraitAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId).Image,
             SpriteAssetKind.MapTileset => GetCurrentMapTilesetAsset(_selectedSpriteNode.PrimaryId).TilesetSheet,
-            SpriteAssetKind.BattleCompositePartComponent => GetCurrentBattleCompositeComponentAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId).Image,
+            SpriteAssetKind.BattleCompositePartComponent => GetPreviewBattleCompositeComponentAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId).Image,
             SpriteAssetKind.PartCompositePreview => null,
             _ => null
         };
@@ -1470,6 +1486,8 @@ public partial class MainWindow : Window
             return false;
         }
 
+        var asset = GetEditableLargePartDisplayAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId);
+
         var previewX = (int)(point.X / _spriteEditorZoom);
         var previewY = (int)(point.Y / _spriteEditorZoom);
         for (var index = preview.Pieces.Count - 1; index >= 0; index--)
@@ -1480,9 +1498,32 @@ public partial class MainWindow : Window
                 continue;
             }
 
+            var displayPixelX = previewX - piece.X;
+            var displayPixelY = previewY - piece.Y;
+            if (piece.PieceIndex < 0 || piece.PieceIndex >= asset.Pieces.Count)
+            {
+                return false;
+            }
+
+            var sourcePiece = asset.Pieces[piece.PieceIndex];
+            var displayTileIndex = (displayPixelY / 8) * piece.Image.TileWidth + (displayPixelX / 8);
+            if (displayTileIndex < 0 || displayTileIndex >= sourcePiece.LoadedTileCount)
+            {
+                return false;
+            }
+
+            var sourceTileX = displayTileIndex % sourcePiece.Image.TileWidth;
+            var sourceTileY = displayTileIndex / sourcePiece.Image.TileWidth;
+            var resolvedPixelX = (sourceTileX * 8) + (displayPixelX % 8);
+            var resolvedPixelY = (sourceTileY * 8) + (displayPixelY % 8);
+            if (resolvedPixelX < 0 || resolvedPixelY < 0 || resolvedPixelX >= sourcePiece.Image.Width || resolvedPixelY >= sourcePiece.Image.Height)
+            {
+                return false;
+            }
+
             pieceIndex = piece.PieceIndex;
-            pixelX = previewX - piece.X;
-            pixelY = previewY - piece.Y;
+            pixelX = resolvedPixelX;
+            pixelY = resolvedPixelY;
             return true;
         }
 
@@ -1520,6 +1561,67 @@ public partial class MainWindow : Window
         _editedPortraitAssets[(characterId, portraitIndex)] = clone;
         return clone;
     }
+
+    private SpriteAsset GetPreviewOverworldSpriteAsset(int spriteId)
+    {
+        return _editedOverworldSpriteAssets.TryGetValue(spriteId, out var edited)
+            ? edited
+            : GetCurrentOverworldSpriteAsset(spriteId);
+    }
+
+    private PortraitAsset GetPreviewPortraitAsset(int characterId, int portraitIndex)
+    {
+        return _editedPortraitAssets.TryGetValue((characterId, portraitIndex), out var edited)
+            ? edited
+            : GetCurrentPortraitAsset(characterId, portraitIndex);
+    }
+
+    private BattleCompositeSpriteComponentAsset GetPreviewBattleCompositeComponentAsset(int medabotId, int componentIndex)
+    {
+        return _editedBattleCompositeComponentAssets.TryGetValue((medabotId, componentIndex), out var edited)
+            ? edited
+            : GetCurrentBattleCompositeComponentAsset(medabotId, componentIndex);
+    }
+
+    private LargePartDisplayAsset GetPreviewLargePartDisplayAsset(int partId, int componentIndex)
+    {
+        var part = GetRequiredPartDefinition(partId);
+        var variantSelector = PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, componentIndex);
+        return _editedLargePartDisplayAssets.TryGetValue((partId, variantSelector), out var edited)
+            ? edited
+            : GetCurrentLargePartDisplayAsset(partId, componentIndex);
+    }
+
+    private static SpriteAsset CloneSpriteAsset(SpriteAsset asset) =>
+        asset with
+        {
+            Image = new IndexedImage(asset.Image.TileWidth, asset.Image.TileHeight, asset.Image.PixelIndices.ToArray(), asset.Image.PaletteBytes.ToArray())
+        };
+
+    private static PortraitAsset ClonePortraitAsset(PortraitAsset asset) =>
+        asset with
+        {
+            Image = new IndexedImage(asset.Image.TileWidth, asset.Image.TileHeight, asset.Image.PixelIndices.ToArray(), asset.Image.PaletteBytes.ToArray())
+        };
+
+    private static BattleCompositeSpriteComponentAsset CloneBattleCompositeSpriteComponentAsset(BattleCompositeSpriteComponentAsset asset) =>
+        asset with
+        {
+            Image = new IndexedImage(asset.Image.TileWidth, asset.Image.TileHeight, asset.Image.PixelIndices.ToArray(), asset.Image.PaletteBytes.ToArray())
+        };
+
+    private static LargePartDisplayAsset CloneLargePartDisplayAsset(LargePartDisplayAsset asset) =>
+        asset with
+        {
+            Pieces = asset.Pieces
+                .Select(piece => piece with
+                {
+                    PaletteBytes = piece.PaletteBytes.ToArray(),
+                    Image = new IndexedImage(piece.Image.TileWidth, piece.Image.TileHeight, piece.Image.PixelIndices.ToArray(), piece.Image.PaletteBytes.ToArray())
+                })
+                .ToArray(),
+            InitialPaletteBanks = asset.InitialPaletteBanks.ToDictionary(pair => pair.Key, pair => pair.Value.ToArray())
+        };
 
     private void ApplyToolToIndexedImage(IndexedImage image, int pixelX, int pixelY)
     {
@@ -1724,7 +1826,7 @@ public partial class MainWindow : Window
 
         _hasCapturedUndoForCurrentStroke = false;
         InvalidateSelectedSpritePreview();
-        SpritePatchStatusLabel.Text = "Status: reverted the last staged edit for this asset.";
+        SpritePatchStatusLabel.Text = "Status: reverted the last draft edit for this asset.";
     }
 
     private async void OnRevertSelectedSpriteChangesClicked(object? sender, RoutedEventArgs e)
@@ -1739,31 +1841,44 @@ public partial class MainWindow : Window
         {
             case SpriteAssetKind.OverworldEventObject:
                 _editedOverworldSpriteAssets.Remove(_selectedSpriteNode.PrimaryId);
+                _stagedOverworldSpriteAssets.Remove(_selectedSpriteNode.PrimaryId);
                 break;
             case SpriteAssetKind.Portrait:
                 _editedPortraitAssets.Remove((_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId));
+                _stagedPortraitAssets.Remove((_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId));
                 break;
             case SpriteAssetKind.BattleCompositePartComponent:
                 _editedBattleCompositeComponentAssets.Remove((_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId));
+                _stagedBattleCompositeComponentAssets.Remove((_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId));
                 break;
             case SpriteAssetKind.PartCompositePreview:
-                _editedLargePartDisplayAssets.Remove((_selectedSpriteNode.PrimaryId, PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(GetRequiredPartDefinition(_selectedSpriteNode.PrimaryId).Kind, _selectedSpriteNode.SecondaryId)));
+            {
+                var part = GetRequiredPartDefinition(_selectedSpriteNode.PrimaryId);
+                var variantSelector = PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, _selectedSpriteNode.SecondaryId);
+                _editedLargePartDisplayAssets.Remove((_selectedSpriteNode.PrimaryId, variantSelector));
+                _stagedLargePartDisplayAssets.Remove((_selectedSpriteNode.PrimaryId, variantSelector));
                 break;
+            }
         }
 
         _spriteEditHistories.Remove(GetSelectedSpriteHistoryKey());
         _hasCapturedUndoForCurrentStroke = false;
         InvalidateSelectedSpritePreview();
+        RefreshSharedSpriteConsumers();
         SpritePatchStatusLabel.Text = "Status: reset this asset back to the ROM version.";
     }
 
     private void OnRevertAllSpriteChangesClicked(object? sender, RoutedEventArgs e)
     {
         _editedOverworldSpriteAssets.Clear();
+        _stagedOverworldSpriteAssets.Clear();
         _editedPortraitAssets.Clear();
+        _stagedPortraitAssets.Clear();
         _editedBattleCompositeComponentAssets.Clear();
+        _stagedBattleCompositeComponentAssets.Clear();
         _battleCompositeComponentCache.Clear();
         _editedLargePartDisplayAssets.Clear();
+        _stagedLargePartDisplayAssets.Clear();
         _largePartDisplayAssetCache.Clear();
         _spriteEditHistories.Clear();
         _spritePreviewCache.Clear();
@@ -1778,7 +1893,8 @@ public partial class MainWindow : Window
             ClearSpritePreview();
         }
 
-        SpritePatchStatusLabel.Text = "Status: cleared all staged sprite and portrait changes.";
+        RefreshSharedSpriteConsumers();
+        SpritePatchStatusLabel.Text = "Status: cleared all draft and staged sprite changes back to ROM defaults.";
     }
 
     private async void OnExportSpritePngClicked(object? sender, RoutedEventArgs e)
@@ -1871,7 +1987,7 @@ public partial class MainWindow : Window
 
             _hasCapturedUndoForCurrentStroke = false;
             InvalidateSelectedSpritePreview();
-            SpritePatchStatusLabel.Text = "Status: imported PNG and staged changes in memory.";
+            SpritePatchStatusLabel.Text = "Status: imported PNG into the draft version of this asset. Stage Changes to use it elsewhere.";
         }
         catch (Exception ex)
         {
@@ -1883,7 +1999,7 @@ public partial class MainWindow : Window
     {
         if (_session is null || _selectedSpriteNode is null || !_selectedSpriteNode.IsAsset)
         {
-            await DisplayAlertAsync("No Asset Selected", "Select a sprite or portrait to apply changes.", "OK");
+            await DisplayAlertAsync("No Asset Selected", "Select a sprite or portrait to stage.", "OK");
             return;
         }
 
@@ -1895,61 +2011,50 @@ public partial class MainWindow : Window
 
         try
         {
+            var stagedAnything = false;
             switch (_selectedSpriteNode.AssetKind)
             {
-                case SpriteAssetKind.OverworldEventObject:
-                    if (_editedOverworldSpriteAssets.TryGetValue(_selectedSpriteNode.PrimaryId, out var sprite))
-                    {
-                        _imageAssetPatcher.ApplySpriteSmart(_session, sprite);
-                        _editedOverworldSpriteAssets.Remove(_selectedSpriteNode.PrimaryId);
-                        _spriteEditHistories.Remove(GetSelectedSpriteHistoryKey());
-                    }
+                case SpriteAssetKind.OverworldEventObject when _editedOverworldSpriteAssets.TryGetValue(_selectedSpriteNode.PrimaryId, out var editedOverworld):
+                    _stagedOverworldSpriteAssets[_selectedSpriteNode.PrimaryId] = CloneSpriteAsset(editedOverworld);
+                    stagedAnything = true;
                     break;
-                case SpriteAssetKind.Portrait:
-                    var portraitKey = (_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId);
-                    if (_editedPortraitAssets.TryGetValue(portraitKey, out var portrait))
-                    {
-                        _imageAssetPatcher.ApplyPortraitSmart(_session, portrait);
-                        _editedPortraitAssets.Remove(portraitKey);
-                        _spriteEditHistories.Remove(GetSelectedSpriteHistoryKey());
-                    }
+                case SpriteAssetKind.Portrait when _editedPortraitAssets.TryGetValue((_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId), out var editedPortrait):
+                    _stagedPortraitAssets[(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId)] = ClonePortraitAsset(editedPortrait);
+                    stagedAnything = true;
                     break;
-                case SpriteAssetKind.BattleCompositePartComponent:
-                {
-                    var componentKey = (_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId);
-                    if (_editedBattleCompositeComponentAssets.TryGetValue(componentKey, out var component))
-                    {
-                        _imageAssetPatcher.ApplyBattleCompositeSpriteComponentSmart(_session, component);
-                        _editedBattleCompositeComponentAssets.Remove(componentKey);
-                        _battleCompositeComponentCache.Remove(componentKey);
-                        _spriteEditHistories.Remove(GetSelectedSpriteHistoryKey());
-                    }
+                case SpriteAssetKind.BattleCompositePartComponent when _editedBattleCompositeComponentAssets.TryGetValue((_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId), out var editedComponent):
+                    _stagedBattleCompositeComponentAssets[(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId)] = CloneBattleCompositeSpriteComponentAsset(editedComponent);
+                    stagedAnything = true;
                     break;
-                }
                 case SpriteAssetKind.PartCompositePreview:
                 {
                     var part = GetRequiredPartDefinition(_selectedSpriteNode.PrimaryId);
                     var variantSelector = PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, _selectedSpriteNode.SecondaryId);
-                    var assetKey = (_selectedSpriteNode.PrimaryId, variantSelector);
-                    if (_editedLargePartDisplayAssets.TryGetValue(assetKey, out var largeDisplay))
+                    if (_editedLargePartDisplayAssets.TryGetValue((_selectedSpriteNode.PrimaryId, variantSelector), out var editedLargeDisplay))
                     {
-                        ApplyLargeDisplayEdits(_session, part, _selectedSpriteNode.SecondaryId, largeDisplay);
-                        _editedLargePartDisplayAssets.Remove(assetKey);
-                        _largePartDisplayAssetCache.Remove(assetKey);
-                        _spriteEditHistories.Remove(GetSelectedSpriteHistoryKey());
+                        _stagedLargePartDisplayAssets[(_selectedSpriteNode.PrimaryId, variantSelector)] = CloneLargePartDisplayAsset(editedLargeDisplay);
+                        stagedAnything = true;
                     }
+
                     break;
                 }
+            }
+
+            if (!stagedAnything)
+            {
+                SpritePatchStatusLabel.Text = "Status: there are no draft changes to stage for this asset.";
+                return;
             }
 
             UpdateStatus();
             _hasCapturedUndoForCurrentStroke = false;
             InvalidateSelectedSpritePreview();
-            SpritePatchStatusLabel.Text = "Status: changes applied to the current ROM session.";
+            RefreshSharedSpriteConsumers();
+            SpritePatchStatusLabel.Text = "Status: sprite changes are staged for export and now visible elsewhere in the editor.";
         }
         catch (Exception ex)
         {
-            await DisplayAlertAsync("Apply Failed", ex.Message, "OK");
+            await DisplayAlertAsync("Stage Failed", ex.Message, "OK");
         }
     }
 
@@ -1962,6 +2067,25 @@ public partial class MainWindow : Window
 
         _spritePreviewCache.Clear();
         OnSpriteSelectionChanged(SpriteTreeView, new RoutedPropertyChangedEventArgs<object>(_selectedSpriteNode, _selectedSpriteNode));
+    }
+
+    private void RefreshSharedSpriteConsumers()
+    {
+        _spritePreviewCache.Clear();
+        _battleCompositeComponentCache.Clear();
+        _largePartDisplayAssetCache.Clear();
+        RefreshBattleLoadoutOptions();
+        RefreshBattleBotSummariesFromSelections();
+        RefreshBattleDerivedLabels();
+
+        if (_loadedMapTileset is not null)
+        {
+            _mapSpriteSlotEditorMapId = null;
+            UpdateMapMetadataEditor();
+            UpdateMapOverlayStatus();
+            RefreshMapCompositePreview();
+            UpdateMapEditorSidebar();
+        }
     }
 
     private void ApplyLargeDisplayEdits(RomHackSession session, PartDefinition part, int componentIndex, LargePartDisplayAsset editedAsset)

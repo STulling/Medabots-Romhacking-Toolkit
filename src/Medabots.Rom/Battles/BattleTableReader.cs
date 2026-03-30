@@ -59,8 +59,8 @@ public sealed class BattleTableReader
             data[0],
             data[1],
             data[2],
-            bots,
-            data[MedabotsRomSchema.BattleFooterOffset]);
+            data[3],
+            bots);
     }
 
     public static byte[] Serialize(BattleDefinition battle)
@@ -73,28 +73,28 @@ public sealed class BattleTableReader
 
         var data = new byte[BattleSize];
         data[0] = battle.CharacterId;
-        data[1] = battle.Unknown1;
+        data[1] = battle.InitializationMode;
         data[2] = battle.NumberOfBots;
+        data[3] = battle.TemplateFlags;
 
         for (var index = 0; index < battle.Bots.Count; index++)
         {
             var bot = battle.Bots[index];
             var offset = MedabotsRomSchema.BattleBotOffset + (index * MedabotsRomSchema.BattleBotSize);
-            data[offset] = bot.Unknown;
-            data[offset + 1] = bot.HeadPartId;
-            data[offset + 2] = bot.RightArmPartId;
-            data[offset + 3] = bot.LeftArmPartId;
-            data[offset + 4] = bot.LegsPartId;
-            data[offset + 5] = bot.MedalId;
-            data[offset + 6] = bot.MedalLevel;
-            data[offset + 7] = bot.Unknown1;
-            data[offset + 8] = bot.Unknown2;
-            data[offset + 9] = bot.Unknown3;
-            data[offset + 10] = bot.Unknown4;
-            data[offset + 11] = bot.Unknown5;
+            data[offset] = bot.HeadPartId;
+            data[offset + 1] = bot.RightArmPartId;
+            data[offset + 2] = bot.LeftArmPartId;
+            data[offset + 3] = bot.LegsPartId;
+            data[offset + 4] = bot.MedalId;
+            data[offset + 5] = bot.MedalLevel;
+            data[offset + 6] = bot.PackedSpecialitySeedByte0;
+            data[offset + 7] = bot.PackedSpecialitySeedByte1;
+            data[offset + 8] = bot.PackedSpecialitySeedByte2;
+            data[offset + 9] = bot.PackedSpecialitySeedByte3;
+            data[offset + 10] = bot.SpecialityCycleResetValue;
+            data[offset + 11] = bot.ReservedZeroByte;
         }
 
-        data[MedabotsRomSchema.BattleFooterOffset] = battle.AlwaysZero;
         return data;
     }
 }

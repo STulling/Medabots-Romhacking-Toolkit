@@ -17,6 +17,10 @@ public sealed class MedabotsMetadataTests
         Assert.Equal("Strike", metadata.GetSpecialityName(0));
         Assert.Equal("Sword", metadata.GetTechniqueName(0));
         Assert.Equal("Kuwagata", metadata.GetMedalName(0));
+        Assert.Equal("Grapple", metadata.GetPartAttributeName(0));
+        Assert.Equal("Nothing", metadata.GetPartAttributeName(26));
+        Assert.Equal("Flying", metadata.GetLegTypeName(100));
+        Assert.Equal("Aquatic", metadata.GetLegTypeName(106));
     }
 
     [Fact]

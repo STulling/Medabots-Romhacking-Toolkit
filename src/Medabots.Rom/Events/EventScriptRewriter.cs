@@ -67,6 +67,16 @@ public sealed partial class EventScriptRewriter
         return Rewrite(romFile, script, labelMap, entries);
     }
 
+    public byte[] MoveInstructionUp(RomFile romFile, EventScript script, IReadOnlyDictionary<int, string> labelMap, int targetOffset)
+    {
+        return Rewrite(romFile, script, labelMap, BuildEntriesWithMove(script, targetOffset, moveUp: true));
+    }
+
+    public byte[] MoveInstructionDown(RomFile romFile, EventScript script, IReadOnlyDictionary<int, string> labelMap, int targetOffset)
+    {
+        return Rewrite(romFile, script, labelMap, BuildEntriesWithMove(script, targetOffset, moveUp: false));
+    }
+
     private byte[] Rewrite(RomFile romFile, EventScript script, IReadOnlyDictionary<int, string> labelMap, List<EditableInstructionEntry> entries)
     {
         return CompileEntries(romFile, script, labelMap, entries);

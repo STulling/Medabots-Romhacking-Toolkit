@@ -45,7 +45,7 @@ public static class RomHackProjectSerializer
 
     private sealed class RomHackProjectDocument
     {
-        public int SchemaVersion { get; set; } = 5;
+        public int SchemaVersion { get; set; } = 10;
 
         public string Name { get; set; } = "New Medabots Hack";
 
@@ -61,11 +61,27 @@ public static class RomHackProjectSerializer
 
         public List<EventScriptPatchDocument> EventScriptPatches { get; set; } = [];
 
+        public List<short> DeletedEventScriptIds { get; set; } = [];
+
+        public List<MapEntitySpawnPatchDocument> MapEntitySpawnPatches { get; set; } = [];
+
+        public List<MapWarpPatchDocument> MapWarpPatches { get; set; } = [];
+
+        public List<MapCollisionPatchDocument> MapCollisionPatches { get; set; } = [];
+
+        public List<MapEncounterPatchDocument> MapEncounterPatches { get; set; } = [];
+
+        public List<MapEncounterStatePatchDocument> MapEncounterStatePatches { get; set; } = [];
+
+        public List<MapMusicPatchDocument> MapMusicPatches { get; set; } = [];
+
+        public List<MapEventObjectResourcePatchDocument> MapEventObjectResourcePatches { get; set; } = [];
+
         public List<int> SplitLargeDisplayPartIds { get; set; } = [];
 
         public RomHackProject ToProject(string? projectFilePath)
         {
-            if (SchemaVersion is not 1 and not 2 and not 3 and not 4 and not 5)
+            if (SchemaVersion is not 1 and not 2 and not 3 and not 4 and not 5 and not 6 and not 7 and not 8 and not 9 and not 10)
             {
                 throw new InvalidDataException($"Unsupported project schema version '{SchemaVersion}'.");
             }
@@ -96,6 +112,79 @@ public static class RomHackProjectSerializer
             foreach (var patch in EventScriptPatches)
             {
                 project.EventScriptPatches.Add(new EventScriptPatch((short)patch.EventId, Convert.FromBase64String(patch.ScriptBytesBase64)));
+            }
+
+            foreach (var eventId in DeletedEventScriptIds.Distinct().OrderBy(id => id))
+            {
+                project.DeletedEventScriptIds.Add(eventId);
+            }
+
+            foreach (var patch in MapEntitySpawnPatches)
+            {
+                project.MapEntitySpawnPatches.Add(new Maps.MapEntitySpawnPatch(
+                    patch.MapId,
+                    patch.Records.Select(record => new Maps.MapEntitySpawnRecord(
+                        record.TileX,
+                        record.TileY,
+                        record.RecordKindAndEventId,
+                        record.SpriteAndFacingPacked,
+                        record.SpawnGroupIndex,
+                        record.ChapterVisibilityMask)),
+                    patch.DeletedOriginalIndices));
+            }
+
+            foreach (var patch in MapWarpPatches)
+            {
+                project.MapWarpPatches.Add(new Maps.MapWarpPatch(
+                    patch.MapId,
+                    patch.Records.Select(record => new Maps.MapWarpRecord(
+                        record.TileX,
+                        record.TileY,
+                        record.DestinationMapId,
+                        record.ArrivalFacingAndTransitionKind,
+                        record.Unknown4,
+                        record.Unknown5,
+                        record.DestinationTileX,
+                        record.DestinationTileY)),
+                    patch.DeletedOriginalIndices));
+            }
+
+            foreach (var patch in MapCollisionPatches)
+            {
+                project.MapCollisionPatches.Add(new Maps.MapCollisionPatch(
+                    patch.MapId,
+                    Convert.FromBase64String(patch.ColorAttributeBytesBase64)));
+            }
+
+            foreach (var patch in MapEncounterPatches)
+            {
+                project.MapEncounterPatches.Add(new Maps.MapEncounterPatch(
+                    patch.MapId,
+                    patch.Battle1,
+                    patch.Battle2,
+                    patch.Battle3,
+                    patch.Battle4));
+            }
+
+            foreach (var patch in MapEncounterStatePatches)
+            {
+                project.MapEncounterStatePatches.Add(new Maps.MapEncounterStatePatch(
+                    patch.MapId,
+                    patch.EncounterEnabledByte));
+            }
+
+            foreach (var patch in MapMusicPatches)
+            {
+                project.MapMusicPatches.Add(new Maps.MapMusicPatch(
+                    patch.MapId,
+                    patch.MusicId));
+            }
+
+            foreach (var patch in MapEventObjectResourcePatches)
+            {
+                project.MapEventObjectResourcePatches.Add(new Maps.MapEventObjectResourcePatch(
+                    patch.MapId,
+                    patch.ResourceIds.ToArray()));
             }
 
             foreach (var partId in SplitLargeDisplayPartIds.Distinct())
@@ -144,6 +233,86 @@ public static class RomHackProjectSerializer
                         ScriptBytesBase64 = Convert.ToBase64String(patch.ScriptBytes)
                     })
                     .ToList(),
+                DeletedEventScriptIds = project.DeletedEventScriptIds
+                    .Distinct()
+                    .OrderBy(id => id)
+                    .ToList(),
+                MapEntitySpawnPatches = project.MapEntitySpawnPatches
+                    .Select(patch => new MapEntitySpawnPatchDocument
+                    {
+                        MapId = patch.MapId,
+                        DeletedOriginalIndices = patch.DeletedOriginalIndices.Distinct().OrderBy(index => index).ToList(),
+                        Records = patch.Records
+                            .Select(record => new MapEntitySpawnRecordDocument
+                            {
+                                TileX = record.TileX,
+                                TileY = record.TileY,
+                                RecordKindAndEventId = record.RecordKindAndEventId,
+                                SpriteAndFacingPacked = record.SpriteAndFacingPacked,
+                                SpawnGroupIndex = record.SpawnGroupIndex,
+                                ChapterVisibilityMask = record.ChapterVisibilityMask
+                            })
+                            .ToList()
+                    })
+                    .ToList(),
+                MapWarpPatches = project.MapWarpPatches
+                    .Select(patch => new MapWarpPatchDocument
+                    {
+                        MapId = patch.MapId,
+                        DeletedOriginalIndices = patch.DeletedOriginalIndices.Distinct().OrderBy(index => index).ToList(),
+                        Records = patch.Records
+                            .Select(record => new MapWarpRecordDocument
+                            {
+                                TileX = record.TileX,
+                                TileY = record.TileY,
+                                DestinationMapId = record.DestinationMapId,
+                                ArrivalFacingAndTransitionKind = record.ArrivalFacingAndTransitionKind,
+                                Unknown4 = record.Unknown4,
+                                Unknown5 = record.Unknown5,
+                                DestinationTileX = record.DestinationTileX,
+                                DestinationTileY = record.DestinationTileY
+                            })
+                            .ToList()
+                    })
+                    .ToList(),
+                MapCollisionPatches = project.MapCollisionPatches
+                    .Select(patch => new MapCollisionPatchDocument
+                    {
+                        MapId = patch.MapId,
+                        ColorAttributeBytesBase64 = Convert.ToBase64String(patch.ColorAttributeBytes)
+                    })
+                    .ToList(),
+                MapEncounterPatches = project.MapEncounterPatches
+                    .Select(patch => new MapEncounterPatchDocument
+                    {
+                        MapId = patch.MapId,
+                        Battle1 = patch.Battle1,
+                        Battle2 = patch.Battle2,
+                        Battle3 = patch.Battle3,
+                        Battle4 = patch.Battle4
+                    })
+                    .ToList(),
+                MapEncounterStatePatches = project.MapEncounterStatePatches
+                    .Select(patch => new MapEncounterStatePatchDocument
+                    {
+                        MapId = patch.MapId,
+                        EncounterEnabledByte = patch.EncounterEnabledByte
+                    })
+                    .ToList(),
+                MapMusicPatches = project.MapMusicPatches
+                    .Select(patch => new MapMusicPatchDocument
+                    {
+                        MapId = patch.MapId,
+                        MusicId = patch.MusicId
+                    })
+                    .ToList(),
+                MapEventObjectResourcePatches = project.MapEventObjectResourcePatches
+                    .Select(patch => new MapEventObjectResourcePatchDocument
+                    {
+                        MapId = patch.MapId,
+                        ResourceIds = patch.ResourceIds.ToList()
+                    })
+                    .ToList(),
                 SplitLargeDisplayPartIds = project.SplitLargeDisplayPartIds
                     .Distinct()
                     .ToList()
@@ -183,5 +352,98 @@ public static class RomHackProjectSerializer
         public int EventId { get; set; }
 
         public string ScriptBytesBase64 { get; set; } = string.Empty;
+    }
+
+    private sealed class MapEntitySpawnPatchDocument
+    {
+        public int MapId { get; set; }
+
+        public List<int> DeletedOriginalIndices { get; set; } = [];
+
+        public List<MapEntitySpawnRecordDocument> Records { get; set; } = [];
+    }
+
+    private sealed class MapEntitySpawnRecordDocument
+    {
+        public byte TileX { get; set; }
+
+        public byte TileY { get; set; }
+
+        public ushort RecordKindAndEventId { get; set; }
+
+        public byte SpriteAndFacingPacked { get; set; }
+
+        public byte SpawnGroupIndex { get; set; }
+
+        public ushort ChapterVisibilityMask { get; set; }
+    }
+
+    private sealed class MapWarpPatchDocument
+    {
+        public int MapId { get; set; }
+
+        public List<int> DeletedOriginalIndices { get; set; } = [];
+
+        public List<MapWarpRecordDocument> Records { get; set; } = [];
+    }
+
+    private sealed class MapWarpRecordDocument
+    {
+        public byte TileX { get; set; }
+
+        public byte TileY { get; set; }
+
+        public byte DestinationMapId { get; set; }
+
+        public byte ArrivalFacingAndTransitionKind { get; set; }
+
+        public byte Unknown4 { get; set; }
+
+        public byte Unknown5 { get; set; }
+
+        public byte DestinationTileX { get; set; }
+
+        public byte DestinationTileY { get; set; }
+    }
+
+    private sealed class MapCollisionPatchDocument
+    {
+        public int MapId { get; set; }
+
+        public string ColorAttributeBytesBase64 { get; set; } = string.Empty;
+    }
+
+    private sealed class MapEncounterPatchDocument
+    {
+        public int MapId { get; set; }
+
+        public byte Battle1 { get; set; }
+
+        public byte Battle2 { get; set; }
+
+        public byte Battle3 { get; set; }
+
+        public byte Battle4 { get; set; }
+    }
+
+    private sealed class MapEncounterStatePatchDocument
+    {
+        public int MapId { get; set; }
+
+        public byte EncounterEnabledByte { get; set; }
+    }
+
+    private sealed class MapMusicPatchDocument
+    {
+        public int MapId { get; set; }
+
+        public byte MusicId { get; set; }
+    }
+
+    private sealed class MapEventObjectResourcePatchDocument
+    {
+        public int MapId { get; set; }
+
+        public List<byte> ResourceIds { get; set; } = [];
     }
 }

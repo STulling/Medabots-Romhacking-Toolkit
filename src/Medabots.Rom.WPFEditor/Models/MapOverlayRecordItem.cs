@@ -7,6 +7,7 @@ public sealed class MapOverlayRecordItem
     public required string Key { get; init; }
     public required string DisplayName { get; init; }
     public required string Description { get; init; }
+    public int OriginalIndex { get; init; } = -1;
     public int TileX { get; init; }
     public int TileY { get; init; }
     public MapWarpRecord? Warp { get; init; }

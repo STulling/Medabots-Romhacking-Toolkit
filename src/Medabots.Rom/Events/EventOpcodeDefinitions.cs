@@ -287,6 +287,63 @@ internal static class EventOpcodeDefinitions
                 {
                     new("tracked_object_slot", EventArgumentType.TrackedObjectSlot),
                 }),
+            [0x29] = new EventOperationDefinition(
+                0x29,
+                "Move_All_Tracked_Actors_A",
+                new EventArgumentDefinition[]
+                {
+                    new("move_pattern", EventArgumentType.Byte),
+                }),
+            [0x2A] = new EventOperationDefinition(
+                0x2A,
+                "Move_All_Tracked_Actors_B",
+                new EventArgumentDefinition[]
+                {
+                    new("move_pattern", EventArgumentType.Byte),
+                }),
+            [0x2B] = new EventOperationDefinition(
+                0x2B,
+                "Initiate_Free_Tracked_Actor",
+                new EventArgumentDefinition[]
+                {
+                    new("packed_actor_id", EventArgumentType.PackedTrackedObjectId),
+                    new("sprite_id", EventArgumentType.Byte),
+                    new("x", EventArgumentType.Byte),
+                    new("y", EventArgumentType.Byte),
+                    new("move", EventArgumentType.Move),
+                }),
+            [0x2C] = new EventOperationDefinition(
+                0x2C,
+                "Set_Actor_Render_Priority",
+                new EventArgumentDefinition[]
+                {
+                    new("priority_mode", EventArgumentType.Byte),
+                }),
+            [0x2D] = new EventOperationDefinition(
+                0x2D,
+                "Move_Actor_C",
+                new EventArgumentDefinition[]
+                {
+                    new("tracked_object_slot", EventArgumentType.TrackedObjectSlot),
+                    new("move", EventArgumentType.Move),
+                }),
+            [0x2E] = new EventOperationDefinition(
+                0x2E,
+                "Adjust_Value_If_No_Spare_Part",
+                new EventArgumentDefinition[]
+                {
+                    new("bot", EventArgumentType.Bot),
+                    new("part", EventArgumentType.Part),
+                    new("amount", EventArgumentType.Byte),
+                }),
+            [0x2F] = new EventOperationDefinition(
+                0x2F,
+                "Set_Value_From_EventFlag_Nibble",
+                new EventArgumentDefinition[]
+                {
+                    new("arg2", EventArgumentType.Byte),
+                    new("base_value", EventArgumentType.Byte),
+                }),
             [0x30] = new EventOperationDefinition(
                 0x30,
                 "Relative_Long_Jump",
@@ -324,6 +381,13 @@ internal static class EventOpcodeDefinitions
                 {
                     new("event_id", EventArgumentType.Short),
                     new("dir", EventArgumentType.Direction),
+                }),
+            [0x35] = new EventOperationDefinition(
+                0x35,
+                "Set_All_Tracked_Actors_Facing_Variant",
+                new EventArgumentDefinition[]
+                {
+                    new("variant", EventArgumentType.Byte),
                 }),
             [0x36] = new EventOperationDefinition(
                 0x36,
@@ -386,6 +450,48 @@ internal static class EventOpcodeDefinitions
                 new EventArgumentDefinition[]
                 {
                     new("tinpet", EventArgumentType.Byte),
+                }),
+            [0x3E] = new EventOperationDefinition(
+                0x3E,
+                "Increase_Capped_Event_Counter",
+                new EventArgumentDefinition[]
+                {
+                    new("counter_slot", EventArgumentType.Byte),
+                    new("amount", EventArgumentType.Byte),
+                }),
+            [0x3F] = new EventOperationDefinition(
+                0x3F,
+                "Decrease_Capped_Event_Counter",
+                new EventArgumentDefinition[]
+                {
+                    new("counter_slot", EventArgumentType.Byte),
+                    new("amount", EventArgumentType.Byte),
+                }),
+            [0x40] = new EventOperationDefinition(
+                0x40,
+                "Pulse_Screen_Transition",
+                new EventArgumentDefinition[]
+                {
+                    new("cycles", EventArgumentType.Byte),
+                }),
+            [0x41] = new EventOperationDefinition(
+                0x41,
+                "Flicker_All_Tracked_Actors",
+                new EventArgumentDefinition[]
+                {
+                    new("frames", EventArgumentType.Byte),
+                }),
+            [0x42] = new EventOperationDefinition(
+                0x42,
+                "Move_Player_One_Step",
+                Array.Empty<EventArgumentDefinition>()),
+            [0x43] = new EventOperationDefinition(
+                0x43,
+                "Shake_Camera",
+                new EventArgumentDefinition[]
+                {
+                    new("axis", EventArgumentType.Byte),
+                    new("duration", EventArgumentType.Byte),
                 }),
             [0x44] = new EventOperationDefinition(
                 0x44,
@@ -464,7 +570,7 @@ internal static class EventOpcodeDefinitions
                 }),
             [0x4F] = new EventOperationDefinition(
                 0x4F,
-                "Jump_If_Lost_Robattle",
+                "Jump_If_Previous_Scene_Command_Failed",
                 new EventArgumentDefinition[]
                 {
                     new("jump", EventArgumentType.Byte),
@@ -493,9 +599,17 @@ internal static class EventOpcodeDefinitions
                     new("target_flags", EventArgumentType.Byte),
                     new("render_mode", EventArgumentType.Byte),
                 }),
+            [0x55] = new EventOperationDefinition(
+                0x55,
+                "Reserved_NoOp",
+                Array.Empty<EventArgumentDefinition>()),
             [0x56] = new EventOperationDefinition(
                 0x56,
                 "Load_Entities",
+                Array.Empty<EventArgumentDefinition>()),
+            [0x57] = new EventOperationDefinition(
+                0x57,
+                "Reserved_NoOp",
                 Array.Empty<EventArgumentDefinition>()),
             [0x59] = new EventOperationDefinition(
                 0x59,
@@ -506,13 +620,20 @@ internal static class EventOpcodeDefinitions
                 }),
             [0x5A] = new EventOperationDefinition(
                 0x5A,
+                "Set_Secondary_Marker_Facing_Variant",
+                new EventArgumentDefinition[]
+                {
+                    new("variant", EventArgumentType.Byte),
+                }),
+            [0x5B] = new EventOperationDefinition(
+                0x5B,
                 "Jump_If_Fewer_Than_Three_Complete_Part_Sets",
                 new EventArgumentDefinition[]
                 {
                     new("jump", EventArgumentType.Byte),
                 }),
-            [0x5B] = new EventOperationDefinition(
-                0x5B,
+            [0x5C] = new EventOperationDefinition(
+                0x5C,
                 "Jump_If_Missing_Complete_Monochrome_Part_Set",
                 new EventArgumentDefinition[]
                 {
@@ -521,26 +642,37 @@ internal static class EventOpcodeDefinitions
                 }),
             [0x5D] = new EventOperationDefinition(
                 0x5D,
+                "Update_Overworld_Event_Mode_Flags",
+                new EventArgumentDefinition[]
+                {
+                    new("mode_control", EventArgumentType.Byte),
+                }),
+            [0x5E] = new EventOperationDefinition(
+                0x5E,
                 "Set_Overworld_Event_Mode_Bit0",
                 new EventArgumentDefinition[]
                 {
                     new("enabled", EventArgumentType.Byte),
                 }),
-            [0x5E] = new EventOperationDefinition(
-                0x5E,
+            [0x5F] = new EventOperationDefinition(
+                0x5F,
                 "Set_Random_Encounter_Mode_Flags",
                 new EventArgumentDefinition[]
                 {
                     new("flags", EventArgumentType.Byte),
                 }),
-            [0x5F] = new EventOperationDefinition(
-                0x5F,
+            [0x60] = new EventOperationDefinition(
+                0x60,
                 "Focus_Event_Object",
                 new EventArgumentDefinition[]
                 {
                     new("target_mode", EventArgumentType.Byte),
                     new("target_packed_object_id", EventArgumentType.Short),
                 }),
+            [0x61] = new EventOperationDefinition(
+                0x61,
+                "Restore_Focused_Event_Mode_Flags",
+                Array.Empty<EventArgumentDefinition>()),
             [0x62] = new EventOperationDefinition(
                 0x62,
                 "Equip_Starter_Parts",
@@ -554,12 +686,28 @@ internal static class EventOpcodeDefinitions
                     new("x", EventArgumentType.Byte),
                     new("y", EventArgumentType.Byte),
                 }),
+            [0x64] = new EventOperationDefinition(
+                0x64,
+                "Reset_Overworld_UI_Render_State",
+                Array.Empty<EventArgumentDefinition>()),
+            [0x65] = new EventOperationDefinition(
+                0x65,
+                "Reserved_NoOp",
+                Array.Empty<EventArgumentDefinition>()),
             [0x66] = new EventOperationDefinition(
                 0x66,
                 "Animate_Tracked_Object_Transition",
                 new EventArgumentDefinition[]
                 {
                     new("tracked_object_index", EventArgumentType.TrackedObjectSlot),
+                    new("transition_mode", EventArgumentType.Byte),
+                }),
+            [0x68] = new EventOperationDefinition(
+                0x68,
+                "Clear_Collision_For_Packed_Object",
+                new EventArgumentDefinition[]
+                {
+                    new("packed_object_id", EventArgumentType.Short),
                 }),
             [0x69] = new EventOperationDefinition(
                 0x69,
@@ -569,9 +717,172 @@ internal static class EventOpcodeDefinitions
                     new("variant", EventArgumentType.MapSceneVariant),
                     new("skip_full_reload", EventArgumentType.Byte),
                 }),
+            [0x6B] = new EventOperationDefinition(
+                0x6B,
+                "Set_Current_Chapter",
+                new EventArgumentDefinition[]
+                {
+                    new("chapter", EventArgumentType.Byte),
+                }),
+            [0x6C] = new EventOperationDefinition(
+                0x6C,
+                "Initiate_Moving_Actor_C",
+                new EventArgumentDefinition[]
+                {
+                    new("packed_actor_id", EventArgumentType.PackedTrackedObjectId),
+                    new("sprite_id", EventArgumentType.Byte),
+                    new("x", EventArgumentType.Byte),
+                    new("y", EventArgumentType.Byte),
+                    new("move", EventArgumentType.Move),
+                }),
+            [0x6D] = new EventOperationDefinition(
+                0x6D,
+                "Move_Actor_D",
+                new EventArgumentDefinition[]
+                {
+                    new("tracked_object_slot", EventArgumentType.TrackedObjectSlot),
+                    new("move", EventArgumentType.Move),
+                }),
+            [0x6E] = new EventOperationDefinition(
+                0x6E,
+                "Initiate_Moving_Actor_D",
+                new EventArgumentDefinition[]
+                {
+                    new("packed_actor_id", EventArgumentType.PackedTrackedObjectId),
+                    new("sprite_id", EventArgumentType.Byte),
+                    new("x", EventArgumentType.Byte),
+                    new("y", EventArgumentType.Byte),
+                    new("move", EventArgumentType.Move),
+                }),
+            [0x6F] = new EventOperationDefinition(
+                0x6F,
+                "Move_Actor_E",
+                new EventArgumentDefinition[]
+                {
+                    new("tracked_object_slot", EventArgumentType.TrackedObjectSlot),
+                    new("move", EventArgumentType.Move),
+                }),
+            [0x70] = new EventOperationDefinition(
+                0x70,
+                "Run_Scene_Command_13",
+                Array.Empty<EventArgumentDefinition>()),
+            [0x71] = new EventOperationDefinition(
+                0x71,
+                "Run_Scene_Command_00",
+                Array.Empty<EventArgumentDefinition>()),
+            [0x72] = new EventOperationDefinition(
+                0x72,
+                "Run_Scene_Command_02",
+                Array.Empty<EventArgumentDefinition>()),
+            [0x73] = new EventOperationDefinition(
+                0x73,
+                "Run_Scene_Command_08",
+                Array.Empty<EventArgumentDefinition>()),
+            [0x74] = new EventOperationDefinition(
+                0x74,
+                "Reserved_NoOp",
+                Array.Empty<EventArgumentDefinition>()),
             [0x76] = new EventOperationDefinition(
                 0x76,
                 "Start_Medabot_Link",
+                Array.Empty<EventArgumentDefinition>()),
+            [0x78] = new EventOperationDefinition(
+                0x78,
+                "Run_Scene_Command_10_If_At_Least_Three_Complete_Part_Sets",
+                new EventArgumentDefinition[]
+                {
+                    new("scene_arg", EventArgumentType.Byte),
+                    new("jump_if_fewer_than_three_complete_sets", EventArgumentType.Byte),
+                }),
+            [0x79] = new EventOperationDefinition(
+                0x79,
+                "Run_Scene_Command_12",
+                new EventArgumentDefinition[]
+                {
+                    new("scene_arg", EventArgumentType.Byte),
+                }),
+            [0x7A] = new EventOperationDefinition(
+                0x7A,
+                "Run_Scene_Command_11",
+                Array.Empty<EventArgumentDefinition>()),
+            [0x7B] = new EventOperationDefinition(
+                0x7B,
+                "Jump_If_No_Spare_Part",
+                new EventArgumentDefinition[]
+                {
+                    new("bot", EventArgumentType.Bot),
+                    new("part", EventArgumentType.Part),
+                    new("jump", EventArgumentType.Byte),
+                }),
+            [0x7C] = new EventOperationDefinition(
+                0x7C,
+                "Reserved_NoOp",
+                Array.Empty<EventArgumentDefinition>()),
+            [0x7E] = new EventOperationDefinition(
+                0x7E,
+                "Move_All_Tracked_Actors_C",
+                new EventArgumentDefinition[]
+                {
+                    new("move_pattern", EventArgumentType.Byte),
+                }),
+            [0x80] = new EventOperationDefinition(
+                0x80,
+                "Begin_Batched_Object_Command_Block",
+                Array.Empty<EventArgumentDefinition>()),
+            [0x81] = new EventOperationDefinition(
+                0x81,
+                "Queue_Batched_Object_Command",
+                new EventArgumentDefinition[]
+                {
+                    new("record_type", EventArgumentType.Byte),
+                    new("object_id_high", EventArgumentType.Byte),
+                    new("object_id_low", EventArgumentType.Byte),
+                    new("arg4", EventArgumentType.Byte),
+                    new("arg5", EventArgumentType.Byte),
+                    new("arg6", EventArgumentType.Byte),
+                    new("arg7", EventArgumentType.Byte),
+                    new("arg8", EventArgumentType.Byte),
+                }),
+            [0x82] = new EventOperationDefinition(
+                0x82,
+                "Execute_Batched_Object_Command_Block",
+                Array.Empty<EventArgumentDefinition>()),
+            [0x83] = new EventOperationDefinition(
+                0x83,
+                "Set_Object_Render_Mode",
+                new EventArgumentDefinition[]
+                {
+                    new("target_flags", EventArgumentType.Byte),
+                    new("render_mode", EventArgumentType.Byte),
+                }),
+            [0x84] = new EventOperationDefinition(
+                0x84,
+                "Set_Map_Scene_Variant_When_Player_Faces_Up",
+                new EventArgumentDefinition[]
+                {
+                    new("variant", EventArgumentType.MapSceneVariant),
+                }),
+            [0x85] = new EventOperationDefinition(
+                0x85,
+                "Begin_Event_Object_Facing_Cycle_Block",
+                Array.Empty<EventArgumentDefinition>()),
+            [0x86] = new EventOperationDefinition(
+                0x86,
+                "Queue_Event_Object_Facing_Cycle",
+                new EventArgumentDefinition[]
+                {
+                    new("cycle_type", EventArgumentType.Byte),
+                    new("packed_object_id_high", EventArgumentType.Byte),
+                    new("packed_object_id_low", EventArgumentType.Byte),
+                    new("arg4", EventArgumentType.Byte),
+                    new("arg5", EventArgumentType.Byte),
+                    new("arg6", EventArgumentType.Byte),
+                    new("arg7", EventArgumentType.Byte),
+                    new("arg8", EventArgumentType.Byte),
+                }),
+            [0x87] = new EventOperationDefinition(
+                0x87,
+                "Execute_Event_Object_Facing_Cycle_Block",
                 Array.Empty<EventArgumentDefinition>()),
         };
     }

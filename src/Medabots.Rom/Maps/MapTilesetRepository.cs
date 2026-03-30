@@ -18,6 +18,8 @@ public sealed class MapTilesetRepository
 
         var widthInTiles = romFile.Data[MedabotsRomSchema.MapDimensionsInMetaTilesTableOffset + (mapId * 2)];
         var heightInTiles = romFile.Data[MedabotsRomSchema.MapDimensionsInMetaTilesTableOffset + (mapId * 2) + 1];
+        var encounterSettingsDataOffset = MedabotsRomSchema.MapEncounterSettingsTableOffset + (mapId * 8);
+        var encounterEnabledByte = romFile.Data[encounterSettingsDataOffset];
 
         var graphicsPointerOffset = MedabotsRomSchema.MapTilesetGraphicsPointerTableOffset + (mapId * sizeof(uint));
         var graphicsDataOffset = ReadPointerOffset(romFile, graphicsPointerOffset);
@@ -30,9 +32,20 @@ public sealed class MapTilesetRepository
             ? romFile.ReadBytes(paletteDataOffset, MedabotsRomSchema.MapPaletteSize).ToArray()
             : new byte[MedabotsRomSchema.MapPaletteSize];
 
+        var musicDataOffset = MedabotsRomSchema.MapMusicTableOffset + mapId;
+        var musicId = romFile.Data[musicDataOffset];
+
+        var collisionPointerOffset = MedabotsRomSchema.MapCollisionPointerTableOffset + (mapId * sizeof(uint));
+        var collisionDataOffset = ReadPointerOffset(romFile, collisionPointerOffset);
+        var collisionBytes = ReadCollisionBytes(romFile, collisionDataOffset, widthInTiles, heightInTiles);
+
         var colorAttributePointerOffset = MedabotsRomSchema.MapColorAttributePointerTableOffset + (mapId * sizeof(uint));
         var colorAttributeDataOffset = ReadPointerOffset(romFile, colorAttributePointerOffset);
         var colorAttributeBytes = ReadCompressedBytes(romFile, colorAttributeDataOffset);
+
+        var eventObjectResourcePointerOffset = MedabotsRomSchema.MapEventObjectResourcePointerTableOffset + (mapId * sizeof(uint));
+        var eventObjectResourceDataOffset = ReadPointerOffset(romFile, eventObjectResourcePointerOffset);
+        var eventObjectResourceIds = ReadEventObjectResourceIds(romFile, eventObjectResourceDataOffset);
 
         var layers = new List<MapLayerAsset>(MedabotsRomSchema.MapLayerCount);
         var tilePaletteBanks = Enumerable.Repeat(-1, tileCount).ToArray();
@@ -49,15 +62,27 @@ public sealed class MapTilesetRepository
             string.IsNullOrWhiteSpace(mapName) ? $"Map {mapId:D2}" : mapName,
             widthInTiles,
             heightInTiles,
+            encounterSettingsDataOffset,
+            encounterEnabledByte,
+            musicDataOffset,
+            musicId,
             graphicsPointerOffset,
             graphicsDataOffset,
             palettePointerOffset,
             paletteDataOffset,
+            collisionPointerOffset,
+            collisionDataOffset,
             colorAttributePointerOffset,
             colorAttributeDataOffset,
+            eventObjectResourcePointerOffset,
+            eventObjectResourceDataOffset,
             paletteBytes,
+            collisionBytes,
             colorAttributeBytes,
+            eventObjectResourceIds,
+            tilesetPixelIndices,
             tilesetSheet,
+            tilePaletteBanks,
             layers);
     }
 
@@ -186,6 +211,41 @@ public sealed class MapTilesetRepository
 
         var decompressed = ReadCompressedBytes(romFile, dataOffset) ?? throw new InvalidOperationException($"Map tileset graphics at 0x{dataOffset:X} are not valid LZ77 data.");
         return TileImageCodec.Split4BppTiles(decompressed);
+    }
+
+    private static byte[] ReadCollisionBytes(RomFile romFile, int dataOffset, int widthInTiles, int heightInTiles)
+    {
+        if (dataOffset < 0)
+        {
+            return [];
+        }
+
+        var widthInMetaTiles = Math.Max(1, widthInTiles / 2);
+        var heightInMetaTiles = Math.Max(1, heightInTiles / 2);
+        var length = widthInMetaTiles * heightInMetaTiles;
+        return romFile.ReadBytes(dataOffset, length).ToArray();
+    }
+
+    private static IReadOnlyList<byte> ReadEventObjectResourceIds(RomFile romFile, int dataOffset)
+    {
+        if (dataOffset < 0)
+        {
+            return [];
+        }
+
+        var values = new List<byte>(16);
+        for (var index = 0; index < 16 && dataOffset + index < romFile.Data.Length; index++)
+        {
+            var value = romFile.Data[dataOffset + index];
+            if (value == 0xFF)
+            {
+                break;
+            }
+
+            values.Add(value);
+        }
+
+        return values;
     }
 
     private static byte[]? ReadCompressedBytes(RomFile romFile, int dataOffset)

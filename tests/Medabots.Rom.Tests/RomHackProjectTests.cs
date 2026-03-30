@@ -1,4 +1,6 @@
 using Medabots.Rom;
+using Medabots.Rom.Images;
+using Medabots.Rom.Maps;
 using Medabots.Rom.Metadata;
 using Medabots.Rom.Projects;
 using Xunit;
@@ -26,6 +28,18 @@ public sealed class RomHackProjectTests
             project.EventLabels.Add(new EventLabelPatch(361, 0x25, "EquipBattleRifle"));
             project.EventLabels.Add(new EventLabelPatch(361, 0x47, "MissingBattleRifle"));
             project.EventScriptPatches.Add(new EventScriptPatch(40, [0x33, 0x12, 0x01, 0x00, 0x06]));
+            project.DeletedEventScriptIds.Add(91);
+            project.MapEntitySpawnPatches.Add(new MapEntitySpawnPatch(
+                16,
+                [
+                    new MapEntitySpawnRecord(4, 5, 0x4123, 0x21, 3, 0x00FF),
+                    new MapEntitySpawnRecord(7, 8, 0x8567, 0xFF, 1, 0x0F0F)
+                ],
+                [0]));
+            project.MapEncounterPatches.Add(new MapEncounterPatch(16, 10, 11, 12, 13));
+            project.MapEncounterStatePatches.Add(new MapEncounterStatePatch(16, 1));
+            project.MapMusicPatches.Add(new MapMusicPatch(16, 29));
+            project.MapEventObjectResourcePatches.Add(new MapEventObjectResourcePatch(16, [0x00, 0x02, 0x03, 0xFF]));
             project.SplitLargeDisplayPartIds.Add(449);
             project.SplitLargeDisplayPartIds.Add(450);
 
@@ -51,6 +65,22 @@ public sealed class RomHackProjectTests
             Assert.Single(loaded.EventScriptPatches);
             Assert.Equal((short)40, loaded.EventScriptPatches[0].EventId);
             Assert.Equal([0x33, 0x12, 0x01, 0x00, 0x06], loaded.EventScriptPatches[0].ScriptBytes);
+            Assert.Equal([(short)91], loaded.DeletedEventScriptIds);
+            Assert.Single(loaded.MapEntitySpawnPatches);
+            Assert.Equal(16, loaded.MapEntitySpawnPatches[0].MapId);
+            Assert.Equal([0], loaded.MapEntitySpawnPatches[0].DeletedOriginalIndices);
+            Assert.Equal(2, loaded.MapEntitySpawnPatches[0].Records.Count);
+            Assert.Equal((byte)4, loaded.MapEntitySpawnPatches[0].Records[0].TileX);
+            Assert.Equal((ushort)0x4123, loaded.MapEntitySpawnPatches[0].Records[0].RecordKindAndEventId);
+            Assert.Equal((byte)0xFF, loaded.MapEntitySpawnPatches[0].Records[1].SpriteAndFacingPacked);
+            Assert.Single(loaded.MapEncounterPatches);
+            Assert.Equal((byte)10, loaded.MapEncounterPatches[0].Battle1);
+            Assert.Single(loaded.MapEncounterStatePatches);
+            Assert.Equal((byte)1, loaded.MapEncounterStatePatches[0].EncounterEnabledByte);
+            Assert.Single(loaded.MapMusicPatches);
+            Assert.Equal((byte)29, loaded.MapMusicPatches[0].MusicId);
+            Assert.Single(loaded.MapEventObjectResourcePatches);
+            Assert.Equal([0x00, 0x02, 0x03, 0xFF], loaded.MapEventObjectResourcePatches[0].ResourceIds);
             Assert.Equal([449, 450], loaded.SplitLargeDisplayPartIds.OrderBy(id => id).ToArray());
         }
         finally
@@ -75,5 +105,115 @@ public sealed class RomHackProjectTests
         Assert.Equal("MEDABOTSRKSVA9BPE9", profile!.Id);
         Assert.Equal(0x47DF44, profile.TextPointerTableOffset);
         Assert.Equal(0x7F5500, profile.TextDumpOffset);
+    }
+
+    [Fact]
+    public void MapMetadataProjectEditor_StagesAndUpdatesMetadataPatches()
+    {
+        var project = new RomHackProject();
+        var editor = new MapMetadataProjectEditor();
+        var sourceAsset = CreateTestMapTilesetAsset(
+            mapId: 16,
+            encounterEnabledByte: 0,
+            musicId: 7,
+            resourceIds: [0x00, 0x01, 0x02, 0x03]);
+
+        editor.StageMetadata(
+            project,
+            sourceAsset,
+            1,
+            29,
+            [0x00, 0x02, 0x03, 0xFF],
+            [10, 11, 12, 13]);
+
+        Assert.Single(project.MapEncounterStatePatches);
+        Assert.Equal(16, project.MapEncounterStatePatches[0].MapId);
+        Assert.Equal((byte)1, project.MapEncounterStatePatches[0].EncounterEnabledByte);
+
+        Assert.Single(project.MapMusicPatches);
+        Assert.Equal((byte)29, project.MapMusicPatches[0].MusicId);
+
+        Assert.Single(project.MapEventObjectResourcePatches);
+        Assert.Equal(
+            [0x00, 0x02, 0x03, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
+            project.MapEventObjectResourcePatches[0].ResourceIds);
+
+        Assert.Single(project.MapEncounterPatches);
+        Assert.Equal((byte)10, project.MapEncounterPatches[0].Battle1);
+        Assert.Equal((byte)13, project.MapEncounterPatches[0].Battle4);
+
+        editor.StageMetadata(
+            project,
+            sourceAsset,
+            0,
+            7,
+            [0x00, 0x01, 0x02, 0x03],
+            null);
+
+        Assert.Empty(project.MapEncounterStatePatches);
+        Assert.Empty(project.MapMusicPatches);
+        Assert.Empty(project.MapEventObjectResourcePatches);
+        Assert.Empty(project.MapEncounterPatches);
+    }
+
+    [Fact]
+    public void MapMetadataProjectEditor_CreatesSpriteSlotPatch_WhenOnlySpriteSlotsChange()
+    {
+        var project = new RomHackProject();
+        var editor = new MapMetadataProjectEditor();
+        var sourceAsset = CreateTestMapTilesetAsset(
+            mapId: 33,
+            encounterEnabledByte: 0,
+            musicId: 11,
+            resourceIds: [0x00, 0x01, 0x02, 0x03]);
+
+        editor.StageMetadata(
+            project,
+            sourceAsset,
+            0,
+            11,
+            [0x05, 0x01, 0x02, 0x03],
+            null);
+
+        Assert.Empty(project.MapEncounterStatePatches);
+        Assert.Empty(project.MapMusicPatches);
+        Assert.Single(project.MapEventObjectResourcePatches);
+        Assert.Equal(33, project.MapEventObjectResourcePatches[0].MapId);
+        Assert.Equal((byte)0x05, project.MapEventObjectResourcePatches[0].ResourceIds[0]);
+    }
+
+    private static MapTilesetAsset CreateTestMapTilesetAsset(int mapId, byte encounterEnabledByte, byte musicId, IReadOnlyList<byte> resourceIds)
+    {
+        var palette = new byte[32];
+        var pixels = new byte[64];
+        var image = new IndexedImage(1, 1, pixels, palette);
+        var layer = new MapLayerAsset(0, 0, 0, 1, 1, 0, 0, 0, 0, [0], image);
+        return new MapTilesetAsset(
+            mapId,
+            $"Map {mapId:D3}",
+            2,
+            2,
+            0,
+            encounterEnabledByte,
+            0,
+            musicId,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            palette,
+            [],
+            null,
+            resourceIds,
+            pixels,
+            image,
+            [0],
+            [layer]);
     }
 }

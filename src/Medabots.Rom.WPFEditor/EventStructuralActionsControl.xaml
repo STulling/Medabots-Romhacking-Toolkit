@@ -1,0 +1,26 @@
+<UserControl x:Class="Medabots.Rom.WPFEditor.EventStructuralActionsControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d">
+    <WrapPanel Margin="0,10,0,0">
+        <Button Margin="0,0,8,8" Click="OnInsertNopBeforeClicked">Insert Nop Before</Button>
+        <Button Margin="0,0,8,8" Click="OnInsertNopAfterClicked">Insert Nop After</Button>
+        <TextBlock Margin="0,4,0,0"
+                   VerticalAlignment="Center"
+                   Foreground="#FF6B7280"
+                   Text="Right-click for more actions" />
+        <WrapPanel.ContextMenu>
+            <ContextMenu>
+                <MenuItem Header="Insert Selected Operation Before" Click="OnInsertSelectedOperationBeforeClicked" />
+                <MenuItem Header="Insert Selected Operation After" Click="OnInsertSelectedOperationAfterClicked" />
+                <Separator />
+                <MenuItem Header="Move Up" Click="OnMoveUpClicked" />
+                <MenuItem Header="Move Down" Click="OnMoveDownClicked" />
+                <Separator />
+                <MenuItem Header="Delete" Click="OnDeleteClicked" />
+            </ContextMenu>
+        </WrapPanel.ContextMenu>
+    </WrapPanel>
+</UserControl>

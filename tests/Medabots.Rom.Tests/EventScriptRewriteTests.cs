@@ -156,4 +156,43 @@ public sealed class EventScriptRewriteTests
 
         Assert.Equal([0x31, 0x01, 0x00, 0x06], rewrittenBytes);
     }
+
+    [Fact]
+    public void Rewriter_MoveInstructionDown_ReordersBodyWithoutLosingStart()
+    {
+        var registry = EventOperationRegistry.LoadDefault();
+        var rewriter = new EventScriptRewriter(registry);
+        var rom = new RomFile("synthetic.gba", [0x00, 0x04, 0x01, 0x04, 0x02, 0x06]);
+        var nopDefinition = EventTestHelpers.AssertDefinition(registry, 0x00);
+        var waitDefinition = EventTestHelpers.AssertDefinition(registry, 0x04);
+        var start = new EventInstruction(0, 0x00, nopDefinition.Name, [], "Nop()", false) { Definition = nopDefinition };
+        var waitOne = new EventInstruction(1, 0x04, waitDefinition.Name, [new EventArgumentValue("frames", EventArgumentType.Byte, 1, "1")], "Wait_X_Frames(1)", false) { Definition = waitDefinition };
+        var waitTwo = new EventInstruction(3, 0x04, waitDefinition.Name, [new EventArgumentValue("frames", EventArgumentType.Byte, 2, "2")], "Wait_X_Frames(2)", false) { Definition = waitDefinition };
+        var end = new EndInstruction(5, 0x06);
+        var script = new EventScript(0, 0, [start, waitOne, waitTwo, end]);
+        var labelMap = new Dictionary<int, string> { [0] = "Start" };
+
+        var rewrittenBytes = rewriter.MoveInstructionDown(rom, script, labelMap, 1);
+
+        Assert.Equal([0x00, 0x04, 0x02, 0x04, 0x01, 0x06], rewrittenBytes);
+    }
+
+    [Fact]
+    public void Rewriter_MoveInstructionUp_FromSecondSlot_Throws()
+    {
+        var registry = EventOperationRegistry.LoadDefault();
+        var rewriter = new EventScriptRewriter(registry);
+        var rom = new RomFile("synthetic.gba", [0x00, 0x04, 0x01, 0x06]);
+        var nopDefinition = EventTestHelpers.AssertDefinition(registry, 0x00);
+        var waitDefinition = EventTestHelpers.AssertDefinition(registry, 0x04);
+        var start = new EventInstruction(0, 0x00, nopDefinition.Name, [], "Nop()", false) { Definition = nopDefinition };
+        var wait = new EventInstruction(1, 0x04, waitDefinition.Name, [new EventArgumentValue("frames", EventArgumentType.Byte, 1, "1")], "Wait_X_Frames(1)", false) { Definition = waitDefinition };
+        var end = new EndInstruction(3, 0x06);
+        var script = new EventScript(0, 0, [start, wait, end]);
+        var labelMap = new Dictionary<int, string> { [0] = "Start" };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => rewriter.MoveInstructionUp(rom, script, labelMap, 1));
+
+        Assert.Contains("event start", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
 }

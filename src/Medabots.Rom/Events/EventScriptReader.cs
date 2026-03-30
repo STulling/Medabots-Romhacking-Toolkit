@@ -5,6 +5,7 @@ namespace Medabots.Rom.Events;
 public sealed class EventScriptReader
 {
     private readonly EventOperationRegistry _registry;
+    private const int EventScriptDatabaseHeaderSize = 0x4000;
 
     public EventScriptReader(EventOperationRegistry? registry = null)
     {
@@ -16,12 +17,13 @@ public sealed class EventScriptReader
         ArgumentNullException.ThrowIfNull(romFile);
         ArgumentNullException.ThrowIfNull(profile);
 
-        if (eventId < 0 || eventId >= profile.EventCount)
+        var installedTable = ResolveInstalledEventTable(romFile.Data, profile);
+        if (eventId < 0 || eventId >= installedTable.EventCount)
         {
-            throw new ArgumentOutOfRangeException(nameof(eventId), $"Event id must be between 0 and {profile.EventCount - 1}.");
+            throw new ArgumentOutOfRangeException(nameof(eventId), $"Event id must be between 0 and {installedTable.EventCount - 1}.");
         }
 
-        var startOffset = ResolveEventOffset(romFile.Data, profile, eventId);
+        var startOffset = ResolveEventOffset(romFile.Data, installedTable.EventTableOffset, installedTable.EventCount, eventId);
         var instructions = new Dictionary<int, EventInstruction>();
         ParseBranch(romFile.Data, startOffset, instructions, []);
         var orderedInstructions = instructions
@@ -101,10 +103,63 @@ public sealed class EventScriptReader
         }
     }
 
-    private static int ResolveEventOffset(byte[] romData, MedabotsRomTextProfile profile, short eventId)
+    public static (int EventTableOffset, int EventCount) ResolveInstalledEventTable(byte[] romData, MedabotsRomTextProfile profile)
     {
-        var eventTableOffset = profile.EventTableOffset;
-        var bankOffset = romData[eventTableOffset + MedabotsRomSchema.EventBankTableOffset + eventId] * MedabotsRomSchema.EventBankSize;
+        var bestEventTableOffset = profile.EventTableOffset;
+        var bestEventCount = profile.EventCount;
+        var originalDatabaseBase = profile.EventTableOffset - MedabotsRomSchema.EventBankBaseAddress;
+        EvaluateDatabaseCandidate(originalDatabaseBase);
+
+        for (var databaseBaseOffset = Math.Max(0x800000, originalDatabaseBase + 4); databaseBaseOffset <= romData.Length - 4; databaseBaseOffset += 4)
+        {
+            EvaluateDatabaseCandidate(databaseBaseOffset);
+        }
+
+        return (bestEventTableOffset, bestEventCount);
+
+        void EvaluateDatabaseCandidate(int databaseBaseOffset)
+        {
+            if (databaseBaseOffset < 0 || databaseBaseOffset > romData.Length - 4)
+            {
+                return;
+            }
+
+            if (romData[databaseBaseOffset] != 0x00 || romData[databaseBaseOffset + 1] != 0x40)
+            {
+                return;
+            }
+
+            var bankTableRelativeOffset = romData[databaseBaseOffset + 2] | (romData[databaseBaseOffset + 3] << 8);
+            if (bankTableRelativeOffset < EventScriptDatabaseHeaderSize)
+            {
+                return;
+            }
+
+            var pointerTableLength = bankTableRelativeOffset - EventScriptDatabaseHeaderSize;
+            if ((pointerTableLength & 1) != 0)
+            {
+                return;
+            }
+
+            var eventCount = pointerTableLength / 2;
+            var eventTableOffset = databaseBaseOffset + EventScriptDatabaseHeaderSize;
+            var bankTableOffset = databaseBaseOffset + bankTableRelativeOffset;
+            if (eventCount < bestEventCount ||
+                eventTableOffset + (eventCount * 2) > romData.Length ||
+                bankTableOffset + eventCount > romData.Length)
+            {
+                return;
+            }
+
+            bestEventTableOffset = eventTableOffset;
+            bestEventCount = eventCount;
+        }
+    }
+
+    private static int ResolveEventOffset(byte[] romData, int eventTableOffset, int eventCount, short eventId)
+    {
+        var bankTableOffset = eventTableOffset + (eventCount * 2);
+        var bankOffset = romData[bankTableOffset + eventId] * MedabotsRomSchema.EventBankSize;
         var addressInBank = ((romData[eventTableOffset + eventId * 2 + 1] << 8) + romData[eventTableOffset + eventId * 2]) - MedabotsRomSchema.EventBankBaseAddress;
         return (eventTableOffset - MedabotsRomSchema.EventBankBaseAddress) + addressInBank + bankOffset;
     }
@@ -197,7 +252,7 @@ public sealed class EventScriptReader
     {
         if (value == MedabotsRomSchema.EventMoveNone)
         {
-            return "-";
+            return "unused";
         }
 
         var direction = (value & MedabotsRomSchema.EventMoveMask) switch

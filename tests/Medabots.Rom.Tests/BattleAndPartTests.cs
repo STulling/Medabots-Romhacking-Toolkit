@@ -24,6 +24,57 @@ public sealed class BattleAndPartTests
     }
 
     [Fact]
+    public async Task BattleReader_ParsesBattleZeroUsingRealHeaderAndBotOffsets()
+    {
+        var rom = await RomFile.LoadAsync(FindWorkspaceRom());
+        var profile = MedabotsRomTextProfiles.Detect(rom);
+
+        Assert.NotNull(profile);
+
+        var battle = new BattleTableReader().ReadSingle(rom, 0, profile!.BattlePointerTableOffset, 0x3BF530);
+
+        Assert.Equal((byte)1, battle.CharacterId);
+        Assert.Equal((byte)0, battle.InitializationMode);
+        Assert.Equal((byte)1, battle.NumberOfBots);
+        Assert.Equal((byte)1, battle.TemplateFlags);
+
+        var bot = battle.Bots[0];
+        Assert.Equal((byte)0, bot.HeadPartId);
+        Assert.Equal((byte)0, bot.RightArmPartId);
+        Assert.Equal((byte)0, bot.LeftArmPartId);
+        Assert.Equal((byte)0, bot.LegsPartId);
+        Assert.Equal((byte)15, bot.MedalId);
+        Assert.Equal((byte)0, bot.MedalLevel);
+        Assert.Equal((byte)18, bot.PackedSpecialitySeedByte0);
+        Assert.Equal((byte)49, bot.PackedSpecialitySeedByte1);
+        Assert.Equal((byte)35, bot.PackedSpecialitySeedByte2);
+        Assert.Equal((byte)16, bot.PackedSpecialitySeedByte3);
+        Assert.Equal((byte)5, bot.SpecialityCycleResetValue);
+        Assert.Equal((byte)0, bot.ReservedZeroByte);
+    }
+
+    [Fact]
+    public void BattleSpecialityTemplateHelper_UnpacksAndRepacksCycleEntries()
+    {
+        var bot = new BattleBot(0, 0, 0, 0, 15, 0, 0x12, 0x31, 0x23, 0x10, 5, 0);
+
+        var entries = BattleSpecialityTemplateHelper.UnpackCycleEntries(bot);
+
+        Assert.Equal(new byte[] { 1, 2, 3, 1, 2, 3, 1, 0 }, entries);
+        Assert.Equal(new byte[] { 0x12, 0x31, 0x23, 0x10 }, BattleSpecialityTemplateHelper.PackCycleEntries(entries));
+    }
+
+    [Fact]
+    public async Task BattleSpecialityTemplateHelper_ComputesScaledMedalSlotValuesFromRealRom()
+    {
+        var rom = await RomFile.LoadAsync(FindWorkspaceRom());
+
+        var scaledValues = BattleSpecialityTemplateHelper.ComputeScaledMedalSlotValues(rom, 15, 30);
+
+        Assert.Equal(new byte[] { 30, 30, 45, 45, 15, 30, 15, 30 }, scaledValues);
+    }
+
+    [Fact]
     public async Task PartReader_LoadsRealPartsFromLocalRokushoRom()
     {
         var rom = await RomFile.LoadAsync(FindWorkspaceRom());
@@ -50,6 +101,45 @@ public sealed class BattleAndPartTests
         Assert.Equal((byte)0x3B, parts[461].TechniqueOrLegType);
         Assert.Equal((byte)0x3B, parts[462].TechniqueOrLegType);
         Assert.Equal("HealChange", MedabotsMetadata.Default.GetTechniqueName(parts[462].TechniqueOrLegType));
+    }
+
+    [Fact]
+    public async Task PartReader_Unknown3_IsUniformAcrossEachMedabotQuartet()
+    {
+        var rom = await RomFile.LoadAsync(FindWorkspaceRom());
+        var parts = new PartTableReader().ReadAll(rom);
+
+        for (var botId = 0; botId < parts.Count / 4; botId++)
+        {
+            var quartet = parts.Skip(botId * 4).Take(4).ToArray();
+            Assert.Equal(4, quartet.Length);
+            Assert.All(quartet, part => Assert.Equal(quartet[0].Unknown3, part.Unknown3));
+        }
+    }
+
+    [Fact]
+    public async Task PartReader_TailBytes_AreZeroExceptDummyNoHeadRecord()
+    {
+        var rom = await RomFile.LoadAsync(FindWorkspaceRom());
+        var parts = new PartTableReader().ReadAll(rom);
+
+        Assert.Equal("No Head", MedabotsMetadata.Default.GetPartName(480));
+
+        for (var i = 0; i < parts.Count; i++)
+        {
+            var part = parts[i];
+            if (i == 480)
+            {
+                Assert.Equal((byte)5, part.Unknown6);
+                Assert.Equal((byte)18, part.Unknown7);
+                Assert.Equal((byte)0, part.Unknown8);
+                continue;
+            }
+
+            Assert.Equal((byte)0, part.Unknown6);
+            Assert.Equal((byte)0, part.Unknown7);
+            Assert.Equal((byte)0, part.Unknown8);
+        }
     }
 
     [Fact]
@@ -137,20 +227,23 @@ public sealed class BattleAndPartTests
             4,
             0,
             2,
+            1,
             [
-                new BattleBot(0, 1, 2, 3, 4, 5, 6, 0, 0, 0, 0, 0),
-                new BattleBot(0, 7, 8, 9, 10, 11, 12, 0, 0, 0, 0, 0),
-                new BattleBot(0, 13, 14, 15, 16, 17, 18, 0, 0, 0, 0, 0)
-            ],
-            0);
+                new BattleBot(1, 2, 3, 4, 5, 6, 21, 22, 23, 24, 25, 26),
+                new BattleBot(7, 8, 9, 10, 11, 12, 31, 32, 33, 34, 35, 36),
+                new BattleBot(13, 14, 15, 16, 17, 18, 41, 42, 43, 44, 45, 46)
+            ]);
 
         var session = CreateSession(new RomFile("test.gba", romBytes));
         new BattlePatcher().Apply(session, battle);
 
         Assert.Equal(4, romBytes[0x80]);
         Assert.Equal(2, romBytes[0x82]);
+        Assert.Equal(1, romBytes[0x83]);
         Assert.Equal(1, romBytes[0x84]);
-        Assert.Equal(18, romBytes[0x80 + 3 + 24 + 6]);
+        Assert.Equal(18, romBytes[0x80 + 4 + 24 + 5]);
+        Assert.Equal(45, romBytes[0x80 + 4 + 24 + 10]);
+        Assert.Equal(46, romBytes[0x80 + 4 + 24 + 11]);
     }
 
     [Fact]

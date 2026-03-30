@@ -6,11 +6,15 @@ public sealed partial class RomHackProjectApplicator
 {
     private readonly Text.MedabotsTextPatcher _textPatcher;
     private readonly Events.EventInstructionPatcher _eventInstructionPatcher;
+    private readonly Encounters.EncounterTableReader _encounterTableReader;
+    private readonly Maps.MapOverlayPatcher _mapOverlayPatcher;
 
-    public RomHackProjectApplicator(Text.MedabotsTextPatcher? textPatcher = null, Events.EventInstructionPatcher? eventInstructionPatcher = null)
+    public RomHackProjectApplicator(Text.MedabotsTextPatcher? textPatcher = null, Events.EventInstructionPatcher? eventInstructionPatcher = null, Maps.MapOverlayPatcher? mapOverlayPatcher = null)
     {
         _textPatcher = textPatcher ?? new Text.MedabotsTextPatcher();
         _eventInstructionPatcher = eventInstructionPatcher ?? new Events.EventInstructionPatcher();
+        _encounterTableReader = new Encounters.EncounterTableReader();
+        _mapOverlayPatcher = mapOverlayPatcher ?? new Maps.MapOverlayPatcher();
     }
 
     public void Apply(RomHackProject project, RomHackSession session)
@@ -22,6 +26,13 @@ public sealed partial class RomHackProjectApplicator
         var profile = ResolveTextProfile(project);
         ApplyMessagePatches(project, session, profile);
         ApplyEventScriptPatches(project, session, profile);
+        ApplyMapEncounterStatePatches(project, session);
+        ApplyMapEncounterPatches(project, session);
+        ApplyMapMusicPatches(project, session);
+        ApplyMapEventObjectResourcePatches(project, session);
+        ApplyMapEntitySpawnPatches(project, session);
+        ApplyMapWarpPatches(project, session);
+        ApplyMapCollisionPatches(project, session);
     }
 
     private MedabotsRomTextProfile? ResolveTextProfile(RomHackProject project)
