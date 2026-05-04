@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-exe:
+    name: Build Windows executables
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime:
+          - win-x64
+          - win-arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Restore
+        run: dotnet restore Medabots.Romhacking.Toolkit.sln
+
+      - name: Test
+        run: dotnet test tests/Medabots.Rom.Tests/Medabots.Rom.Tests.csproj --configuration Release --no-restore
+
+      - name: Publish WPF editor
+        shell: pwsh
+        run: |
+          $runtime = "${{ matrix.runtime }}"
+          $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts/publish/$runtime"
+
+          dotnet publish src/Medabots.Rom.WPFEditor/Medabots.Rom.WPFEditor.csproj `
+            --configuration Release `
+            --runtime $runtime `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=none `
+            -p:DebugSymbols=false `
+            --output $publishDir
+
+          $sourceExe = Join-Path $publishDir "Medabots.Rom.WPFEditor.exe"
+          $assetName = "Medabots-Romhacking-Toolkit-${{ github.event.release.tag_name }}-$runtime.exe"
+          $assetPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/$assetName"
+          Copy-Item -LiteralPath $sourceExe -Destination $assetPath -Force
+
+          "ASSET_PATH=$assetPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ASSET_NAME=$assetName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET_NAME }}
+          path: ${{ env.ASSET_PATH }}
+          if-no-files-found: error
+
+      - name: Attach executable to release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "$env:ASSET_PATH" --clobber
