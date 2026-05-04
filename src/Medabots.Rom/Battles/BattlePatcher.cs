@@ -1,3 +1,5 @@
+using Medabots.Rom.Metadata;
+
 namespace Medabots.Rom.Battles;
 
 public sealed class BattlePatcher

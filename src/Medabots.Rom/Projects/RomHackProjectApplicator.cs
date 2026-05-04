@@ -12,6 +12,7 @@ public sealed partial class RomHackProjectApplicator
     private readonly Images.ImageAssetPatcher _imageAssetPatcher;
     private readonly Battles.BattlePatcher _battlePatcher;
     private readonly Parts.PartPatcher _partPatcher;
+    private readonly IReadOnlyList<IProjectEditSystem> _systems;
 
     public RomHackProjectApplicator(Text.MedabotsTextPatcher? textPatcher = null, Events.EventInstructionPatcher? eventInstructionPatcher = null, Maps.MapOverlayPatcher? mapOverlayPatcher = null, Maps.MapLayerPatcher? mapLayerPatcher = null, Images.ImageAssetPatcher? imageAssetPatcher = null, Battles.BattlePatcher? battlePatcher = null, Parts.PartPatcher? partPatcher = null)
     {
@@ -23,6 +24,24 @@ public sealed partial class RomHackProjectApplicator
         _imageAssetPatcher = imageAssetPatcher ?? new Images.ImageAssetPatcher();
         _battlePatcher = battlePatcher ?? new Battles.BattlePatcher();
         _partPatcher = partPatcher ?? new Parts.PartPatcher();
+        _systems = BuildSystems();
+    }
+
+    public IReadOnlyList<IProjectEditSystem> Systems => _systems;
+
+    public IReadOnlyList<ProjectChange> BuildChanges(RomHackProject project, RomFile sourceRom)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(sourceRom);
+
+        var context = new ProjectBuildContext(sourceRom, ResolveLayout(project));
+        var changes = new List<ProjectChange>();
+        foreach (var system in _systems)
+        {
+            changes.AddRange(system.BuildChanges(project, context));
+        }
+
+        return changes;
     }
 
     public void Apply(RomHackProject project, RomHackSession session)
@@ -30,31 +49,44 @@ public sealed partial class RomHackProjectApplicator
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(session);
 
-        ApplyPendingActions(project, session);
-        var profile = ResolveTextProfile(project);
-        ApplyMessagePatches(project, session, profile);
-        ApplyEventScriptPatches(project, session, profile);
-        ApplyMapEncounterStatePatches(project, session);
-        ApplyMapEncounterPatches(project, session);
-        ApplyMapMusicPatches(project, session);
-        ApplyMapEventObjectResourcePatches(project, session);
-        ApplyMapEntitySpawnPatches(project, session);
-        ApplyMapWarpPatches(project, session);
-        ApplyMapCollisionPatches(project, session);
-        ApplyMapLayerPatches(project, session);
-        ApplyBattleEdits(project, session);
-        ApplyPartEdits(project, session);
-        ApplySpriteEdits(project, session);
+        var changes = BuildChanges(project, session.RomFile);
+        foreach (var change in changes)
+        {
+            using var scope = session.BeginPatchScope(change.Owner);
+            change.Apply(session);
+        }
     }
 
-    private MedabotsRomTextProfile? ResolveTextProfile(RomHackProject project)
+    private ResolvedRomLayout ResolveLayout(RomHackProject project)
     {
         if (string.IsNullOrWhiteSpace(project.TextProfileId))
         {
-            return null;
+            return new ResolvedRomLayout(null);
         }
 
-        return MedabotsRomTextProfiles.FindById(project.TextProfileId)
+        var profile = MedabotsRomTextProfiles.FindById(project.TextProfileId)
             ?? throw new InvalidOperationException("The project does not define a known text profile.");
+        return new ResolvedRomLayout(profile);
+    }
+
+    private IReadOnlyList<IProjectEditSystem> BuildSystems()
+    {
+        return
+        [
+            new PendingActionsProjectEditSystem(),
+            new Text.MessageProjectEditSystem(_textPatcher),
+            new Events.EventScriptProjectEditSystem(_eventInstructionPatcher),
+            new Maps.MapSpawnProjectEditSystem(_mapOverlayPatcher),
+            new Maps.MapWarpProjectEditSystem(_mapOverlayPatcher),
+            new Maps.MapCollisionProjectEditSystem(_mapOverlayPatcher),
+            new Maps.MapLayerProjectEditSystem(_mapLayerPatcher),
+            new Maps.MapEncounterStateProjectEditSystem(),
+            new Maps.MapEncounterProjectEditSystem(_encounterTableReader),
+            new Maps.MapMusicProjectEditSystem(),
+            new Maps.MapSpriteSlotProjectEditSystem(_mapOverlayPatcher),
+            new Battles.BattleProjectEditSystem(_battlePatcher),
+            new Parts.PartProjectEditSystem(_partPatcher),
+            new Images.SpriteProjectEditSystem(_imageAssetPatcher)
+        ];
     }
 }

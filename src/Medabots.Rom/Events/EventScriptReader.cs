@@ -33,6 +33,19 @@ public sealed class EventScriptReader
         return new EventScript(eventId, startOffset, orderedInstructions);
     }
 
+    public EventScript ReadFromBytes(short eventId, byte[] scriptBytes, int startOffset = 0)
+    {
+        ArgumentNullException.ThrowIfNull(scriptBytes);
+
+        var instructions = new Dictionary<int, EventInstruction>();
+        ParseBranch(scriptBytes, startOffset, instructions, []);
+        var orderedInstructions = instructions
+            .OrderBy(pair => pair.Key)
+            .Select(pair => pair.Value)
+            .ToArray();
+        return new EventScript(eventId, startOffset, orderedInstructions);
+    }
+
     private void ParseBranch(byte[] romData, int offset, Dictionary<int, EventInstruction> instructions, HashSet<int> visitedOffsets)
     {
         while (true)

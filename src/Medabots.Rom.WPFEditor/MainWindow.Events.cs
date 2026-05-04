@@ -833,6 +833,12 @@ public partial class MainWindow : Window
             return _eventScriptReader.ReadById(_session.RomFile, profile, eventId);
         }
 
+        var installedTable = EventScriptReader.ResolveInstalledEventTable(_session.RomFile.Data, profile);
+        if (eventId < 0 || eventId >= installedTable.EventCount)
+        {
+            return _eventScriptReader.ReadFromBytes(eventId, patchBytes);
+        }
+
         var previewSession = CreatePreviewSession();
         _eventInstructionPatcher.RewriteEvent(previewSession, profile, eventId, patchBytes, $"Preview event patch {eventId}");
         return _eventScriptReader.ReadById(previewSession.RomFile, profile, eventId);
@@ -840,8 +846,23 @@ public partial class MainWindow : Window
 
     private void StoreEventScriptPatch(short eventId, byte[] scriptBytes)
     {
+        EnsureEventBrowserItemExists(eventId);
         _eventProjectScriptPatches[eventId] = scriptBytes.ToArray();
         UpdateEventBrowserPatchStatus(eventId);
+        RefreshEventFilter();
+    }
+
+    private void SyncEventScriptPatchFromProject(short eventId)
+    {
+        var patch = _project.EventScriptPatches.FirstOrDefault(candidate => candidate.EventId == eventId);
+        if (patch is null)
+        {
+            _eventProjectScriptPatches.Remove(eventId);
+            UpdateEventBrowserPatchStatus(eventId);
+            return;
+        }
+
+        StoreEventScriptPatch(eventId, patch.ScriptBytes);
     }
 
     private void RefreshEditedEventView(short eventId, MedabotsRomTextProfile profile)
@@ -869,6 +890,20 @@ public partial class MainWindow : Window
         {
             item.IsPatched = _eventProjectScriptPatches.ContainsKey(eventId);
         }
+    }
+
+    private EventBrowserItem EnsureEventBrowserItemExists(int eventId)
+    {
+        var existing = _allEventItems.FirstOrDefault(entry => entry.Id == eventId);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var item = new EventBrowserItem { Id = eventId };
+        _allEventItems.Add(item);
+        _allEventItems.Sort(static (left, right) => left.Id.CompareTo(right.Id));
+        return item;
     }
 
     private void UpdateSelectedEventPatchStatus(short eventId)

@@ -91,7 +91,7 @@ public sealed class LargePartDisplaySyntheticTests
     }
 
     [Fact]
-    public void ImageRepository_ReadLargePartDisplay_ResolvesMultipleRootDescriptorsFromAppearanceRow()
+    public void ImageRepository_ReadLargePartDisplay_UsesAllNonRedundantMappedRootDescriptorsFromAppearanceRow()
     {
         var romBytes = new byte[0x520000];
         var paletteA = Enumerable.Range(0, ImageAssetRepository.PaletteSize).Select(index => (byte)index).ToArray();
@@ -175,6 +175,63 @@ public sealed class LargePartDisplaySyntheticTests
         Assert.Single(asset.Pieces);
         Assert.Equal(0x1240, asset.Pieces[0].ImageOffset);
         Assert.All(asset.Pieces[0].Image.PixelIndices.Take(0x80), pixel => Assert.Equal((byte)7, pixel));
+    }
+
+    [Fact]
+    public void ImageRepository_ReadLargePartDisplayDescriptorRecords_ParsesRawBytesAndBothArmVariants()
+    {
+        var romBytes = new byte[0x540000];
+        var selectorEntry = (uint)(0x0E | (1 << 6) | (1 << 15));
+        BitConverter.GetBytes(selectorEntry).CopyTo(romBytes, MedabotsRomSchema.CompositePreviewLeftArmAppearanceTableOffset);
+
+        LargePartDisplayTestHelpers.WritePointer(romBytes, MedabotsRomSchema.CompositePreviewDescriptorPointerTableOffset + (0x0E * sizeof(uint)), 0x1000);
+        LargePartDisplayTestHelpers.WritePointer(romBytes, 0x1000, 0x1100);
+        BitConverter.GetBytes(-16).CopyTo(romBytes, 0x1004);
+        BitConverter.GetBytes(24).CopyTo(romBytes, 0x1008);
+        romBytes[0x100C] = 0xAA;
+        romBytes[0x100D] = 0xBB;
+        romBytes[0x100E] = 0xCC;
+        romBytes[0x100F] = 0x00;
+        romBytes[0x1010] = 0x00;
+        romBytes[0x1011] = 0x05;
+        romBytes[0x1012] = 0x20;
+        romBytes[0x1013] = 0x40;
+        romBytes[0x1014] = 0x21;
+        romBytes[0x1015] = 0xDD;
+        romBytes[0x1016] = 0xEE;
+        romBytes[0x1017] = 0xFF;
+        LargePartDisplayTestHelpers.WritePointer(romBytes, 0x1108, 0x1200);
+        LargePartDisplayTestHelpers.WritePointer(romBytes, 0x110C, 0x1220);
+        LargePartDisplayTestHelpers.WritePointer(romBytes, 0x1110, 0x1240);
+        LargePartDisplayTestHelpers.WritePointer(romBytes, 0x1114, 0x1260);
+
+        var repository = new ImageAssetRepository();
+        var rom = new RomFile("large-display-descriptor-records.gba", romBytes);
+        var part = new PartDefinition(2, 0, PartKind.LeftArm, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+        var records = repository.ReadLargePartDisplayDescriptorRecords(rom, part, 1);
+
+        var record = Assert.Single(records);
+        Assert.Equal(0x1000, record.RecordOffset);
+        Assert.Equal(0x3D1D98 + (0x0E * sizeof(uint)), record.DescriptorPointerOffset);
+        Assert.Equal(0x1100, record.BlobPointerTableOffset);
+        Assert.Equal(-16, record.RawX);
+        Assert.Equal(24, record.RawY);
+        Assert.Equal(16, record.X);
+        Assert.Equal(-24, record.Y);
+        Assert.Equal((byte)0xAA, record.RawByte0C);
+        Assert.Equal((byte)0xBB, record.RawByte0D);
+        Assert.Equal((byte)0xCC, record.RawByte0E);
+        Assert.Equal((byte)0xDD, record.RawByte15);
+        Assert.Equal((byte)0xEE, record.RawByte16);
+        Assert.Equal((byte)0xFF, record.RawByte17);
+        Assert.Equal(1, record.WidthDivisor);
+        Assert.Equal(2, record.HeightDivisor);
+        Assert.Equal(32, record.EffectiveWidth);
+        Assert.Equal(32, record.EffectiveHeight);
+        Assert.Equal(2, record.VariantResolutions.Count);
+        Assert.Equal(0x1200, record.VariantResolutions.Single(entry => entry.VariantSelector == 0).ImageOffset);
+        Assert.Equal(0x1240, record.VariantResolutions.Single(entry => entry.VariantSelector == 1).ImageOffset);
     }
 
     [Fact]
@@ -265,7 +322,7 @@ public sealed class LargePartDisplaySyntheticTests
         var asset = repository.ReadLargePartDisplay(rom, part);
 
         Assert.Equal(2, asset.Pieces.Count);
-        Assert.Equal(0x1220, asset.Pieces[0].PaletteOffset);
-        Assert.Equal(0, asset.Pieces[1].PaletteOffset);
+        Assert.Equal(0x1220, asset.Pieces.Single(piece => piece.DescriptorId == 7).PaletteOffset);
+        Assert.Equal(0, asset.Pieces.Single(piece => piece.DescriptorId == 8).PaletteOffset);
     }
 }

@@ -57,13 +57,16 @@ public partial class MainWindow : Window
         SpritePaletteFamilyEditorPanel.Visibility = Visibility.Collapsed;
         SpritePaletteFamilyComboBox.SelectedItem = null;
         SpritePaletteFamilyHintLabel.Text = string.Empty;
+        BotBattleFacingEditorPanel.Visibility = Visibility.Collapsed;
+        BotBattleFacingComboBox.SelectedItem = null;
+        ParsedDescriptorEditorPanel.Visibility = Visibility.Collapsed;
         SpritePatchStatusLabel.Text = string.Empty;
         _selectedPaletteIndex = 1;
         _hasCapturedUndoForCurrentStroke = false;
     }
 
     private List<SpriteBrowserNode> BuildSpriteTreeNodes() =>
-        new SpriteBrowserTreeBuilder(_session?.RomFile, _loadedParts, _metadata, _project, _imageAssetRepository, _mapTilesetRepository).BuildTreeNodes();
+        new SpriteBrowserTreeBuilder(_session?.RomFile, _loadedParts, _metadata, _imageAssetRepository, _mapTilesetRepository).BuildTreeNodes();
 
     private bool ShouldForceSplitLargeDisplay(int partId)
     {
@@ -71,7 +74,7 @@ public partial class MainWindow : Window
     }
 
     private bool AreLargeDisplayVariantsIdentical(PartDefinition part) =>
-        new SpriteBrowserTreeBuilder(_session?.RomFile, _loadedParts, _metadata, _project, _imageAssetRepository).AreLargeDisplayVariantsIdentical(part);
+        new SpriteBrowserTreeBuilder(_session?.RomFile, _loadedParts, _metadata, _imageAssetRepository).AreLargeDisplayVariantsIdentical(part);
 
     private async void OnSplitLargeDisplayMenuClicked(object? sender, RoutedEventArgs e)
     {
@@ -106,6 +109,31 @@ public partial class MainWindow : Window
         await Task.CompletedTask;
     }
 
+    private async void OnSplitSharedLargeDisplayDescriptorMenuClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not WpfMenuItem { CommandParameter: SpriteBrowserNode node } || !TryGetSharedDescriptorSplitTarget(node, out var partId, out var componentIndex, out var descriptorId))
+        {
+            return;
+        }
+
+        var asset = GetEditableLargePartDisplayAsset(partId, componentIndex);
+        var pieceIndex = Array.FindIndex(asset.Pieces.ToArray(), piece => piece.DescriptorId == descriptorId);
+        if (pieceIndex < 0)
+        {
+            return;
+        }
+
+        var updatedPieces = asset.Pieces.ToArray();
+        updatedPieces[pieceIndex] = updatedPieces[pieceIndex] with { ForceIndependentSource = true };
+        var updatedAsset = asset with { Pieces = updatedPieces };
+        _editedLargePartDisplayAssets[(partId, updatedAsset.VariantSelector)] = updatedAsset;
+        StageLargeDisplayEdit(partId, updatedAsset.VariantSelector, updatedAsset);
+        RefreshSpriteTreeForLargeDisplayLayoutChange(partId, componentIndex);
+        RefreshSharedSpriteConsumers();
+        SpritePatchStatusLabel.Text = $"Status: split shared descriptor {descriptorId:D2} for part {partId:D3}.";
+        await Task.CompletedTask;
+    }
+
     private bool TryGetSplitEligibleLargeDisplayPart(SpriteBrowserNode node, out PartDefinition part)
     {
         part = null!;
@@ -116,6 +144,22 @@ public partial class MainWindow : Window
 
         part = GetRequiredPartDefinition(node.PrimaryId);
         return part.Kind is PartKind.RightArm or PartKind.LeftArm;
+    }
+
+    private bool TryGetSharedDescriptorSplitTarget(SpriteBrowserNode node, out int partId, out int componentIndex, out int descriptorId)
+    {
+        partId = -1;
+        componentIndex = -1;
+        descriptorId = -1;
+        if (node.AssetKind != SpriteAssetKind.PartCompositeDescriptorPiece || !node.CanSplitSharedDescriptor)
+        {
+            return false;
+        }
+
+        partId = node.PrimaryId;
+        componentIndex = node.SecondaryId;
+        descriptorId = node.TertiaryId;
+        return true;
     }
 
     private void RefreshSpriteTreeForLargeDisplayLayoutChange(int partId, int preferredSecondaryId)
@@ -190,7 +234,7 @@ public partial class MainWindow : Window
     }
 
     private static string GetSpriteNodeExpansionKey(SpriteBrowserNode node) =>
-        $"{node.AssetKind}:{node.PrimaryId}:{node.SecondaryId}:{node.Title}";
+        $"{node.AssetKind}:{node.PrimaryId}:{node.SecondaryId}:{node.TertiaryId}:{node.DataOffset}:{node.Title}";
 
     private static IEnumerable<SpriteBrowserNode> FilterSpriteNodes(IEnumerable<SpriteBrowserNode> nodes, string? filter)
     {
@@ -268,6 +312,8 @@ public partial class MainWindow : Window
             SpritePatchStatusLabel.Text = GetSpritePatchStatusText(node);
             UpdateSelectedPaletteSwatch();
             UpdateSpritePaletteFamilyEditor(node);
+            UpdateBotBattleFacingEditor(node);
+            UpdateParsedDescriptorEditor(node);
             UpdateSpriteGridOverlay(preview.Bitmap.PixelWidth, preview.Bitmap.PixelHeight);
         }
         catch (Exception ex)
@@ -291,7 +337,12 @@ public partial class MainWindow : Window
             SpriteAssetKind.Portrait => BuildPortraitPreviewState(GetPreviewPortraitAsset(node.PrimaryId, node.SecondaryId)),
             SpriteAssetKind.MapTileset => BuildMapTilesetPreviewState(GetCurrentMapTilesetAsset(node.PrimaryId)),
             SpriteAssetKind.BattleCompositePartComponent => BuildBattleCompositeComponentPreviewState(GetPreviewBattleCompositeComponentAsset(node.PrimaryId, node.SecondaryId)),
+            SpriteAssetKind.MedabotLargePreview => BuildMedabotLargePreviewState(node.PrimaryId),
+            SpriteAssetKind.MedabotBattlePreview => BuildMedabotBattlePreviewState(node.PrimaryId),
             SpriteAssetKind.PartCompositePreview => BuildPartCompositePreviewState(GetRequiredPartDefinition(node.PrimaryId), node.SecondaryId),
+            SpriteAssetKind.PartCompositeDescriptorPiece => BuildPartCompositeDescriptorPreviewState(GetRequiredPartDefinition(node.PrimaryId), node.SecondaryId, node.TertiaryId),
+            SpriteAssetKind.PartCompositeParsedDescriptor => BuildPartCompositeDescriptorPreviewState(GetRequiredPartDefinition(node.PrimaryId), node.SecondaryId, node.TertiaryId),
+            SpriteAssetKind.PartCompositeEditableSprite => BuildEditableLargeDisplaySpritePreviewState(node),
             _ => throw new InvalidOperationException("Unsupported sprite asset kind.")
         };
 
@@ -299,8 +350,8 @@ public partial class MainWindow : Window
         return preview;
     }
 
-    private static string GetSpritePreviewCacheKey(SpriteBrowserNode node) =>
-        $"{node.AssetKind}:{node.PrimaryId}:{node.SecondaryId}";
+    private string GetSpritePreviewCacheKey(SpriteBrowserNode node) =>
+        $"{node.AssetKind}:{node.PrimaryId}:{node.SecondaryId}:{node.TertiaryId}:{node.DataOffset}:{node.SharedSourcePrimaryId}:{(node.AssetKind == SpriteAssetKind.MedabotBattlePreview ? _selectedBotBattleFacing : 0)}";
 
     private static SpritePreviewState BuildOverworldSpritePreviewState(SpriteAsset asset)
     {
@@ -339,10 +390,62 @@ public partial class MainWindow : Window
         return new SpritePreviewState(asset.MedabotId, bitmap, summary, paletteSummary, swatches);
     }
 
+    private SpritePreviewState BuildMedabotLargePreviewState(int medabotId)
+    {
+        var previewRight = CreateMedabotLargePreviewFrameBitmap(medabotId, 0)
+            ?? CreateLegacyLargePreviewVariantBitmap(new[]
+            {
+                (Part: GetRequiredPartForMedabot(medabotId, PartKind.Head), ComponentIndex: 0, AnchorX: 0x43, AnchorY: 0x10),
+                (Part: GetRequiredPartForMedabot(medabotId, PartKind.RightArm), ComponentIndex: 1, AnchorX: 0x18, AnchorY: 0x28),
+                (Part: GetRequiredPartForMedabot(medabotId, PartKind.LeftArm), ComponentIndex: 3, AnchorX: 0x38, AnchorY: 0x28),
+                (Part: GetRequiredPartForMedabot(medabotId, PartKind.Legs), ComponentIndex: 5, AnchorX: 0x19, AnchorY: 0x33)
+            }, false);
+        var previewLeft = CreateMedabotLargePreviewFrameBitmap(medabotId, 1)
+            ?? CreateLegacyLargePreviewVariantBitmap(new[]
+            {
+                (Part: GetRequiredPartForMedabot(medabotId, PartKind.Head), ComponentIndex: 0, AnchorX: 0x43, AnchorY: 0x10),
+                (Part: GetRequiredPartForMedabot(medabotId, PartKind.RightArm), ComponentIndex: 2, AnchorX: 0x18, AnchorY: 0x28),
+                (Part: GetRequiredPartForMedabot(medabotId, PartKind.LeftArm), ComponentIndex: 4, AnchorX: 0x38, AnchorY: 0x28),
+                (Part: GetRequiredPartForMedabot(medabotId, PartKind.Legs), ComponentIndex: 5, AnchorX: 0x19, AnchorY: 0x33)
+            }, true);
+        var bitmap = CreateBitmapStrip(previewRight.Bitmap, previewLeft.Bitmap, 24);
+        var swatches = previewRight.Swatches.Count != 0 ? previewRight.Swatches : previewLeft.Swatches;
+        var summary =
+            $"Medabot {medabotId:D3}  {_metadata.GetBotName(medabotId)}{Environment.NewLine}" +
+            $"Large bot preview prefers the combined battle-preview descriptor path traced from `FUN_08046d1c`, with a fallback to the slot-anchor composition when the ROM does not expose a drawable combined root.{Environment.NewLine}" +
+            "Left frame: game side 0  |  Right frame: game side 1";
+        var paletteSummary = "Palette colors: combined large-preview OBJ palette view from the game renderer path.";
+        return new SpritePreviewState(medabotId, bitmap, summary, paletteSummary, swatches);
+    }
+
+    private SpritePreviewState BuildMedabotBattlePreviewState(int medabotId)
+    {
+        var headBase = GetPreviewBattleCompositeComponentAsset(medabotId, 0);
+        var rightArmA = GetPreviewBattleCompositeComponentAsset(medabotId, 1);
+        var rightArmB = GetPreviewBattleCompositeComponentAsset(medabotId, 2);
+        var leftArmA = GetPreviewBattleCompositeComponentAsset(medabotId, 3);
+        var leftArmB = GetPreviewBattleCompositeComponentAsset(medabotId, 4);
+        var legs = GetPreviewBattleCompositeComponentAsset(medabotId, 5);
+        var swatches = BuildPaletteSwatches(headBase.Image.PaletteBytes);
+        var bitmap = CreateCompositeBattlePreviewBitmap(headBase, rightArmA, rightArmB, leftArmA, leftArmB, legs, swatches);
+        if (_selectedBotBattleFacing != 0)
+        {
+            bitmap = MirrorBitmapHorizontally(bitmap);
+        }
+
+        var facingLabel = _selectedBotBattleFacing == 0 ? "Facing Right / Default" : "Facing Left / Mirrored";
+        var summary =
+            $"Medabot {medabotId:D3}  {_metadata.GetBotName(medabotId)}{Environment.NewLine}" +
+            $"Battle preview composed from the 6 battle component sprites used by the assembled combat Medabot object path.{Environment.NewLine}" +
+            $"Facing: {facingLabel}";
+        var paletteSummary = $"Palette colors: {swatches.Count}  |  Battle composite family palette";
+        return new SpritePreviewState(medabotId, bitmap, summary, paletteSummary, swatches);
+    }
+
     private SpritePreviewState BuildPartCompositePreviewState(PartDefinition part, int variantComponentIndex)
     {
         var asset = GetPreviewLargePartDisplayAsset(part.Id, variantComponentIndex);
-        var renderedPieces = BuildRenderedLargeDisplayPieces(asset, part.Kind);
+        var renderedPieces = BuildRenderedLargeDisplayPiecesForPreview(part, variantComponentIndex, asset);
         var finalBanks = GetFinalLargeDisplayPaletteBankMap(asset);
         var paletteBytes = ResolveDisplayedLargeDisplayPalette(asset, finalBanks);
         var swatches = BuildPaletteSwatches(paletteBytes);
@@ -351,6 +454,96 @@ public partial class MainWindow : Window
         var paletteSummary = $"Palette colors: {swatches.Count}  |  Large display uses staged OBJ palette banks from descriptor-selected pieces";
         var pieces = renderedPieces.Select((entry, index) => new SpritePreviewPiece(index, entry.X, entry.Y, entry.Image)).ToArray();
         return new SpritePreviewState(part.Id, bitmap, summary, paletteSummary, swatches, pieces);
+    }
+
+    private SpritePreviewState BuildPartCompositeDescriptorPreviewState(PartDefinition part, int variantComponentIndex, int descriptorId)
+    {
+        var asset = GetPreviewLargePartDisplayAsset(part.Id, variantComponentIndex);
+        var piece = asset.Pieces.FirstOrDefault(entry => entry.DescriptorId == descriptorId);
+        if (piece is null)
+        {
+            var record = _imageAssetRepository.ReadLargePartDisplayDescriptorRecords(_session!.RomFile, part, PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, variantComponentIndex))
+                .FirstOrDefault(entry => entry.DescriptorId == descriptorId)
+                ?? throw new InvalidOperationException($"Descriptor {descriptorId} is not present in large display part {part.Id}.");
+            var appearanceInfo = BuildLargeDisplayAppearanceInfo(record);
+            var swatchesWithoutSprite = BuildPaletteSwatches(new byte[ImageAssetRepository.PaletteSize]);
+            var bitmapWithoutSprite = CreateBitmapSource(new byte[64], 1, swatchesWithoutSprite);
+            var summaryWithoutSprite =
+                $"Part {part.Id:D3}  {_metadata.GetPartName(part.Id)}{Environment.NewLine}" +
+                $"Kind: {PartSpriteDisplayLayout.FormatPartKind(part.Kind)}  |  Variant: {PartSpriteDisplayLayout.GetLargeDisplayVariantLabel(part.Kind, variantComponentIndex)}{Environment.NewLine}" +
+                $"Descriptor: {record.DescriptorId:D2}{Environment.NewLine}" +
+                $"Appearance entry: 0x{record.AppearanceEntryOffset:X6}{Environment.NewLine}" +
+                $"{appearanceInfo}" +
+                $"{BuildLargeDisplayVariantResolutionInfo(record)}{Environment.NewLine}" +
+                $"Descriptor record: 0x{record.RecordOffset:X6}{Environment.NewLine}" +
+                $"Descriptor pointer entry: 0x{record.DescriptorPointerOffset:X6}{Environment.NewLine}" +
+                $"Blob pointer table: 0x{record.BlobPointerTableOffset:X6}{Environment.NewLine}" +
+                $"Image pointer entry: {(record.ImagePointerOffset > 0 ? $"0x{record.ImagePointerOffset:X6}" : "none")}{Environment.NewLine}" +
+                $"Image target: {(record.ImageOffset > 0 ? $"0x{record.ImageOffset:X6}" : "none")}{Environment.NewLine}" +
+                $"Origin: ({record.X}, {record.Y})  |  Raw XY: ({record.RawX}, {record.RawY}){Environment.NewLine}" +
+                $"Raw size: {record.RawWidth}x{record.RawHeight}  |  Effective: {record.EffectiveWidth}x{record.EffectiveHeight}  |  Palette bank: {record.PaletteBank + 8}{Environment.NewLine}" +
+                $"Bytes 0C/0D/0E: {record.RawByte0C}, {record.RawByte0D}, {record.RawByte0E}  |  Bytes 15/16/17: {record.RawByte15}, {record.RawByte16}, {record.RawByte17}{Environment.NewLine}" +
+                "No decoded sprite is attached to this descriptor for this variant.";
+            return new SpritePreviewState(part.Id, bitmapWithoutSprite, summaryWithoutSprite, "Palette colors: 16  |  This descriptor currently has no decoded sprite data.", swatchesWithoutSprite);
+        }
+
+        var renderedImage = GetRenderedLargeDisplayPieceImage(piece, part.Kind, asset.Pieces.Count);
+        var finalBanks = GetFinalLargeDisplayPaletteBankMap(asset);
+        var sharedDisplayPalette = ResolveDisplayedLargeDisplayPalette(asset, finalBanks);
+        var effectivePalette = piece.PaletteBytes.Length != 0 && !IsAllZeroPalette(piece.PaletteBytes)
+            ? piece.PaletteBytes
+            : sharedDisplayPalette;
+        var swatches = BuildPaletteSwatches(effectivePalette);
+        var bitmap = CreateBitmapSource(renderedImage.PixelIndices, renderedImage.TileWidth, swatches);
+        var parsedPiece = GetRequiredBaseParsedDescriptorRecord(new SpriteBrowserNode
+        {
+            AssetKind = SpriteAssetKind.PartCompositeParsedDescriptor,
+            PrimaryId = part.Id,
+            SecondaryId = variantComponentIndex,
+            TertiaryId = descriptorId,
+            DataOffset = piece.RecordOffset
+        });
+        var appearanceInfoWithSprite = BuildLargeDisplayAppearanceInfo(parsedPiece);
+        var summary =
+            $"Part {part.Id:D3}  {_metadata.GetPartName(part.Id)}{Environment.NewLine}" +
+            $"Kind: {PartSpriteDisplayLayout.FormatPartKind(part.Kind)}  |  Variant: {PartSpriteDisplayLayout.GetLargeDisplayVariantLabel(part.Kind, variantComponentIndex)}{Environment.NewLine}" +
+            $"Descriptor: {piece.DescriptorId:D2}{Environment.NewLine}" +
+            $"Appearance entry: 0x{piece.AppearanceEntryOffset:X6}{Environment.NewLine}" +
+            $"{appearanceInfoWithSprite}" +
+            $"{BuildLargeDisplayVariantResolutionInfo(parsedPiece)}{Environment.NewLine}" +
+            $"Descriptor record: 0x{piece.RecordOffset:X6}{Environment.NewLine}" +
+            $"Descriptor pointer entry: 0x{parsedPiece.DescriptorPointerOffset:X6}{Environment.NewLine}" +
+            $"Blob pointer table: 0x{parsedPiece.BlobPointerTableOffset:X6}{Environment.NewLine}" +
+            $"Image pointer entry: 0x{piece.ImagePointerOffset:X6} -> 0x{piece.ImageOffset:X6}{Environment.NewLine}" +
+            $"Palette pointer entry: {(piece.PalettePointerOffset > 0 ? $"0x{piece.PalettePointerOffset:X6} -> 0x{piece.PaletteOffset:X6}" : "none")}{Environment.NewLine}" +
+              $"Origin: ({piece.X}, {piece.Y})  |  Size: {renderedImage.Width}x{renderedImage.Height}px  |  Loaded tiles: {piece.LoadedTileCount}  |  Palette bank: {piece.PaletteBank + 8}{Environment.NewLine}" +
+              $"Bytes 0C/0D/0E: {parsedPiece.RawByte0C}, {parsedPiece.RawByte0D}, {parsedPiece.RawByte0E}  |  Bytes 15/16/17: {parsedPiece.RawByte15}, {parsedPiece.RawByte16}, {parsedPiece.RawByte17}";
+        var paletteSummary = $"Palette colors: {swatches.Count}  |  Editing this view changes only descriptor {piece.DescriptorId:D2} within the selected large display variant.";
+        return new SpritePreviewState(part.Id, bitmap, summary, paletteSummary, swatches);
+    }
+
+    private SpritePreviewState BuildEditableLargeDisplaySpritePreviewState(SpriteBrowserNode node)
+    {
+        var reference = GetPreviewEditableLargeDisplaySpriteReference(node);
+        var piece = ResolveEditableLargeDisplayPreviewPiece(reference);
+        var renderedImage = GetRenderedLargeDisplayPieceImage(piece, reference.Part.Kind, reference.PieceCount);
+        var rootPalette = ResolveRootDescriptorPalette(GetPreviewLargePartDisplayAsset(reference.Part.Id, reference.ComponentIndex));
+        var palette = piece.PaletteBytes.Length != 0 && !IsAllZeroPalette(piece.PaletteBytes)
+            ? piece.PaletteBytes
+            : rootPalette;
+        var swatches = BuildPaletteSwatches(palette);
+        var bitmap = CreateBitmapSource(renderedImage.PixelIndices, renderedImage.TileWidth, swatches);
+        var referenceCount = GetEditableLargeDisplaySpriteReferences(node.PrimaryId, piece.ImageOffset).Count;
+        var summary =
+            $"Editable sprite 0x{piece.ImageOffset:X6}{Environment.NewLine}" +
+            $"Representative part: {reference.Part.Id:D3}  {_metadata.GetPartName(reference.Part.Id)}{Environment.NewLine}" +
+            $"Kind: {PartSpriteDisplayLayout.FormatPartKind(reference.Part.Kind)}  |  Variant: {PartSpriteDisplayLayout.GetLargeDisplayVariantLabel(reference.Part.Kind, reference.ComponentIndex)}{Environment.NewLine}" +
+            $"Descriptor: {piece.DescriptorId:D2}  |  Record: 0x{piece.RecordOffset:X6}{Environment.NewLine}" +
+            $"Image pointer entry: 0x{piece.ImagePointerOffset:X6} -> 0x{piece.ImageOffset:X6}{Environment.NewLine}" +
+            $"Palette pointer entry: {(piece.PalettePointerOffset > 0 ? $"0x{piece.PalettePointerOffset:X6} -> 0x{piece.PaletteOffset:X6}" : "none")}{Environment.NewLine}" +
+            $"References in Medabot: {referenceCount}";
+        var paletteSummary = $"Palette colors: {swatches.Count}  |  Editing this node updates all staged references to sprite 0x{piece.ImageOffset:X6} for this Medabot.";
+        return new SpritePreviewState(node.PrimaryId, bitmap, summary, paletteSummary, swatches);
     }
 
 
@@ -388,6 +581,120 @@ public partial class MainWindow : Window
         BlitIndexedImage(legs.Image, width, height, legsX, legsY, swatches, pixels);
 
         var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, width * 4);
+        bitmap.Freeze();
+        return bitmap;
+    }
+
+    private (BitmapSource Bitmap, IReadOnlyList<PaletteSwatchItem> Swatches)? CreateMedabotLargePreviewFrameBitmap(int medabotId, int side)
+    {
+        var frame = _imageAssetRepository.ReadMedabotLargeDisplayFrame(_session!.RomFile, _loadedParts, medabotId, side);
+        if (frame.Pieces.Count == 0 || !ShouldRenderCombinedMedabotLargePreview(frame))
+        {
+            return null;
+        }
+
+        var renderedPieces = frame.Pieces
+            .Select(piece => (Piece: piece, Image: GetRenderedLargeDisplayPieceImage(piece, PartKind.Head, frame.Pieces.Count), X: piece.X, Y: piece.Y))
+            .ToArray();
+        var finalBanks = GetFinalLargeDisplayPaletteBankMap(frame.InitialPaletteBanks, frame.Pieces);
+        var bitmap = CreateLargePartDisplayBitmap(renderedPieces, finalBanks);
+        if (frame.MirrorFinalImageHorizontally)
+        {
+            bitmap = MirrorBitmapHorizontally(bitmap);
+        }
+
+        return (bitmap, BuildPaletteSwatches(ResolveDisplayedLargeDisplayPalette(frame.Pieces, finalBanks)));
+    }
+
+    private static bool ShouldRenderCombinedMedabotLargePreview(MedabotLargeDisplayFrame frame)
+    {
+        _ = frame;
+        return true;
+    }
+
+    private (BitmapSource Bitmap, IReadOnlyList<PaletteSwatchItem> Swatches) CreateLegacyLargePreviewVariantBitmap(
+        IReadOnlyList<(PartDefinition Part, int ComponentIndex, int AnchorX, int AnchorY)> entries,
+        bool mirrorFinalImageHorizontally)
+    {
+        var composedParts = new List<(BitmapSource Bitmap, int X, int Y)>(entries.Count);
+        IReadOnlyList<PaletteSwatchItem>? representativeSwatches = null;
+
+        foreach (var entry in entries)
+        {
+            var asset = GetPreviewLargePartDisplayAsset(entry.Part.Id, entry.ComponentIndex);
+            var renderedPieces = BuildRenderedLargeDisplayPiecesForPreview(entry.Part, entry.ComponentIndex, asset);
+            var finalBanks = GetFinalLargeDisplayPaletteBankMap(asset);
+            var partBitmap = CreateLargePartDisplayBitmap(renderedPieces, finalBanks);
+            representativeSwatches ??= BuildPaletteSwatches(ResolveDisplayedLargeDisplayPalette(asset, finalBanks));
+            var minX = renderedPieces.Count == 0 ? 0 : renderedPieces.Min(piece => piece.X);
+            var minY = renderedPieces.Count == 0 ? 0 : renderedPieces.Min(piece => piece.Y);
+            composedParts.Add((partBitmap, entry.AnchorX + minX, entry.AnchorY + minY));
+        }
+
+        var bitmap = CreateBitmapComposition(composedParts);
+        if (mirrorFinalImageHorizontally)
+        {
+            bitmap = MirrorBitmapHorizontally(bitmap);
+        }
+
+        return (bitmap, representativeSwatches ?? []);
+    }
+
+    private static BitmapSource CreateBitmapStrip(BitmapSource left, BitmapSource right, int gap)
+    {
+        var width = left.PixelWidth + gap + right.PixelWidth;
+        var height = Math.Max(left.PixelHeight, right.PixelHeight);
+        return CreateBitmapComposition(
+        [
+            (left, 0, Math.Max(0, (height - left.PixelHeight) / 2)),
+            (right, left.PixelWidth + gap, Math.Max(0, (height - right.PixelHeight) / 2))
+        ]);
+    }
+
+    private static BitmapSource CreateBitmapComposition(IReadOnlyList<(BitmapSource Bitmap, int X, int Y)> items)
+    {
+        if (items.Count == 0)
+        {
+            return CreateBitmapSource([], 1, []);
+        }
+
+        var minX = items.Min(entry => entry.X);
+        var minY = items.Min(entry => entry.Y);
+        var maxX = items.Max(entry => entry.X + entry.Bitmap.PixelWidth);
+        var maxY = items.Max(entry => entry.Y + entry.Bitmap.PixelHeight);
+        var width = Math.Max(1, maxX - minX);
+        var height = Math.Max(1, maxY - minY);
+        var pixels = new byte[width * height * 4];
+
+        foreach (var (bitmap, x, y) in items)
+        {
+            var sourcePixels = new byte[bitmap.PixelWidth * bitmap.PixelHeight * 4];
+            bitmap.CopyPixels(sourcePixels, bitmap.PixelWidth * 4, 0);
+            BlitBgraImage(sourcePixels, bitmap.PixelWidth, bitmap.PixelHeight, width, height, x - minX, y - minY, pixels);
+        }
+
+        var output = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, width * 4);
+        output.Freeze();
+        return output;
+    }
+
+    private static BitmapSource MirrorBitmapHorizontally(BitmapSource source)
+    {
+        var sourcePixels = new byte[source.PixelWidth * source.PixelHeight * 4];
+        source.CopyPixels(sourcePixels, source.PixelWidth * 4, 0);
+        var mirroredPixels = new byte[sourcePixels.Length];
+
+        for (var y = 0; y < source.PixelHeight; y++)
+        {
+            for (var x = 0; x < source.PixelWidth; x++)
+            {
+                var sourceIndex = ((y * source.PixelWidth) + x) * 4;
+                var destIndex = ((y * source.PixelWidth) + (source.PixelWidth - 1 - x)) * 4;
+                Buffer.BlockCopy(sourcePixels, sourceIndex, mirroredPixels, destIndex, 4);
+            }
+        }
+
+        var bitmap = BitmapSource.Create(source.PixelWidth, source.PixelHeight, 96, 96, PixelFormats.Bgra32, null, mirroredPixels, source.PixelWidth * 4);
         bitmap.Freeze();
         return bitmap;
     }
@@ -471,82 +778,31 @@ public partial class MainWindow : Window
         return bitmap;
     }
 
-    private static IReadOnlyList<(LargePartDisplayPieceAsset Piece, IndexedImage Image, int X, int Y)> BuildRenderedLargeDisplayPieces(
-        LargePartDisplayAsset asset,
-        PartKind kind)
+    private IReadOnlyList<(LargePartDisplayPieceAsset Piece, IndexedImage Image, int X, int Y)> BuildRenderedLargeDisplayPiecesForPreview(
+        PartDefinition part,
+        int componentIndex,
+        LargePartDisplayAsset asset)
     {
-        var rendered = asset.Pieces
-            .Select(piece => (Piece: piece, Image: GetRenderedLargeDisplayPieceImage(piece, kind, asset.Pieces.Count), X: piece.X, Y: piece.Y))
-            .ToArray();
-
-        if (asset.Pieces.Count <= 1)
-        {
-            return rendered.Select(entry => (entry.Piece, entry.Image, 0, 0)).ToArray();
-        }
-
-        if (kind is PartKind.RightArm or PartKind.LeftArm)
-        {
-            return rendered
-                .OrderBy(entry => entry.Piece.X)
-                .ThenBy(entry => entry.Piece.Y)
-                .Select((entry, index) => (entry.Piece, entry.Image, X: 0, Y: index * entry.Image.Height))
-                .ToArray();
-        }
-
-        if (kind == PartKind.Head)
-        {
-            const int headColumnWidth = 32;
-            var y = 0;
-            return rendered
-                .OrderBy(entry => entry.Image.Width * entry.Image.Height)
-                .ThenBy(entry => entry.Piece.DescriptorId)
-                .Select(entry =>
-                {
-                    var placed = (entry.Piece, entry.Image, X: Math.Max(0, (headColumnWidth - entry.Image.Width) / 2), Y: y);
-                    y += entry.Image.Height;
-                    return placed;
-                })
-                .ToArray();
-        }
-
-        if (kind == PartKind.Legs)
-        {
-            const int maxRowWidth = 32;
-            var ordered = rendered
-                .OrderBy(entry => entry.Piece.Y)
-                .ThenBy(entry => entry.Piece.X)
-                .ToArray();
-            var laidOut = new List<(LargePartDisplayPieceAsset Piece, IndexedImage Image, int X, int Y)>(ordered.Length);
-            var x = 0;
-            var y = 0;
-            var rowHeight = 0;
-
-            foreach (var entry in ordered)
+        return asset.Pieces
+            .Select(piece =>
             {
-                if (x > 0 && x + entry.Image.Width > maxRowWidth)
-                {
-                    x = 0;
-                    y += rowHeight;
-                    rowHeight = 0;
-                }
-
-                laidOut.Add((entry.Piece, entry.Image, x, y));
-                x += entry.Image.Width;
-                rowHeight = Math.Max(rowHeight, entry.Image.Height);
-            }
-
-            return laidOut;
-        }
-
-        return rendered;
+                var renderImage = GetRenderedLargeDisplayPieceImage(piece, part.Kind, asset.Pieces.Count);
+                return (Piece: piece, Image: renderImage, X: piece.X, Y: piece.Y);
+            })
+            .ToArray();
     }
 
     private static Dictionary<int, byte[]> GetFinalLargeDisplayPaletteBankMap(LargePartDisplayAsset asset)
+        => GetFinalLargeDisplayPaletteBankMap(asset.InitialPaletteBanks, asset.Pieces);
+
+    private static Dictionary<int, byte[]> GetFinalLargeDisplayPaletteBankMap(
+        IReadOnlyDictionary<int, byte[]> initialPaletteBanks,
+        IReadOnlyList<LargePartDisplayPieceAsset> pieces)
     {
-        var banks = asset.InitialPaletteBanks
+        var banks = initialPaletteBanks
             .Where(pair => !IsAllZeroPalette(pair.Value))
             .ToDictionary(pair => pair.Key, pair => pair.Value);
-        foreach (var piece in asset.Pieces)
+        foreach (var piece in pieces)
         {
             if (piece.PaletteBytes.Length != 0)
             {
@@ -585,8 +841,13 @@ public partial class MainWindow : Window
     private static byte[] ResolveDisplayedLargeDisplayPalette(
         LargePartDisplayAsset asset,
         IReadOnlyDictionary<int, byte[]> finalBanks)
+        => ResolveDisplayedLargeDisplayPalette(asset.Pieces, finalBanks);
+
+    private static byte[] ResolveDisplayedLargeDisplayPalette(
+        IReadOnlyList<LargePartDisplayPieceAsset> pieces,
+        IReadOnlyDictionary<int, byte[]> finalBanks)
     {
-        var uploadedPalette = asset.Pieces
+        var uploadedPalette = pieces
             .Select(piece => piece.PaletteBytes)
             .FirstOrDefault(palette => palette.Length != 0 && !IsAllZeroPalette(palette));
         if (uploadedPalette is not null)
@@ -622,21 +883,36 @@ public partial class MainWindow : Window
         int pieceCount)
     {
         var totalTiles = Math.Max(1, piece.LoadedTileCount);
-        var tileWidth = kind switch
-        {
-            PartKind.Head when pieceCount == 1 => 4,
-            PartKind.RightArm => 4,
-            PartKind.LeftArm => 4,
-            PartKind.Legs when pieceCount == 1 => 8,
-            PartKind.Head => Math.Max(1, piece.Image.TileWidth),
-            PartKind.Legs => Math.Max(1, piece.Image.TileWidth),
-            _ => Math.Max(1, piece.Image.TileWidth)
-        };
-        var tileHeight = Math.Max(1, (int)Math.Ceiling(totalTiles / (double)tileWidth));
+        var widthDivisor = Math.Max(1, piece.SizeDivisors & 0x0F);
+        var heightDivisor = Math.Max(1, piece.SizeDivisors >> 4);
+        var effectiveWidth = Math.Max(8, piece.RawWidth / widthDivisor);
+        var effectiveHeight = Math.Max(8, piece.RawHeight / heightDivisor);
+        var descriptorTileWidth = Math.Max(1, effectiveWidth / 8);
+        var descriptorTileHeight = Math.Max(1, effectiveHeight / 8);
+        var tileWidth = piece.RawWidth > 0 ? descriptorTileWidth : Math.Max(1, piece.Image.TileWidth);
+        var tileHeight = piece.RawHeight > 0 ? descriptorTileHeight : Math.Max(1, piece.Image.TileHeight);
         var effectivePixels = new byte[tileWidth * tileHeight * 64];
         Array.Copy(piece.Image.PixelIndices, effectivePixels, Math.Min(totalTiles * 64, piece.Image.PixelIndices.Length));
-        return new IndexedImage(tileWidth, tileHeight, effectivePixels, piece.Image.PaletteBytes);
+        var rendered = new IndexedImage(tileWidth, tileHeight, effectivePixels, piece.Image.PaletteBytes);
+        return piece.MirrorDisplayHorizontally ? MirrorIndexedImageHorizontally(rendered) : rendered;
     }
+
+    private static IndexedImage MirrorIndexedImageHorizontally(IndexedImage source)
+    {
+        var mirrored = new byte[source.PixelIndices.Length];
+        for (var y = 0; y < source.Height; y++)
+        {
+            for (var x = 0; x < source.Width; x++)
+            {
+                var sourceIndex = GetTileOrderedPixelIndex(source, x, y);
+                var destIndex = GetTileOrderedPixelIndex(source, source.Width - 1 - x, y);
+                mirrored[destIndex] = source.PixelIndices[sourceIndex];
+            }
+        }
+
+        return new IndexedImage(source.TileWidth, source.TileHeight, mirrored, source.PaletteBytes);
+    }
+
 
     private static IndexedImage CombineCompositeComponentsVertically(IndexedImage top, IndexedImage bottom)
     {
@@ -680,6 +956,40 @@ public partial class MainWindow : Window
         }
     }
 
+    private static void BlitBgraImage(byte[] sourcePixels, int sourceWidth, int sourceHeight, int bitmapWidth, int bitmapHeight, int destX, int destY, byte[] output)
+    {
+        for (var y = 0; y < sourceHeight; y++)
+        {
+            var targetY = destY + y;
+            if (targetY < 0 || targetY >= bitmapHeight)
+            {
+                continue;
+            }
+
+            for (var x = 0; x < sourceWidth; x++)
+            {
+                var targetX = destX + x;
+                if (targetX < 0 || targetX >= bitmapWidth)
+                {
+                    continue;
+                }
+
+                var sourceIndex = ((y * sourceWidth) + x) * 4;
+                var alpha = sourcePixels[sourceIndex + 3];
+                if (alpha == 0)
+                {
+                    continue;
+                }
+
+                var outputIndex = ((targetY * bitmapWidth) + targetX) * 4;
+                output[outputIndex] = sourcePixels[sourceIndex];
+                output[outputIndex + 1] = sourcePixels[sourceIndex + 1];
+                output[outputIndex + 2] = sourcePixels[sourceIndex + 2];
+                output[outputIndex + 3] = alpha;
+            }
+        }
+    }
+
     private static void BlitTile(byte[] pixelIndices, int tileIndex, int bitmapWidth, int bitmapHeight, int destX, int destY, IReadOnlyList<PaletteSwatchItem> swatches, byte[] output)
     {
         var tileBase = tileIndex * 64;
@@ -701,12 +1011,17 @@ public partial class MainWindow : Window
                 }
 
                 var colorIndex = pixelIndices[sourceIndex];
+                if (colorIndex == 0)
+                {
+                    continue;
+                }
+
                 var color = colorIndex < swatches.Count ? swatches[colorIndex].Color : Colors.Transparent;
                 var outputIndex = ((pixelY * bitmapWidth) + pixelX) * 4;
                 output[outputIndex + 0] = color.B;
                 output[outputIndex + 1] = color.G;
                 output[outputIndex + 2] = color.R;
-                output[outputIndex + 3] = colorIndex == 0 ? (byte)0 : (byte)255;
+                output[outputIndex + 3] = 255;
             }
         }
     }
@@ -823,15 +1138,10 @@ public partial class MainWindow : Window
     {
         var part = GetRequiredPartDefinition(partId);
         var variantSelector = PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, componentIndex);
-        var staged = ProjectEditCollection.Find(_project, ProjectEditAdapters.LargeDisplaySprite, (partId, variantSelector));
-        if (staged is not null)
-        {
-            return staged;
-        }
-
         if (_largePartDisplayAssetCache.TryGetValue((partId, variantSelector), out var cached))
         {
-            return cached;
+            var stagedCached = ProjectEditCollection.Find(_project, ProjectEditAdapters.LargeDisplaySprite, (partId, variantSelector));
+            return stagedCached is null ? cached : MergeLargeDisplayAssets(cached, stagedCached);
         }
 
         if (_session is null)
@@ -841,7 +1151,8 @@ public partial class MainWindow : Window
 
         var asset = _imageAssetRepository.ReadLargePartDisplay(_session.RomFile, part, variantSelector);
         _largePartDisplayAssetCache[(partId, variantSelector)] = asset;
-        return asset;
+        var staged = ProjectEditCollection.Find(_project, ProjectEditAdapters.LargeDisplaySprite, (partId, variantSelector));
+        return staged is null ? asset : MergeLargeDisplayAssets(asset, staged);
     }
 
     private LargePartDisplayAsset GetEditableLargePartDisplayAsset(int partId, int componentIndex)
@@ -901,10 +1212,12 @@ public partial class MainWindow : Window
                 => HasStagedBattleCompositeComponent(node.PrimaryId, node.SecondaryId)
                     ? "Status: this asset has draft edits and an older staged version. Stage Changes to update the staged version."
                     : "Status: this asset has draft edits. Stage Changes to make other tabs and export use them.",
-            SpriteAssetKind.PartCompositePreview when _editedLargePartDisplayAssets.ContainsKey((node.PrimaryId, PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(GetRequiredPartDefinition(node.PrimaryId).Kind, node.SecondaryId)))
+            SpriteAssetKind.PartCompositeDescriptorPiece when _editedLargePartDisplayAssets.ContainsKey((node.PrimaryId, PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(GetRequiredPartDefinition(node.PrimaryId).Kind, node.SecondaryId)))
                 => HasStagedLargeDisplay(node.PrimaryId, PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(GetRequiredPartDefinition(node.PrimaryId).Kind, node.SecondaryId))
                     ? "Status: this asset has draft edits and an older staged version. Stage Changes to update the staged version."
                     : "Status: this asset has draft edits. Stage Changes to make other tabs and export use them.",
+            SpriteAssetKind.PartCompositeEditableSprite
+                => "Status: editing a unique large-display sprite blob. Drawing changes update every descriptor in this Medabot that points at the same sprite data.",
             SpriteAssetKind.OverworldEventObject when HasStagedOverworldSprite(node.PrimaryId)
                 => "Status: this overworld sprite is staged. Other tabs and export use the staged version.",
             SpriteAssetKind.Portrait when HasStagedPortrait(node.PrimaryId, node.SecondaryId)
@@ -913,12 +1226,20 @@ public partial class MainWindow : Window
                 => "Status: showing map tileset graphics. Editing/writeback is not wired yet; use this as the future tile picker surface.",
             SpriteAssetKind.BattleCompositePartComponent when HasStagedBattleCompositeComponent(node.PrimaryId, node.SecondaryId)
                 => "Status: this Medabot component sprite is staged. Other tabs and export use the staged version.",
-            SpriteAssetKind.PartCompositePreview when HasStagedLargeDisplay(node.PrimaryId, PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(GetRequiredPartDefinition(node.PrimaryId).Kind, node.SecondaryId))
+            SpriteAssetKind.PartCompositeDescriptorPiece when HasStagedLargeDisplay(node.PrimaryId, PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(GetRequiredPartDefinition(node.PrimaryId).Kind, node.SecondaryId))
                 => "Status: this Large Display sprite is staged. Other tabs and export use the staged version.",
             SpriteAssetKind.BattleCompositePartComponent
                 => "Status: editing a Medabot/component battle sprite family. Palette changes affect every part using that shared family palette.",
+            SpriteAssetKind.MedabotLargePreview
+                => "Status: readonly full Medabot large preview composed from complete part previews and caller slot anchors.",
+            SpriteAssetKind.MedabotBattlePreview
+                => "Status: readonly full Medabot battle preview composed from the 6 battle component sprites.",
             SpriteAssetKind.PartCompositePreview
-                => "Status: editing the descriptor-driven part-detail Large Display preview for this part.",
+                => "Status: readonly assembled complete part preview with in-game compositing.",
+            SpriteAssetKind.PartCompositeDescriptorPiece
+                => "Status: editing a single underlying large-display sprite piece.",
+            SpriteAssetKind.PartCompositeParsedDescriptor
+                => "Status: readonly parsed descriptor preview. Use Editable Sprites to edit the underlying piece.",
             _ => "Status: showing ROM data."
         };
     }
@@ -943,9 +1264,71 @@ public partial class MainWindow : Window
         _isUpdatingSpritePaletteFamilyUi = false;
     }
 
+    private void UpdateBotBattleFacingEditor(SpriteBrowserNode node)
+    {
+        if (node.AssetKind != SpriteAssetKind.MedabotBattlePreview)
+        {
+            BotBattleFacingEditorPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        BotBattleFacingEditorPanel.Visibility = Visibility.Visible;
+        BotBattleFacingComboBox.SelectedValue = _selectedBotBattleFacing;
+    }
+
+    private void UpdateParsedDescriptorEditor(SpriteBrowserNode node)
+    {
+        if (node.AssetKind != SpriteAssetKind.PartCompositeParsedDescriptor)
+        {
+            ParsedDescriptorEditorPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var piece = GetParsedDescriptorRecord(node);
+        ParsedDescriptorEditorPanel.Visibility = Visibility.Visible;
+        ParsedDescriptorXEntry.Text = piece.X.ToString();
+        ParsedDescriptorYEntry.Text = piece.Y.ToString();
+        ParsedDescriptorSiblingEntry.Text = piece.SiblingDescriptorId.ToString();
+        ParsedDescriptorChildEntry.Text = piece.ChildDescriptorId.ToString();
+        ParsedDescriptorPaletteBankEntry.Text = piece.PaletteBank.ToString();
+        ParsedDescriptorWidthEntry.Text = piece.RawWidth.ToString();
+        ParsedDescriptorHeightEntry.Text = piece.RawHeight.ToString();
+        ParsedDescriptorDivisorsEntry.Text = piece.SizeDivisors.ToString();
+        ParsedDescriptorRaw0CEntry.Text = piece.RawByte0C.ToString();
+        ParsedDescriptorRaw0DEntry.Text = piece.RawByte0D.ToString();
+        ParsedDescriptorRaw0EEntry.Text = piece.RawByte0E.ToString();
+        ParsedDescriptorRaw15Entry.Text = piece.RawByte15.ToString();
+        ParsedDescriptorRaw16Entry.Text = piece.RawByte16.ToString();
+        ParsedDescriptorRaw17Entry.Text = piece.RawByte17.ToString();
+        ParsedDescriptorHeaderLabel.Text =
+            $"Descriptor ptr: 0x{piece.DescriptorPointerOffset:X6}  |  Record: 0x{piece.RecordOffset:X6}{Environment.NewLine}" +
+            $"Blob table: 0x{piece.BlobPointerTableOffset:X6}  |  Selected table index: {piece.TableIndex}{Environment.NewLine}" +
+            $"Raw XY: ({piece.RawX}, {piece.RawY})  |  Effective size: {piece.EffectiveWidth}x{piece.EffectiveHeight}  |  Divisors: {piece.WidthDivisor}x{piece.HeightDivisor}";
+        ParsedDescriptorVariantInfoLabel.Text = BuildLargeDisplayVariantResolutionInfo(piece);
+    }
+
     private bool IsCompositePaletteFamilyEditable(SpriteBrowserNode node)
     {
         return node.AssetKind is SpriteAssetKind.BattleCompositePartComponent;
+    }
+
+    private void OnBotBattleFacingSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!_isWindowFullyInitialized)
+        {
+            return;
+        }
+
+        if (BotBattleFacingComboBox.SelectedValue is not int facing || facing == _selectedBotBattleFacing)
+        {
+            return;
+        }
+
+        _selectedBotBattleFacing = facing;
+        if (_selectedSpriteNode?.AssetKind == SpriteAssetKind.MedabotBattlePreview)
+        {
+            InvalidateSelectedSpritePreview();
+        }
     }
 
     private BattleCompositeSpriteComponentAsset GetSelectedBattleCompositeComponentAsset(SpriteBrowserNode node)
@@ -953,9 +1336,16 @@ public partial class MainWindow : Window
         return node.AssetKind switch
         {
             SpriteAssetKind.BattleCompositePartComponent => GetPreviewBattleCompositeComponentAsset(node.PrimaryId, node.SecondaryId),
-            SpriteAssetKind.PartCompositePreview => GetPreviewBattleCompositeComponentAsset(GetRequiredPartDefinition(node.PrimaryId).MedabotId, node.SecondaryId),
+            SpriteAssetKind.PartCompositePreview or SpriteAssetKind.PartCompositeDescriptorPiece or SpriteAssetKind.PartCompositeParsedDescriptor => GetPreviewBattleCompositeComponentAsset(GetRequiredPartDefinition(node.PrimaryId).MedabotId, node.SecondaryId),
+            SpriteAssetKind.PartCompositeEditableSprite => GetPreviewBattleCompositeComponentAsset(node.PrimaryId, 0),
             _ => throw new InvalidOperationException("The selected sprite node does not use a composite component asset.")
         };
+    }
+
+    private PartDefinition GetRequiredPartForMedabot(int medabotId, PartKind kind)
+    {
+        return _loadedParts.FirstOrDefault(part => part.MedabotId == medabotId && part.Kind == kind)
+            ?? throw new InvalidOperationException($"Could not resolve {kind} for Medabot {medabotId:D3}.");
     }
 
     private bool HasStagedOverworldSprite(int spriteId) =>
@@ -975,7 +1365,7 @@ public partial class MainWindow : Window
         return node.AssetKind switch
         {
             SpriteAssetKind.BattleCompositePartComponent => GetEditableBattleCompositeComponentAsset(node.PrimaryId, node.SecondaryId),
-            SpriteAssetKind.PartCompositePreview => GetEditableBattleCompositeComponentAsset(GetRequiredPartDefinition(node.PrimaryId).MedabotId, node.SecondaryId),
+            SpriteAssetKind.PartCompositeDescriptorPiece => GetEditableBattleCompositeComponentAsset(GetRequiredPartDefinition(node.PrimaryId).MedabotId, node.SecondaryId),
             _ => throw new InvalidOperationException("The selected sprite node does not use an editable composite component asset.")
         };
     }
@@ -1224,9 +1614,13 @@ public partial class MainWindow : Window
                 case SpriteAssetKind.BattleCompositePartComponent:
                     await DisplayAlertAsync("Use Palette Family", "Part sprites use shared family palettes. Change the Palette Family selector instead of editing palette colors directly.", "OK");
                     return;
-                case SpriteAssetKind.PartCompositePreview:
+                case SpriteAssetKind.PartCompositeDescriptorPiece:
                     EditLargeDisplayPalette(GetEditableLargePartDisplayAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId));
                     break;
+                case SpriteAssetKind.PartCompositePreview:
+                case SpriteAssetKind.PartCompositeParsedDescriptor:
+                    await DisplayAlertAsync("Read Only", "This view is readonly. Use Editable Sprites to edit the underlying large-display sprite.", "OK");
+                    return;
                 default:
                     return;
             }
@@ -1443,8 +1837,10 @@ public partial class MainWindow : Window
                 break;
             }
             case SpriteAssetKind.PartCompositePreview:
+                return;
+            case SpriteAssetKind.PartCompositeDescriptorPiece:
             {
-                if (!TryResolveLargeDisplayPixel(point, out var pieceIndex, out var piecePixelX, out var piecePixelY))
+                if (!TryResolveLargeDisplayDescriptorPixel(point, out var pieceIndex, out var piecePixelX, out var piecePixelY))
                 {
                     return;
                 }
@@ -1453,6 +1849,34 @@ public partial class MainWindow : Window
                 ApplyToolToLargeDisplayAsset(asset, pieceIndex, piecePixelX, piecePixelY);
                 break;
             }
+            case SpriteAssetKind.PartCompositeEditableSprite:
+            {
+                if (!TryResolveEditableLargeDisplaySpritePixel(point, out var piecePixelX, out var piecePixelY))
+                {
+                    return;
+                }
+
+                var selectedReference = GetPreviewEditableLargeDisplaySpriteReference(_selectedSpriteNode);
+                var references = GetEditableLargeDisplaySpriteReferences(_selectedSpriteNode.PrimaryId, selectedReference.Piece.ImageOffset);
+                if (references.Count == 0)
+                {
+                    return;
+                }
+
+                if ((_selectedSpriteEditorTool == SpriteEditorTool.Pencil || _selectedSpriteEditorTool == SpriteEditorTool.Eraser) && !_hasCapturedUndoForCurrentStroke)
+                {
+                    PushUndoSnapshot(GetSelectedSpriteHistoryKey(), references[0].Piece.Image);
+                    _hasCapturedUndoForCurrentStroke = true;
+                }
+
+                foreach (var reference in references)
+                {
+                    ApplyToolToIndexedImage(reference.Piece.Image, piecePixelX, piecePixelY);
+                }
+                break;
+            }
+            case SpriteAssetKind.PartCompositeParsedDescriptor:
+                return;
             default:
                 return;
         }
@@ -1469,15 +1893,24 @@ public partial class MainWindow : Window
             return false;
         }
 
-        var image = _selectedSpriteNode.AssetKind switch
-        {
-            SpriteAssetKind.OverworldEventObject => GetPreviewOverworldSpriteAsset(_selectedSpriteNode.PrimaryId).Image,
-            SpriteAssetKind.Portrait => GetPreviewPortraitAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId).Image,
-            SpriteAssetKind.MapTileset => GetCurrentMapTilesetAsset(_selectedSpriteNode.PrimaryId).TilesetSheet,
-            SpriteAssetKind.BattleCompositePartComponent => GetPreviewBattleCompositeComponentAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId).Image,
-            SpriteAssetKind.PartCompositePreview => null,
-            _ => null
-        };
+          var image = _selectedSpriteNode.AssetKind switch
+          {
+              SpriteAssetKind.OverworldEventObject => GetPreviewOverworldSpriteAsset(_selectedSpriteNode.PrimaryId).Image,
+              SpriteAssetKind.Portrait => GetPreviewPortraitAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId).Image,
+              SpriteAssetKind.MapTileset => GetCurrentMapTilesetAsset(_selectedSpriteNode.PrimaryId).TilesetSheet,
+              SpriteAssetKind.BattleCompositePartComponent => GetPreviewBattleCompositeComponentAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId).Image,
+              SpriteAssetKind.MedabotLargePreview or SpriteAssetKind.MedabotBattlePreview => null,
+              SpriteAssetKind.PartCompositePreview => null,
+              SpriteAssetKind.PartCompositeDescriptorPiece or SpriteAssetKind.PartCompositeParsedDescriptor => GetRenderedLargeDisplayPieceImage(
+                  GetPreviewLargeDisplayPieceAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId, _selectedSpriteNode.TertiaryId),
+                  GetRequiredPartDefinition(_selectedSpriteNode.PrimaryId).Kind,
+                  GetPreviewLargePartDisplayAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId).Pieces.Count),
+              SpriteAssetKind.PartCompositeEditableSprite => GetRenderedLargeDisplayPieceImage(
+                  GetPreviewEditableLargeDisplaySpriteReference(_selectedSpriteNode).Piece,
+                  GetPreviewEditableLargeDisplaySpriteReference(_selectedSpriteNode).Part.Kind,
+                  GetPreviewEditableLargeDisplaySpriteReference(_selectedSpriteNode).PieceCount),
+              _ => null
+          };
         if (image is null)
         {
             return false;
@@ -1519,19 +1952,19 @@ public partial class MainWindow : Window
             if (piece.PieceIndex < 0 || piece.PieceIndex >= asset.Pieces.Count)
             {
                 return false;
-            }
+              }
 
-            var sourcePiece = asset.Pieces[piece.PieceIndex];
-            var displayTileIndex = (displayPixelY / 8) * piece.Image.TileWidth + (displayPixelX / 8);
-            if (displayTileIndex < 0 || displayTileIndex >= sourcePiece.LoadedTileCount)
-            {
-                return false;
-            }
+              var sourcePiece = asset.Pieces[piece.PieceIndex];
+              var displayTileIndex = (displayPixelY / 8) * piece.Image.TileWidth + (displayPixelX / 8);
+              if (displayTileIndex < 0 || displayTileIndex >= sourcePiece.LoadedTileCount)
+              {
+                  return false;
+              }
 
-            var sourceTileX = displayTileIndex % sourcePiece.Image.TileWidth;
-            var sourceTileY = displayTileIndex / sourcePiece.Image.TileWidth;
-            var resolvedPixelX = (sourceTileX * 8) + (displayPixelX % 8);
-            var resolvedPixelY = (sourceTileY * 8) + (displayPixelY % 8);
+              var sourceTileX = displayTileIndex % sourcePiece.Image.TileWidth;
+              var sourceTileY = displayTileIndex / sourcePiece.Image.TileWidth;
+              var resolvedPixelX = (sourceTileX * 8) + (displayPixelX % 8);
+              var resolvedPixelY = (sourceTileY * 8) + (displayPixelY % 8);
             if (resolvedPixelX < 0 || resolvedPixelY < 0 || resolvedPixelX >= sourcePiece.Image.Width || resolvedPixelY >= sourcePiece.Image.Height)
             {
                 return false;
@@ -1543,7 +1976,77 @@ public partial class MainWindow : Window
             return true;
         }
 
-        return false;
+          return false;
+      }
+
+      private bool TryResolveLargeDisplayDescriptorPixel(WpfPoint point, out int pieceIndex, out int pixelX, out int pixelY)
+      {
+          pieceIndex = -1;
+          pixelX = 0;
+          pixelY = 0;
+          if (_selectedSpriteNode is null || _selectedSpriteNode.AssetKind != SpriteAssetKind.PartCompositeDescriptorPiece)
+          {
+              return false;
+          }
+
+          var asset = GetEditableLargePartDisplayAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId);
+          pieceIndex = Array.FindIndex(asset.Pieces.ToArray(), piece => piece.DescriptorId == _selectedSpriteNode.TertiaryId);
+          if (pieceIndex < 0)
+          {
+              return false;
+          }
+
+          var sourcePiece = asset.Pieces[pieceIndex];
+          var renderedImage = GetRenderedLargeDisplayPieceImage(sourcePiece, GetRequiredPartDefinition(_selectedSpriteNode.PrimaryId).Kind, asset.Pieces.Count);
+          var displayPixelX = (int)(point.X / _spriteEditorZoom);
+          var displayPixelY = (int)(point.Y / _spriteEditorZoom);
+          if (displayPixelX < 0 || displayPixelY < 0 || displayPixelX >= renderedImage.Width || displayPixelY >= renderedImage.Height)
+          {
+              return false;
+          }
+
+          var displayTileIndex = (displayPixelY / 8) * renderedImage.TileWidth + (displayPixelX / 8);
+          if (displayTileIndex < 0 || displayTileIndex >= sourcePiece.LoadedTileCount)
+          {
+              return false;
+          }
+
+          var sourceTileX = displayTileIndex % sourcePiece.Image.TileWidth;
+          var sourceTileY = displayTileIndex / sourcePiece.Image.TileWidth;
+          pixelX = (sourceTileX * 8) + (displayPixelX % 8);
+          pixelY = (sourceTileY * 8) + (displayPixelY % 8);
+          return pixelX >= 0 && pixelY >= 0 && pixelX < sourcePiece.Image.Width && pixelY < sourcePiece.Image.Height;
+      }
+
+    private bool TryResolveEditableLargeDisplaySpritePixel(WpfPoint point, out int pixelX, out int pixelY)
+    {
+        pixelX = 0;
+        pixelY = 0;
+        if (_selectedSpriteNode is null || _selectedSpriteNode.AssetKind != SpriteAssetKind.PartCompositeEditableSprite)
+        {
+            return false;
+        }
+
+        var reference = GetPreviewEditableLargeDisplaySpriteReference(_selectedSpriteNode);
+        var renderedImage = GetRenderedLargeDisplayPieceImage(reference.Piece, reference.Part.Kind, reference.PieceCount);
+        var displayPixelX = (int)(point.X / _spriteEditorZoom);
+        var displayPixelY = (int)(point.Y / _spriteEditorZoom);
+        if (displayPixelX < 0 || displayPixelY < 0 || displayPixelX >= renderedImage.Width || displayPixelY >= renderedImage.Height)
+        {
+            return false;
+        }
+
+        var displayTileIndex = (displayPixelY / 8) * renderedImage.TileWidth + (displayPixelX / 8);
+        if (displayTileIndex < 0 || displayTileIndex >= reference.Piece.LoadedTileCount)
+        {
+            return false;
+        }
+
+        var sourceTileX = displayTileIndex % reference.Piece.Image.TileWidth;
+        var sourceTileY = displayTileIndex / reference.Piece.Image.TileWidth;
+        pixelX = (sourceTileX * 8) + (displayPixelX % 8);
+        pixelY = (sourceTileY * 8) + (displayPixelY % 8);
+        return pixelX >= 0 && pixelY >= 0 && pixelX < reference.Piece.Image.Width && pixelY < reference.Piece.Image.Height;
     }
 
     private SpriteAsset GetEditableOverworldSpriteAsset(int spriteId)
@@ -1608,6 +2111,261 @@ public partial class MainWindow : Window
             : GetCurrentLargePartDisplayAsset(partId, componentIndex);
     }
 
+    private LargePartDisplayPieceAsset GetPreviewLargeDisplayPieceAsset(int partId, int componentIndex, int descriptorId)
+    {
+        var asset = GetPreviewLargePartDisplayAsset(partId, componentIndex);
+        return asset.Pieces.FirstOrDefault(piece => piece.DescriptorId == descriptorId)
+            ?? throw new InvalidOperationException($"Descriptor {descriptorId} is not present in large display part {partId}.");
+    }
+
+    private LargePartDisplayPieceAsset? TryGetDraftOrStagedLargeDisplayImageOverride(int partId, int componentIndex, int imageOffset)
+    {
+        var part = GetRequiredPartDefinition(partId);
+        var variantSelector = PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, componentIndex);
+        if (_editedLargePartDisplayAssets.TryGetValue((partId, variantSelector), out var draft))
+        {
+            var draftPiece = draft.Pieces.FirstOrDefault(piece => piece.ImageOffset == imageOffset);
+            if (draftPiece is not null)
+            {
+                return draftPiece;
+            }
+        }
+
+        var staged = ProjectEditCollection.Find(_project, ProjectEditAdapters.LargeDisplaySprite, (partId, variantSelector));
+        return staged?.Pieces.FirstOrDefault(piece => piece.ImageOffset == imageOffset);
+    }
+
+    private LargePartDisplayPieceAsset ResolveEditableLargeDisplayPreviewPiece(EditableLargeDisplaySpriteReference reference)
+    {
+        var imageOverride = TryGetDraftOrStagedLargeDisplayImageOverride(reference.Part.Id, reference.ComponentIndex, reference.Piece.ImageOffset);
+        if (imageOverride is null)
+        {
+            return reference.Piece;
+        }
+
+        return reference.Piece with
+        {
+            PaletteBytes = imageOverride.PaletteBytes.ToArray(),
+            Image = new IndexedImage(
+                imageOverride.Image.TileWidth,
+                imageOverride.Image.TileHeight,
+                imageOverride.Image.PixelIndices.ToArray(),
+                imageOverride.Image.PaletteBytes.ToArray())
+        };
+    }
+
+    private EditableLargeDisplaySpriteReference GetPreviewEditableLargeDisplaySpriteReference(SpriteBrowserNode node)
+    {
+        return GetSpecificLargeDisplaySpriteReference(node.PrimaryId, node.SecondaryId, node.TertiaryId, node.DataOffset, node.SharedSourcePrimaryId, editable: false)
+            ?? throw new InvalidOperationException($"Could not resolve editable large display sprite 0x{node.DataOffset:X6} for Medabot {node.PrimaryId:D3}.");
+    }
+
+    private List<EditableLargeDisplaySpriteReference> GetEditableLargeDisplaySpriteReferences(int medabotId, int imageOffset)
+    {
+        return GetLargeDisplaySpriteReferences(medabotId, imageOffset, editable: true);
+    }
+
+    private List<EditableLargeDisplaySpriteReference> GetLargeDisplaySpriteReferences(int medabotId, int imageOffset, bool editable)
+    {
+        var references = new List<EditableLargeDisplaySpriteReference>();
+        foreach (var part in _loadedParts.Where(part => part.MedabotId == medabotId).OrderBy(part => part.Kind).ThenBy(part => part.Id))
+        {
+            foreach (var (componentIndex, _) in PartSpriteDisplayLayout.GetPreviewComponentEntriesForPartKind(part.Kind))
+            {
+                var asset = editable
+                    ? GetEditableLargePartDisplayAsset(part.Id, componentIndex)
+                    : GetPreviewLargePartDisplayAsset(part.Id, componentIndex);
+                for (var index = 0; index < asset.Pieces.Count; index++)
+                {
+                    var piece = asset.Pieces[index];
+                    if (piece.ImageOffset != imageOffset)
+                    {
+                        continue;
+                    }
+
+                    references.Add(new EditableLargeDisplaySpriteReference(part, componentIndex, piece, asset.Pieces.Count));
+                }
+            }
+        }
+
+        return references;
+    }
+
+    private EditableLargeDisplaySpriteReference? GetSpecificLargeDisplaySpriteReference(int medabotId, int representativePartId, int componentIndex, int imageOffset, int recordOffset, bool editable)
+    {
+        var part = _loadedParts.FirstOrDefault(entry => entry.MedabotId == medabotId && entry.Id == representativePartId);
+        if (part is null)
+        {
+            return null;
+        }
+
+        if (editable)
+        {
+            var asset = GetEditableLargePartDisplayAsset(part.Id, componentIndex);
+            for (var index = 0; index < asset.Pieces.Count; index++)
+            {
+                var piece = asset.Pieces[index];
+                if (piece.ImageOffset == imageOffset)
+                {
+                    return new EditableLargeDisplaySpriteReference(part, componentIndex, piece, asset.Pieces.Count);
+                }
+            }
+
+            return null;
+        }
+
+        var variantSelector = PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, componentIndex);
+        var records = _imageAssetRepository.ReadLargePartDisplayDescriptorRecords(_session!.RomFile, part, variantSelector);
+        var record = records.FirstOrDefault(entry => entry.RecordOffset == recordOffset && entry.ImageOffset == imageOffset);
+        if (record is null)
+        {
+            return null;
+        }
+
+        var rawPiece = _imageAssetRepository.ReadLargePartDisplayPieceFromRecord(_session!.RomFile, record);
+        var pieceCount = Math.Max(1, records.Count(entry => entry.ImageOffset > 0));
+        return new EditableLargeDisplaySpriteReference(part, componentIndex, rawPiece, pieceCount);
+    }
+
+    private byte[] ResolveRootDescriptorPalette(LargePartDisplayAsset asset)
+    {
+        var rootPiece = asset.Pieces.FirstOrDefault(piece => piece.DescriptorId == asset.RootDescriptorId && piece.PaletteBytes.Length != 0 && !IsAllZeroPalette(piece.PaletteBytes))
+            ?? asset.Pieces.FirstOrDefault(piece => piece.PaletteBytes.Length != 0 && !IsAllZeroPalette(piece.PaletteBytes));
+        if (rootPiece is not null)
+        {
+            return rootPiece.PaletteBytes;
+        }
+
+        var finalBanks = GetFinalLargeDisplayPaletteBankMap(asset);
+        return ResolveDisplayedLargeDisplayPalette(asset, finalBanks);
+    }
+
+    private LargePartDisplayPieceAsset GetParsedDescriptorPiece(SpriteBrowserNode node)
+    {
+        var asset = GetPreviewLargePartDisplayAsset(node.PrimaryId, node.SecondaryId);
+        var piece = asset.Pieces.FirstOrDefault(entry => entry.RecordOffset == node.DataOffset)
+                   ?? asset.Pieces.FirstOrDefault(entry => entry.DescriptorId == node.TertiaryId);
+        return piece ?? throw new InvalidOperationException($"Could not resolve parsed descriptor at 0x{node.DataOffset:X6}.");
+    }
+
+    private LargePartDisplayDescriptorRecord GetParsedDescriptorRecord(SpriteBrowserNode node)
+    {
+        var stagedPiece = TryGetStagedLargeDisplayPieceByRecordOffset(node.PrimaryId, node.SecondaryId, node.DataOffset);
+        if (stagedPiece is not null)
+        {
+            var baseRecord = GetRequiredBaseParsedDescriptorRecord(node);
+            var widthDivisor = Math.Max(1, stagedPiece.SizeDivisors & 0x0F);
+            var heightDivisor = Math.Max(1, stagedPiece.SizeDivisors >> 4);
+            return new LargePartDisplayDescriptorRecord(
+                stagedPiece.DescriptorId,
+                stagedPiece.AppearanceEntryOffset,
+                baseRecord.AppearanceEntryRaw,
+                baseRecord.DescriptorPointerOffset,
+                stagedPiece.RecordOffset,
+                baseRecord.BlobPointerTableOffset,
+                stagedPiece.DescriptorRecordBytes.ToArray(),
+                stagedPiece.ImagePointerOffset,
+                stagedPiece.PalettePointerOffset,
+                stagedPiece.ImageOffset,
+                stagedPiece.PaletteOffset,
+                BitConverter.ToInt32(stagedPiece.DescriptorRecordBytes, 0x04),
+                BitConverter.ToInt32(stagedPiece.DescriptorRecordBytes, 0x08),
+                stagedPiece.X,
+                stagedPiece.Y,
+                stagedPiece.SiblingDescriptorId,
+                stagedPiece.ChildDescriptorId,
+                (byte)stagedPiece.PaletteBank,
+                stagedPiece.RawWidth,
+                stagedPiece.RawHeight,
+                stagedPiece.SizeDivisors,
+                stagedPiece.DescriptorRecordBytes[0x0C],
+                stagedPiece.DescriptorRecordBytes[0x0D],
+                stagedPiece.DescriptorRecordBytes[0x0E],
+                stagedPiece.DescriptorRecordBytes[0x15],
+                stagedPiece.DescriptorRecordBytes[0x16],
+                stagedPiece.DescriptorRecordBytes[0x17],
+                widthDivisor,
+                heightDivisor,
+                Math.Max(8, stagedPiece.RawWidth / widthDivisor),
+                Math.Max(8, stagedPiece.RawHeight / heightDivisor),
+                baseRecord.TableIndex,
+                stagedPiece.ImageOffset > 0,
+                baseRecord.SelectedVariantSelector,
+                baseRecord.VariantResolutions);
+        }
+
+        return GetRequiredBaseParsedDescriptorRecord(node);
+    }
+
+    private LargePartDisplayDescriptorRecord GetRequiredBaseParsedDescriptorRecord(SpriteBrowserNode node)
+    {
+        var part = GetRequiredPartDefinition(node.PrimaryId);
+        var variantSelector = PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, node.SecondaryId);
+        return _imageAssetRepository.ReadLargePartDisplayDescriptorRecords(_session!.RomFile, part, variantSelector)
+            .FirstOrDefault(record => record.RecordOffset == node.DataOffset)
+            ?? throw new InvalidOperationException($"Could not resolve parsed descriptor record at 0x{node.DataOffset:X6}.");
+    }
+
+    private LargePartDisplayPieceAsset? TryGetStagedLargeDisplayPieceByRecordOffset(int partId, int componentIndex, int recordOffset)
+    {
+        var part = GetRequiredPartDefinition(partId);
+        var variantSelector = PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, componentIndex);
+        var staged = ProjectEditCollection.Find(_project, ProjectEditAdapters.LargeDisplaySprite, (partId, variantSelector));
+        return staged?.Pieces.FirstOrDefault(piece => piece.RecordOffset == recordOffset);
+    }
+
+    private sealed record EditableLargeDisplaySpriteReference(PartDefinition Part, int ComponentIndex, LargePartDisplayPieceAsset Piece, int PieceCount);
+
+    private string BuildLargeDisplayAppearanceInfo(LargePartDisplayDescriptorRecord record)
+    {
+        if (record.AppearanceEntryOffset <= 0)
+        {
+            return "Appearance raw: none" + Environment.NewLine;
+        }
+
+        var variantZero = record.VariantResolutions.FirstOrDefault(entry => entry.VariantSelector == 0);
+        var variantOne = record.VariantResolutions.FirstOrDefault(entry => entry.VariantSelector == 1);
+
+        return
+            $"Appearance raw: 0x{record.AppearanceEntryRaw:X8}  |  Descriptor id: {record.DescriptorId:D2}{Environment.NewLine}" +
+            $"Selector base: {variantZero?.AppearanceSelectorBase ?? 0}  |  Variant bit: {variantZero?.AppearanceVariantBit ?? 0}  |  Byte1 signed: {variantZero?.AppearanceSignedByte1 ?? 0}{Environment.NewLine}" +
+            $"Resolved table index A: {variantZero?.TableIndex ?? 0}  |  Resolved table index B: {variantOne?.TableIndex ?? variantZero?.TableIndex ?? 0}{Environment.NewLine}";
+    }
+
+    private static string BuildLargeDisplayVariantResolutionInfo(LargePartDisplayDescriptorRecord record)
+    {
+        if (record.VariantResolutions.Count == 0)
+        {
+            return "Variants: none";
+        }
+
+        var lines = new List<string>();
+        foreach (var variant in record.VariantResolutions.OrderBy(entry => entry.VariantSelector))
+        {
+            lines.Add(
+                $"{(variant.VariantSelector == 0 ? "A" : "B")}: table {variant.TableIndex}  |  image {(variant.ImageOffset > 0 ? $"0x{variant.ImageOffset:X6}" : "none")}  |  palette {(variant.PaletteOffset > 0 ? $"0x{variant.PaletteOffset:X6}" : "none")}");
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static LargePartDisplayAsset MergeLargeDisplayAssets(LargePartDisplayAsset baseAsset, LargePartDisplayAsset overlayAsset)
+    {
+        var pieces = baseAsset.Pieces.ToDictionary(piece => piece.RecordOffset);
+        foreach (var piece in overlayAsset.Pieces)
+        {
+            pieces[piece.RecordOffset] = piece;
+        }
+
+        return baseAsset with
+        {
+            Pieces = pieces.Values.OrderBy(piece => piece.DescriptorId).ThenBy(piece => piece.RecordOffset).ToArray(),
+            RootDescriptorId = overlayAsset.RootDescriptorId != 0 ? overlayAsset.RootDescriptorId : baseAsset.RootDescriptorId,
+            RootRecordOffset = overlayAsset.RootRecordOffset != 0 ? overlayAsset.RootRecordOffset : baseAsset.RootRecordOffset,
+            InitialPaletteBanks = overlayAsset.InitialPaletteBanks.Count > 0 ? overlayAsset.InitialPaletteBanks : baseAsset.InitialPaletteBanks
+        };
+    }
+
     private static SpriteAsset CloneSpriteAsset(SpriteAsset asset) =>
         asset with
         {
@@ -1632,6 +2390,7 @@ public partial class MainWindow : Window
             Pieces = asset.Pieces
                 .Select(piece => piece with
                 {
+                    DescriptorRecordBytes = piece.DescriptorRecordBytes.ToArray(),
                     PaletteBytes = piece.PaletteBytes.ToArray(),
                     Image = new IndexedImage(piece.Image.TileWidth, piece.Image.TileHeight, piece.Image.PixelIndices.ToArray(), piece.Image.PaletteBytes.ToArray())
                 })
@@ -1764,7 +2523,7 @@ public partial class MainWindow : Window
             throw new InvalidOperationException("No sprite or portrait is selected.");
         }
 
-        return $"{(int)_selectedSpriteNode.AssetKind}:{_selectedSpriteNode.PrimaryId}:{_selectedSpriteNode.SecondaryId}";
+        return $"{(int)_selectedSpriteNode.AssetKind}:{_selectedSpriteNode.PrimaryId}:{_selectedSpriteNode.SecondaryId}:{_selectedSpriteNode.TertiaryId}:{_selectedSpriteNode.DataOffset}";
     }
 
     private void PushUndoSnapshot(string historyKey, IndexedImage image)
@@ -1828,7 +2587,20 @@ public partial class MainWindow : Window
                 Array.Copy(snapshot.Images[0].Palette, image.PaletteBytes, snapshot.Images[0].Palette.Length);
                 break;
             }
-            case SpriteAssetKind.PartCompositePreview:
+            case SpriteAssetKind.MedabotLargePreview:
+            case SpriteAssetKind.MedabotBattlePreview:
+                return;
+            case SpriteAssetKind.PartCompositeEditableSprite:
+            {
+                var selectedReference = GetPreviewEditableLargeDisplaySpriteReference(_selectedSpriteNode);
+                foreach (var reference in GetEditableLargeDisplaySpriteReferences(_selectedSpriteNode.PrimaryId, selectedReference.Piece.ImageOffset))
+                {
+                    Array.Copy(snapshot.Images[0].Pixels, reference.Piece.Image.PixelIndices, snapshot.Images[0].Pixels.Length);
+                    Array.Copy(snapshot.Images[0].Palette, reference.Piece.Image.PaletteBytes, snapshot.Images[0].Palette.Length);
+                }
+                break;
+            }
+            case SpriteAssetKind.PartCompositeDescriptorPiece:
             {
                 var asset = GetEditableLargePartDisplayAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId);
                 for (var index = 0; index < Math.Min(asset.Pieces.Count, snapshot.Images.Count); index++)
@@ -1867,7 +2639,26 @@ public partial class MainWindow : Window
                 _editedBattleCompositeComponentAssets.Remove((_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId));
                 RemoveStagedBattleCompositeComponent(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId);
                 break;
+            case SpriteAssetKind.MedabotLargePreview:
+            case SpriteAssetKind.MedabotBattlePreview:
+                SpritePatchStatusLabel.Text = "Status: this preview is readonly.";
+                return;
+            case SpriteAssetKind.PartCompositeEditableSprite:
+            {
+                foreach (var part in _loadedParts.Where(part => part.MedabotId == _selectedSpriteNode.PrimaryId))
+                {
+                    foreach (var (componentIndex, _) in PartSpriteDisplayLayout.GetPreviewComponentEntriesForPartKind(part.Kind))
+                    {
+                        var variantSelector = PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, componentIndex);
+                        _editedLargePartDisplayAssets.Remove((part.Id, variantSelector));
+                        RemoveStagedLargeDisplay(part.Id, variantSelector);
+                    }
+                }
+                break;
+            }
             case SpriteAssetKind.PartCompositePreview:
+            case SpriteAssetKind.PartCompositeDescriptorPiece:
+            case SpriteAssetKind.PartCompositeParsedDescriptor:
             {
                 var part = GetRequiredPartDefinition(_selectedSpriteNode.PrimaryId);
                 var variantSelector = PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, _selectedSpriteNode.SecondaryId);
@@ -1927,7 +2718,12 @@ public partial class MainWindow : Window
             SpriteAssetKind.Portrait => $"portrait_{_selectedSpriteNode.PrimaryId:D3}_{_selectedSpriteNode.SecondaryId}.png",
             SpriteAssetKind.MapTileset => $"map_tileset_{_selectedSpriteNode.PrimaryId:D3}.png",
             SpriteAssetKind.BattleCompositePartComponent => $"battle_composite_medabot_{_selectedSpriteNode.PrimaryId:D3}_{_selectedSpriteNode.SecondaryId}.png",
+            SpriteAssetKind.MedabotLargePreview => $"medabot_{_selectedSpriteNode.PrimaryId:D3}_large_preview.png",
+            SpriteAssetKind.MedabotBattlePreview => $"medabot_{_selectedSpriteNode.PrimaryId:D3}_battle_preview.png",
             SpriteAssetKind.PartCompositePreview => $"part_{_selectedSpriteNode.PrimaryId:D3}_{_selectedSpriteNode.SecondaryId}.png",
+            SpriteAssetKind.PartCompositeDescriptorPiece => $"part_{_selectedSpriteNode.PrimaryId:D3}_{_selectedSpriteNode.SecondaryId}_desc{_selectedSpriteNode.TertiaryId:D2}.png",
+            SpriteAssetKind.PartCompositeParsedDescriptor => $"part_{_selectedSpriteNode.PrimaryId:D3}_{_selectedSpriteNode.SecondaryId}_parsed_desc{_selectedSpriteNode.TertiaryId:D2}.png",
+            SpriteAssetKind.PartCompositeEditableSprite => $"medabot_{_selectedSpriteNode.PrimaryId:D3}_sprite_{_selectedSpriteNode.SharedSourcePrimaryId:X6}_record_{_selectedSpriteNode.DataOffset:X6}.png",
             _ => "asset.png"
         };
         var path = PickSaveFilePath("Export sprite PNG", "PNG image (*.png)|*.png", title);
@@ -1954,6 +2750,12 @@ public partial class MainWindow : Window
         if (_selectedSpriteNode.AssetKind == SpriteAssetKind.MapTileset)
         {
             await DisplayAlertAsync("Read Only", "Map tileset browsing is available from the Sprites tab, but writing tileset graphics back is not wired yet.", "OK");
+            return;
+        }
+
+        if (_selectedSpriteNode.AssetKind is SpriteAssetKind.MedabotLargePreview or SpriteAssetKind.MedabotBattlePreview)
+        {
+            await DisplayAlertAsync("Read Only", "Bot preview nodes are readonly. Edit the underlying part or battle sprites instead.", "OK");
             return;
         }
 
@@ -1991,7 +2793,10 @@ public partial class MainWindow : Window
                     _editedBattleCompositeComponentAssets[(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId)] = updated;
                     break;
                 }
-                case SpriteAssetKind.PartCompositePreview:
+                case SpriteAssetKind.PartCompositeEditableSprite:
+                    await DisplayAlertAsync("Import Not Supported", "Use drawing tools for unique editable sprites. PNG import is not wired for the deduplicated editable-sprite list yet.", "OK");
+                    return;
+                case SpriteAssetKind.PartCompositeDescriptorPiece:
                 {
                     var current = GetEditableLargePartDisplayAsset(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId);
                     var preview = GetOrBuildSpritePreviewState(_selectedSpriteNode);
@@ -1999,6 +2804,12 @@ public partial class MainWindow : Window
                     _editedLargePartDisplayAssets[(_selectedSpriteNode.PrimaryId, current.VariantSelector)] = ImportLargePartDisplayFromPng(path, current, preview);
                     break;
                 }
+                case SpriteAssetKind.PartCompositePreview:
+                case SpriteAssetKind.PartCompositeParsedDescriptor:
+                case SpriteAssetKind.MedabotLargePreview:
+                case SpriteAssetKind.MedabotBattlePreview:
+                    await DisplayAlertAsync("Read Only", "This view is readonly. Use Editable Sprites to import changes.", "OK");
+                    return;
             }
 
             _hasCapturedUndoForCurrentStroke = false;
@@ -2025,6 +2836,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_selectedSpriteNode.AssetKind is SpriteAssetKind.MedabotLargePreview or SpriteAssetKind.MedabotBattlePreview)
+        {
+            await DisplayAlertAsync("Read Only", "Bot preview nodes are readonly. Stage changes from the underlying sprite assets instead.", "OK");
+            return;
+        }
+
         try
         {
             var stagedAnything = false;
@@ -2042,7 +2859,27 @@ public partial class MainWindow : Window
                     StageBattleCompositeComponentEdit(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.SecondaryId, editedComponent);
                     stagedAnything = true;
                     break;
-                case SpriteAssetKind.PartCompositePreview:
+                case SpriteAssetKind.PartCompositeEditableSprite:
+                {
+                    var selectedReference = GetPreviewEditableLargeDisplaySpriteReference(_selectedSpriteNode);
+                    foreach (var part in _loadedParts.Where(part => part.MedabotId == _selectedSpriteNode.PrimaryId).OrderBy(part => part.Kind).ThenBy(part => part.Id))
+                    {
+                        foreach (var (componentIndex, _) in PartSpriteDisplayLayout.GetPreviewComponentEntriesForPartKind(part.Kind))
+                        {
+                            var asset = GetEditableLargePartDisplayAsset(part.Id, componentIndex);
+                            if (!asset.Pieces.Any(piece => piece.ImageOffset == selectedReference.Piece.ImageOffset))
+                            {
+                                continue;
+                            }
+
+                            StageLargeDisplayEdit(part.Id, asset.VariantSelector, asset);
+                            stagedAnything = true;
+                        }
+                    }
+
+                    break;
+                }
+                case SpriteAssetKind.PartCompositeDescriptorPiece:
                 {
                     var part = GetRequiredPartDefinition(_selectedSpriteNode.PrimaryId);
                     var variantSelector = PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, _selectedSpriteNode.SecondaryId);
@@ -2054,6 +2891,12 @@ public partial class MainWindow : Window
 
                     break;
                 }
+                case SpriteAssetKind.PartCompositePreview:
+                case SpriteAssetKind.PartCompositeParsedDescriptor:
+                case SpriteAssetKind.MedabotLargePreview:
+                case SpriteAssetKind.MedabotBattlePreview:
+                    SpritePatchStatusLabel.Text = "Status: this view is readonly. Stage changes from Editable Sprites instead.";
+                    return;
             }
 
             if (!stagedAnything)
@@ -2074,6 +2917,154 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void OnApplyParsedDescriptorChangesClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_selectedSpriteNode is null || _selectedSpriteNode.AssetKind != SpriteAssetKind.PartCompositeParsedDescriptor)
+        {
+            return;
+        }
+
+        try
+        {
+            var updatedX = int.Parse(ParsedDescriptorXEntry.Text);
+            var updatedY = int.Parse(ParsedDescriptorYEntry.Text);
+            var siblingId = byte.Parse(ParsedDescriptorSiblingEntry.Text);
+            var childId = byte.Parse(ParsedDescriptorChildEntry.Text);
+            var paletteBank = byte.Parse(ParsedDescriptorPaletteBankEntry.Text);
+            var rawWidth = byte.Parse(ParsedDescriptorWidthEntry.Text);
+            var rawHeight = byte.Parse(ParsedDescriptorHeightEntry.Text);
+            var divisors = byte.Parse(ParsedDescriptorDivisorsEntry.Text);
+            var raw0C = byte.Parse(ParsedDescriptorRaw0CEntry.Text);
+            var raw0D = byte.Parse(ParsedDescriptorRaw0DEntry.Text);
+            var raw0E = byte.Parse(ParsedDescriptorRaw0EEntry.Text);
+            var raw15 = byte.Parse(ParsedDescriptorRaw15Entry.Text);
+            var raw16 = byte.Parse(ParsedDescriptorRaw16Entry.Text);
+            var raw17 = byte.Parse(ParsedDescriptorRaw17Entry.Text);
+
+            ApplyParsedDescriptorChanges(_selectedSpriteNode.PrimaryId, _selectedSpriteNode.DataOffset, updatedX, updatedY, siblingId, childId, paletteBank, rawWidth, rawHeight, divisors, raw0C, raw0D, raw0E, raw15, raw16, raw17);
+            _hasCapturedUndoForCurrentStroke = false;
+            InvalidateSelectedSpritePreview();
+            RefreshSharedSpriteConsumers();
+            SpritePatchStatusLabel.Text = $"Status: updated parsed descriptor 0x{_selectedSpriteNode.DataOffset:X6}.";
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("Descriptor Update Failed", ex.Message, "OK");
+        }
+    }
+
+    private void ApplyParsedDescriptorChanges(int representativePartId, int recordOffset, int x, int y, byte siblingId, byte childId, byte paletteBank, byte rawWidth, byte rawHeight, byte sizeDivisors, byte raw0C, byte raw0D, byte raw0E, byte raw15, byte raw16, byte raw17)
+    {
+        var part = GetRequiredPartDefinition(representativePartId);
+        var componentIndex = _selectedSpriteNode?.SecondaryId ?? 0;
+        var asset = GetEditableLargePartDisplayAsset(part.Id, componentIndex);
+        var pieceIndex = Array.FindIndex(asset.Pieces.ToArray(), piece => piece.RecordOffset == recordOffset);
+        LargePartDisplayAsset updatedAsset;
+        if (pieceIndex >= 0)
+        {
+            var updatedPieces = asset.Pieces.ToArray();
+            updatedPieces[pieceIndex] = UpdateDescriptorPieceMetadata(updatedPieces[pieceIndex], x, y, siblingId, childId, paletteBank, rawWidth, rawHeight, sizeDivisors, raw0C, raw0D, raw0E, raw15, raw16, raw17);
+            updatedAsset = asset with { Pieces = updatedPieces };
+        }
+        else
+        {
+            var record = GetParsedDescriptorRecord(_selectedSpriteNode!);
+            var syntheticPiece = CreateSyntheticDescriptorOnlyPiece(record, x, y, siblingId, childId, paletteBank, rawWidth, rawHeight, sizeDivisors, raw0C, raw0D, raw0E, raw15, raw16, raw17);
+            updatedAsset = asset with { Pieces = asset.Pieces.Concat([syntheticPiece]).OrderBy(piece => piece.DescriptorId).ThenBy(piece => piece.RecordOffset).ToArray() };
+        }
+
+        _editedLargePartDisplayAssets[(part.Id, asset.VariantSelector)] = updatedAsset;
+        StageLargeDisplayEdit(part.Id, asset.VariantSelector, updatedAsset);
+    }
+
+    private static LargePartDisplayPieceAsset UpdateDescriptorPieceMetadata(LargePartDisplayPieceAsset piece, int x, int y, byte siblingId, byte childId, byte paletteBank, byte rawWidth, byte rawHeight, byte sizeDivisors, byte raw0C, byte raw0D, byte raw0E, byte raw15, byte raw16, byte raw17)
+    {
+        var descriptorBytes = piece.DescriptorRecordBytes.ToArray();
+        BitConverter.GetBytes(-x).CopyTo(descriptorBytes, 0x04);
+        BitConverter.GetBytes(-y).CopyTo(descriptorBytes, 0x08);
+        descriptorBytes[0x0C] = raw0C;
+        descriptorBytes[0x0D] = raw0D;
+        descriptorBytes[0x0E] = raw0E;
+        descriptorBytes[0x0F] = siblingId;
+        descriptorBytes[0x10] = childId;
+        descriptorBytes[0x11] = paletteBank;
+        descriptorBytes[0x12] = rawWidth;
+        descriptorBytes[0x13] = rawHeight;
+        descriptorBytes[0x14] = sizeDivisors;
+        descriptorBytes[0x15] = raw15;
+        descriptorBytes[0x16] = raw16;
+        descriptorBytes[0x17] = raw17;
+
+        var widthDivisor = Math.Max(1, sizeDivisors & 0x0F);
+        var heightDivisor = Math.Max(1, sizeDivisors >> 4);
+        var effectiveWidth = Math.Max(8, rawWidth / widthDivisor);
+        var effectiveHeight = Math.Max(8, rawHeight / heightDivisor);
+        var tileWidth = Math.Max(1, effectiveWidth / 8);
+        var tileHeight = Math.Max(1, effectiveHeight / 8);
+        var pixelCapacity = Math.Max(piece.Image.PixelIndices.Length, tileWidth * tileHeight * 64);
+        var pixelIndices = new byte[pixelCapacity];
+        Array.Copy(piece.Image.PixelIndices, pixelIndices, Math.Min(piece.Image.PixelIndices.Length, pixelIndices.Length));
+
+        return piece with
+        {
+            DescriptorRecordBytes = descriptorBytes,
+            X = x,
+            Y = y,
+            SiblingDescriptorId = siblingId,
+            ChildDescriptorId = childId,
+            PaletteBank = paletteBank,
+            RawWidth = rawWidth,
+            RawHeight = rawHeight,
+            SizeDivisors = sizeDivisors,
+            Image = new IndexedImage(tileWidth, tileHeight, pixelIndices, piece.Image.PaletteBytes.ToArray())
+        };
+    }
+
+    private static LargePartDisplayPieceAsset CreateSyntheticDescriptorOnlyPiece(LargePartDisplayDescriptorRecord record, int x, int y, byte siblingId, byte childId, byte paletteBank, byte rawWidth, byte rawHeight, byte sizeDivisors, byte raw0C, byte raw0D, byte raw0E, byte raw15, byte raw16, byte raw17)
+    {
+        var descriptorBytes = record.DescriptorRecordBytes.ToArray();
+        BitConverter.GetBytes(-x).CopyTo(descriptorBytes, 0x04);
+        BitConverter.GetBytes(-y).CopyTo(descriptorBytes, 0x08);
+        descriptorBytes[0x0C] = raw0C;
+        descriptorBytes[0x0D] = raw0D;
+        descriptorBytes[0x0E] = raw0E;
+        descriptorBytes[0x0F] = siblingId;
+        descriptorBytes[0x10] = childId;
+        descriptorBytes[0x11] = paletteBank;
+        descriptorBytes[0x12] = rawWidth;
+        descriptorBytes[0x13] = rawHeight;
+        descriptorBytes[0x14] = sizeDivisors;
+        descriptorBytes[0x15] = raw15;
+        descriptorBytes[0x16] = raw16;
+        descriptorBytes[0x17] = raw17;
+        var widthDivisor = Math.Max(1, sizeDivisors & 0x0F);
+        var heightDivisor = Math.Max(1, sizeDivisors >> 4);
+        var tileWidth = Math.Max(1, Math.Max(8, rawWidth / widthDivisor) / 8);
+        var tileHeight = Math.Max(1, Math.Max(8, rawHeight / heightDivisor) / 8);
+        return new LargePartDisplayPieceAsset(
+            record.DescriptorId,
+            record.AppearanceEntryOffset,
+            record.RecordOffset,
+            descriptorBytes,
+            0,
+            0,
+            record.ImageOffset,
+            record.PaletteOffset,
+            new byte[ImageAssetRepository.PaletteSize],
+            paletteBank,
+            x,
+            y,
+            siblingId,
+            childId,
+            rawWidth,
+            rawHeight,
+            sizeDivisors,
+            1,
+            false,
+            false,
+            new IndexedImage(tileWidth, tileHeight, new byte[tileWidth * tileHeight * 64], new byte[ImageAssetRepository.PaletteSize]));
+    }
+
     private void StageOverworldSpriteEdit(int spriteId, SpriteAsset editedAsset)
     {
         ProjectEditCollection.Upsert(_project, ProjectEditAdapters.OverworldSprite, CloneSpriteAsset(editedAsset));
@@ -2091,7 +3082,9 @@ public partial class MainWindow : Window
 
     private void StageLargeDisplayEdit(int partId, int variantSelector, LargePartDisplayAsset editedAsset)
     {
-        ProjectEditCollection.Upsert(_project, ProjectEditAdapters.LargeDisplaySprite, CloneLargePartDisplayAsset(editedAsset));
+        var cloned = CloneLargePartDisplayAsset(editedAsset);
+        var existing = ProjectEditCollection.Find(_project, ProjectEditAdapters.LargeDisplaySprite, (partId, variantSelector));
+        ProjectEditCollection.Upsert(_project, ProjectEditAdapters.LargeDisplaySprite, existing is null ? cloned : MergeLargeDisplayAssets(existing, cloned));
     }
 
     private void RemoveStagedOverworldSprite(int spriteId)
@@ -2240,11 +3233,12 @@ public partial class MainWindow : Window
         converted.CopyPixels(pixels, source.PixelWidth * 4, 0);
 
         var updatedPieces = referenceAsset.Pieces
-            .Select(piece => piece with
-            {
-                PaletteBytes = piece.PaletteBytes.ToArray(),
-                Image = new IndexedImage(piece.Image.TileWidth, piece.Image.TileHeight, piece.Image.PixelIndices.ToArray(), piece.Image.PaletteBytes.ToArray())
-            })
+                .Select(piece => piece with
+                {
+                    DescriptorRecordBytes = piece.DescriptorRecordBytes.ToArray(),
+                    PaletteBytes = piece.PaletteBytes.ToArray(),
+                    Image = new IndexedImage(piece.Image.TileWidth, piece.Image.TileHeight, piece.Image.PixelIndices.ToArray(), piece.Image.PaletteBytes.ToArray())
+                })
             .ToArray();
 
         if (preview.Pieces is null)

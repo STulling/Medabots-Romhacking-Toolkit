@@ -20,8 +20,8 @@ public sealed partial class ImageAssetPatcher
 
             var packed = TileImageCodec.Pack4BppTiles(piece.Image.PixelIndices);
             var compressed = GbaLz77.Compress(packed);
-            var imageOffset = ResolveWriteOffset(session.RomFile, piece.ImageOffset, compressed.Length, nextExpansionOffset, GbaLz77.TryGetEncodedLength);
-            nextExpansionOffset = imageOffset == piece.ImageOffset ? nextExpansionOffset : Align(imageOffset + compressed.Length, 4);
+            var imageOffset = Align(Math.Max(nextExpansionOffset, expansionStartOffset), 4);
+            nextExpansionOffset = Align(imageOffset + compressed.Length, 4);
 
             session.ApplyPatch(RomPatchAction.Create(imageOffset, compressed, $"Write large part display {asset.PartId} variant {asset.VariantSelector} descriptor {piece.DescriptorId} image"));
             BitConverter.TryWriteBytes(pointer, GbaPointer.ToRomAddress(imageOffset));
@@ -41,8 +41,8 @@ public sealed partial class ImageAssetPatcher
 
         foreach (var paletteWrite in paletteWrites)
         {
-            var paletteOffset = ResolveWriteOffset(session.RomFile, paletteWrite.Value.CurrentOffset, paletteWrite.Value.PaletteBytes.Length, nextExpansionOffset, null);
-            nextExpansionOffset = paletteOffset == paletteWrite.Value.CurrentOffset ? nextExpansionOffset : Align(paletteOffset + paletteWrite.Value.PaletteBytes.Length, 4);
+            var paletteOffset = Align(Math.Max(nextExpansionOffset, expansionStartOffset), 4);
+            nextExpansionOffset = Align(paletteOffset + paletteWrite.Value.PaletteBytes.Length, 4);
 
             session.ApplyPatch(RomPatchAction.Create(paletteOffset, paletteWrite.Value.PaletteBytes, $"Write large part display {asset.PartId} variant {asset.VariantSelector} descriptor {paletteWrite.Value.DescriptorId} palette"));
             BitConverter.TryWriteBytes(pointer, GbaPointer.ToRomAddress(paletteOffset));

@@ -58,7 +58,9 @@ public sealed class RomHackProjectTests
                 {
                     new LargePartDisplayPieceAsset(
                         4,
+                        0x600000,
                         0x654321,
+                        new byte[0x18],
                         0x15,
                         0x25,
                         0x35,
@@ -67,7 +69,14 @@ public sealed class RomHackProjectTests
                         8,
                         1,
                         2,
+                        3,
+                        4,
+                        32,
+                        32,
+                        0x11,
                         1,
+                        false,
+                        false,
                         new IndexedImage(1, 1, [1, 1, 1, 1, 1, 1, 1, 1], new byte[32]))
                 }));
             project.BattleEdits.Add(new BattleDefinition(5, 0x1000, 0x2000, 17, 1, 3, 1, [new BattleBot(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0), new BattleBot(12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 0), new BattleBot(23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 0)]));
@@ -80,7 +89,7 @@ public sealed class RomHackProjectTests
             var loaded = await RomHackProjectSerializer.LoadAsync(tempFile);
 
             Assert.Equal(project.Name, loaded.Name);
-            Assert.Equal(project.SourceRomPath, loaded.SourceRomPath);
+            Assert.Null(loaded.SourceRomPath);
             Assert.Equal(project.TextProfileId, loaded.TextProfileId);
             Assert.Single(loaded.PendingActions);
             Assert.Equal(0x1234, loaded.PendingActions[0].Offset);
@@ -137,6 +146,37 @@ public sealed class RomHackProjectTests
             Assert.Equal(16, loaded.MapLayerPatches[0].MapId);
             Assert.Equal([0x0001, 0x1002, 0x2003, 0x3004], loaded.MapLayerPatches[0].TileEntries);
             Assert.Equal([449, 450], loaded.SplitLargeDisplayPartIds.OrderBy(id => id).ToArray());
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+            {
+                File.Delete(tempFile);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Serializer_DoesNotPersistSourceRomPath()
+    {
+        var tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.medahack.json");
+
+        try
+        {
+            var project = new RomHackProject
+            {
+                Name = "Portable Project",
+                SourceRomPath = @"C:\roms\private-copy.gba",
+                TextProfileId = "MEDABOTSRKSVA9BPE9"
+            };
+
+            await RomHackProjectSerializer.SaveAsync(project, tempFile);
+            var json = await File.ReadAllTextAsync(tempFile);
+            var loaded = await RomHackProjectSerializer.LoadAsync(tempFile);
+
+            Assert.DoesNotContain("private-copy.gba", json);
+            Assert.Null(loaded.SourceRomPath);
+            Assert.Equal("MEDABOTSRKSVA9BPE9", loaded.TextProfileId);
         }
         finally
         {

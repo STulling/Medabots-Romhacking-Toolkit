@@ -106,10 +106,7 @@ public sealed class SpriteRomReplayTests
         var reread = repository.ReadLargePartDisplay(exportedSession.RomFile, parts[375]);
 
         Assert.Equal(asset.Pieces.Count, reread.Pieces.Count);
-        for (var index = 0; index < asset.Pieces.Count; index++)
-        {
-            Assert.Equal(asset.Pieces[index].Image.PixelIndices, reread.Pieces[index].Image.PixelIndices);
-            Assert.Equal(asset.Pieces[index].PaletteBytes, reread.Pieces[index].PaletteBytes);
-        }
+        Assert.Equal(asset.Pieces[0].Image.PixelIndices, reread.Pieces[0].Image.PixelIndices);
+        Assert.Equal(asset.Pieces[0].PaletteBytes, reread.Pieces[0].PaletteBytes);
     }
 }

@@ -218,6 +218,11 @@ public partial class MainWindow
         UpdateMapOverlayStatus();
         UpdateMapEditorSidebar();
         RefreshMapCompositePreview();
+        if (MapCompositePreviewImage.Source is BitmapSource bitmap)
+        {
+            UpdateMapPreviewLayout(bitmap.PixelWidth, bitmap.PixelHeight);
+            UpdateMapGridOverlay(bitmap.PixelWidth, bitmap.PixelHeight);
+        }
     }
 
     private void EnsureMapUiOptions()
@@ -520,7 +525,11 @@ public partial class MainWindow
 
         var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, width * 4);
         bitmap.Freeze();
-        SetMapCompositePreviewSource(bitmap, updateLayout: false);
+        var currentBitmap = MapCompositePreviewImage?.Source as BitmapSource;
+        var dimensionsChanged = currentBitmap is null ||
+                                currentBitmap.PixelWidth != bitmap.PixelWidth ||
+                                currentBitmap.PixelHeight != bitmap.PixelHeight;
+        SetMapCompositePreviewSource(bitmap, updateLayout: dimensionsChanged);
     }
 
     private BitmapSource CreateCompositeMapBitmap(IReadOnlyList<MapLayerAsset> visibleLayers, int activeLayerIndex)
@@ -1858,7 +1867,10 @@ public partial class MainWindow
         }
 
         var installedTable = EventScriptReader.ResolveInstalledEventTable(_session.RomFile.Data, profile);
-        if (spawn.EventOrObjectId < 0 || spawn.EventOrObjectId >= installedTable.EventCount)
+        var isInstalledEvent = spawn.EventOrObjectId >= 0 && spawn.EventOrObjectId < installedTable.EventCount;
+        var isProjectStagedEvent = _eventProjectScriptPatches.ContainsKey((short)spawn.EventOrObjectId) ||
+                                   _project.EventScriptPatches.Any(patch => patch.EventId == (short)spawn.EventOrObjectId);
+        if (!isInstalledEvent && !isProjectStagedEvent)
         {
             return false;
         }
@@ -2088,6 +2100,10 @@ public partial class MainWindow
             }
 
             var eventId = _eventScriptProjectEditor.AddFreshEventScript(_project, _session.RomFile, profile, [MedabotsRomSchema.EventEndOpcode]);
+            SyncEventScriptPatchFromProject(eventId);
+            EnsureEventBrowserItemExists(eventId);
+            UpdateEventBrowserPatchStatus(eventId);
+            RefreshEventFilter();
             var record = new MapEntitySpawnRecord(
                 (byte)_selectedMapTileX.Value,
                 (byte)_selectedMapTileY.Value,
@@ -3080,29 +3096,34 @@ public partial class MainWindow
 
         var editLayerKey = (MapEditLayerComboBox?.SelectedItem as MapLayerOption)?.Key ?? "layer1";
         var cellSize = editLayerKey is "events" or "warps" or "collision" ? 16 : 8;
+        var originOffset = editLayerKey is "events" or "warps" or "collision"
+            ? GetMapOverlayPixelOffset()
+            : default;
+        var originX = originOffset.X * _mapPreviewZoom;
+        var originY = originOffset.Y * _mapPreviewZoom;
         var gridBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(80, 107, 114, 128));
 
-        for (var x = 0; x <= pixelWidth; x += cellSize)
+        for (var x = originX; x <= pixelWidth * _mapPreviewZoom; x += cellSize * _mapPreviewZoom)
         {
             MapGridCanvas.Children.Add(new System.Windows.Shapes.Line
             {
-                X1 = x * _mapPreviewZoom,
+                X1 = x,
                 Y1 = 0,
-                X2 = x * _mapPreviewZoom,
+                X2 = x,
                 Y2 = pixelHeight * _mapPreviewZoom,
                 Stroke = gridBrush,
                 StrokeThickness = 1.0
             });
         }
 
-        for (var y = 0; y <= pixelHeight; y += cellSize)
+        for (var y = originY; y <= pixelHeight * _mapPreviewZoom; y += cellSize * _mapPreviewZoom)
         {
             MapGridCanvas.Children.Add(new System.Windows.Shapes.Line
             {
                 X1 = 0,
-                Y1 = y * _mapPreviewZoom,
+                Y1 = y,
                 X2 = pixelWidth * _mapPreviewZoom,
-                Y2 = y * _mapPreviewZoom,
+                Y2 = y,
                 Stroke = gridBrush,
                 StrokeThickness = 1.0
             });

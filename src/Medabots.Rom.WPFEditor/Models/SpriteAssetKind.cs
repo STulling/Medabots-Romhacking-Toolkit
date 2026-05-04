@@ -7,5 +7,10 @@ public enum SpriteAssetKind
     Portrait = 2,
     BattleCompositePartComponent = 3,
     PartCompositePreview = 4,
-    MapTileset = 5
+    MapTileset = 5,
+    PartCompositeDescriptorPiece = 6,
+    PartCompositeParsedDescriptor = 7,
+    PartCompositeEditableSprite = 8,
+    MedabotLargePreview = 9,
+    MedabotBattlePreview = 10
 }

@@ -13,6 +13,12 @@ public sealed class SpriteBrowserNode : INotifyPropertyChanged
     public SpriteAssetKind AssetKind { get; init; }
     public int PrimaryId { get; init; } = -1;
     public int SecondaryId { get; init; } = -1;
+    public int TertiaryId { get; init; } = -1;
+    public int DataOffset { get; init; } = -1;
+    public int SharedSourcePrimaryId { get; init; } = -1;
+    public int SharedSourceSecondaryId { get; init; } = -1;
+    public int SharedSourceTertiaryId { get; init; } = -1;
+    public bool CanSplitSharedDescriptor { get; init; }
     public bool IsAsset => AssetKind != SpriteAssetKind.Group;
     public ObservableCollection<SpriteBrowserNode> Children { get; } = [];
 

@@ -1,4 +1,5 @@
 using Medabots.Rom.Metadata;
+using Medabots.Rom.Projects;
 
 namespace Medabots.Rom.Events;
 
@@ -34,6 +35,16 @@ public sealed partial class EventInstructionPatcher
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(serializedScript);
 
-        WriteRelocatedEvent(session, profile, eventId, serializedScript, description);
+        session.ApplyPatches(BuildRewriteActions(session.RomFile, profile, eventId, serializedScript, description, new FreeSpaceAllocator(FreeSpaceAllocator.AlignUp(Math.Max(session.RomFile.Length, 0x800000), 4))));
+    }
+
+    public IReadOnlyList<RomPatchAction> BuildRewriteActions(RomFile romFile, MedabotsRomTextProfile profile, short eventId, byte[] serializedScript, string description, FreeSpaceAllocator allocator)
+    {
+        ArgumentNullException.ThrowIfNull(romFile);
+        ArgumentNullException.ThrowIfNull(profile);
+        ArgumentNullException.ThrowIfNull(serializedScript);
+        ArgumentNullException.ThrowIfNull(allocator);
+
+        return BuildRelocatedEventActions(romFile, profile, eventId, serializedScript, description, allocator);
     }
 }

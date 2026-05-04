@@ -110,11 +110,73 @@ public sealed class SpriteProjectReplayTests
 
         var reread = repository.ReadLargePartDisplay(targetSession.RomFile, parts[375]);
         Assert.Equal(asset.Pieces.Count, reread.Pieces.Count);
-        for (var index = 0; index < asset.Pieces.Count; index++)
+        Assert.Equal(asset.Pieces[0].Image.PixelIndices, reread.Pieces[0].Image.PixelIndices);
+        Assert.Equal(asset.Pieces[0].PaletteBytes, reread.Pieces[0].PaletteBytes);
+    }
+
+    [Fact]
+    public async Task ProjectSerializerAndApplicator_EditingPipoHammerLargeDisplayB_DoesNotChangeLargeDisplayA()
+    {
+        var sourceRom = await RomFile.LoadAsync(TestRomLocator.FindWorkspaceRom());
+        var repository = new ImageAssetRepository();
+        var parts = new PartTableReader().ReadAll(sourceRom);
+        var part = parts[170];
+        var originalA = repository.ReadLargePartDisplay(sourceRom, part, 0);
+        var editedB = repository.ReadLargePartDisplay(sourceRom, part, 1);
+
+        editedB.Pieces[^1].Image.PixelIndices[0] = (byte)((editedB.Pieces[^1].Image.PixelIndices[0] + 1) & 0x0F);
+        editedB.Pieces[^1].Image.PixelIndices[1] = (byte)((editedB.Pieces[^1].Image.PixelIndices[1] + 2) & 0x0F);
+
+        var project = new RomHackProject
         {
-            Assert.Equal(asset.Pieces[index].Image.PixelIndices, reread.Pieces[index].Image.PixelIndices);
-            Assert.Equal(asset.Pieces[index].PaletteBytes, reread.Pieces[index].PaletteBytes);
-        }
+            Name = "Pipo Hammer Large Display Variant Isolation"
+        };
+        project.LargePartDisplayEdits.Add(editedB);
+        var loadedProject = await RoundTripProjectAsync(project);
+        var targetSession = RomHackSession.FromRomFile(new RomFile("target-project-large-pipo.gba", sourceRom.Data.ToArray()));
+        new RomHackProjectApplicator().Apply(loadedProject, targetSession);
+
+        var rereadA = repository.ReadLargePartDisplay(targetSession.RomFile, part, 0);
+        var rereadB = repository.ReadLargePartDisplay(targetSession.RomFile, part, 1);
+
+        Assert.Equal(LargePartDisplayTestHelpers.ComputeSignature(originalA), LargePartDisplayTestHelpers.ComputeSignature(rereadA));
+        Assert.NotEqual(LargePartDisplayTestHelpers.ComputeSignature(repository.ReadLargePartDisplay(sourceRom, part, 1)), LargePartDisplayTestHelpers.ComputeSignature(rereadB));
+    }
+
+    [Fact]
+    public async Task ProjectSerializerAndApplicator_EditingPipoHammerLargeDisplayADescriptor15_DoesNotChangeDescriptor14()
+    {
+        var sourceRom = await RomFile.LoadAsync(TestRomLocator.FindWorkspaceRom());
+        var repository = new ImageAssetRepository();
+        var parts = new PartTableReader().ReadAll(sourceRom);
+        var part = parts[170];
+        var originalA = repository.ReadLargePartDisplay(sourceRom, part, 0);
+        var editedA = repository.ReadLargePartDisplay(sourceRom, part, 0);
+        var descriptor14Before = originalA.Pieces.Single(piece => piece.DescriptorId == 14);
+        var descriptor15 = editedA.Pieces.Single(piece => piece.DescriptorId == 15);
+
+        descriptor15.Image.PixelIndices[0] = (byte)((descriptor15.Image.PixelIndices[0] + 3) & 0x0F);
+        descriptor15.Image.PixelIndices[8] = (byte)((descriptor15.Image.PixelIndices[8] + 5) & 0x0F);
+
+        var project = new RomHackProject
+        {
+            Name = "Pipo Hammer Descriptor Isolation"
+        };
+        project.LargePartDisplayEdits.Add(editedA);
+        var loadedProject = await RoundTripProjectAsync(project);
+        var targetSession = RomHackSession.FromRomFile(new RomFile("target-project-large-pipo-a.gba", sourceRom.Data.ToArray()));
+        new RomHackProjectApplicator().Apply(loadedProject, targetSession);
+
+        var rereadA = repository.ReadLargePartDisplay(targetSession.RomFile, part, 0);
+        var descriptor14After = rereadA.Pieces.Single(piece => piece.DescriptorId == 14).Image.PixelIndices;
+        var descriptor15After = rereadA.Pieces.Single(piece => piece.DescriptorId == 15).Image.PixelIndices;
+        var descriptor14PointerAfter = BitConverter.ToUInt32(targetSession.RomFile.Data, descriptor14Before.ImagePointerOffset);
+        var descriptor14PointerBefore = BitConverter.ToUInt32(sourceRom.Data, descriptor14Before.ImagePointerOffset);
+
+        Assert.Equal(descriptor14Before.Image.PixelIndices, descriptor14After);
+        Assert.Equal(descriptor14PointerBefore, descriptor14PointerAfter);
+        Assert.NotEqual(descriptor15.Image.PixelIndices.ToArray(), originalA.Pieces.Single(piece => piece.DescriptorId == 15).Image.PixelIndices);
+        Assert.Equal(descriptor15.Image.PixelIndices, descriptor15After);
     }
 
     private static async Task<RomHackProject> RoundTripProjectAsync(RomHackProject project)

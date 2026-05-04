@@ -251,7 +251,9 @@ public static class RomHackProjectSerializer
                     asset.InitialPaletteBanks.ToDictionary(entry => entry.Key, entry => Convert.FromBase64String(entry.ValueBase64)),
                     asset.Pieces.Select(piece => new Images.LargePartDisplayPieceAsset(
                         piece.DescriptorId,
+                        piece.AppearanceEntryOffset,
                         piece.RecordOffset,
+                        Convert.FromBase64String(piece.DescriptorRecordBytesBase64),
                         piece.ImagePointerOffset,
                         piece.PalettePointerOffset,
                         piece.ImageOffset,
@@ -260,7 +262,14 @@ public static class RomHackProjectSerializer
                         piece.PaletteBank,
                         piece.X,
                         piece.Y,
+                        piece.SiblingDescriptorId,
+                        piece.ChildDescriptorId,
+                        piece.RawWidth,
+                        piece.RawHeight,
+                        piece.SizeDivisors,
                         piece.LoadedTileCount,
+                        piece.MirrorDisplayHorizontally,
+                        piece.ForceIndependentSource,
                         piece.Image.ToIndexedImage())).ToArray()));
             }
 
@@ -341,7 +350,7 @@ public static class RomHackProjectSerializer
             return new RomHackProjectDocument
             {
                 Name = project.Name,
-                SourceRomPath = project.SourceRomPath,
+                SourceRomPath = null,
                 TextProfileId = project.TextProfileId,
                 PendingActions = project.PendingActions
                     .Select(action => new RomPatchActionDocument
@@ -512,7 +521,9 @@ public static class RomHackProjectSerializer
                             .Select(piece => new LargePartDisplayPieceAssetDocument
                             {
                                 DescriptorId = piece.DescriptorId,
+                                AppearanceEntryOffset = piece.AppearanceEntryOffset,
                                 RecordOffset = piece.RecordOffset,
+                                DescriptorRecordBytesBase64 = Convert.ToBase64String(piece.DescriptorRecordBytes),
                                 ImagePointerOffset = piece.ImagePointerOffset,
                                 PalettePointerOffset = piece.PalettePointerOffset,
                                 ImageOffset = piece.ImageOffset,
@@ -521,7 +532,14 @@ public static class RomHackProjectSerializer
                                 PaletteBank = piece.PaletteBank,
                                 X = piece.X,
                                 Y = piece.Y,
+                                SiblingDescriptorId = piece.SiblingDescriptorId,
+                                ChildDescriptorId = piece.ChildDescriptorId,
+                                RawWidth = piece.RawWidth,
+                                RawHeight = piece.RawHeight,
+                                SizeDivisors = piece.SizeDivisors,
                                 LoadedTileCount = piece.LoadedTileCount,
+                                MirrorDisplayHorizontally = piece.MirrorDisplayHorizontally,
+                                ForceIndependentSource = piece.ForceIndependentSource,
                                 Image = IndexedImageDocument.FromIndexedImage(piece.Image)
                             })
                             .ToList()
@@ -785,7 +803,9 @@ public static class RomHackProjectSerializer
     private sealed class LargePartDisplayPieceAssetDocument
     {
         public int DescriptorId { get; set; }
+        public int AppearanceEntryOffset { get; set; }
         public int RecordOffset { get; set; }
+        public string DescriptorRecordBytesBase64 { get; set; } = string.Empty;
         public int ImagePointerOffset { get; set; }
         public int PalettePointerOffset { get; set; }
         public int ImageOffset { get; set; }
@@ -794,7 +814,14 @@ public static class RomHackProjectSerializer
         public int PaletteBank { get; set; }
         public int X { get; set; }
         public int Y { get; set; }
+        public byte SiblingDescriptorId { get; set; }
+        public byte ChildDescriptorId { get; set; }
+        public byte RawWidth { get; set; }
+        public byte RawHeight { get; set; }
+        public byte SizeDivisors { get; set; }
         public int LoadedTileCount { get; set; }
+        public bool MirrorDisplayHorizontally { get; set; }
+        public bool ForceIndependentSource { get; set; }
         public IndexedImageDocument Image { get; set; } = new();
     }
 

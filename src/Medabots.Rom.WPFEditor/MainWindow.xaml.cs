@@ -118,6 +118,7 @@ public partial class MainWindow : Window
     private readonly List<BattleLoadoutOption> _battleLegsOptions = [];
     private readonly List<BrowserItem> _battleMedalOptions = [];
     private readonly List<BrowserItem> _battleLevelOptions = [];
+    private readonly List<BrowserItem> _botBattleFacingOptions = [];
 
     private RomHackSession? _session;
     private RomHackProject _project = new();
@@ -134,6 +135,7 @@ public partial class MainWindow : Window
     private bool _isPanningSpritePreview;
     private bool _isUpdatingSpritePaletteFamilyUi;
     private bool _isWindowFullyInitialized;
+    private int _selectedBotBattleFacing;
     private WpfPoint _spritePanStartPoint;
     private double _spritePanStartHorizontalOffset;
     private double _spritePanStartVerticalOffset;
@@ -176,11 +178,14 @@ public partial class MainWindow : Window
         _battleCycleEntryOptions.AddRange(Enumerable.Range(0, 16).Select(value => new BrowserItem(value, $"{value:D2}  {GetBattleCycleEntryName((byte)value)}")));
         _battleMedalOptions.AddRange(Enumerable.Range(0, _metadata.Catalog.Medals.Count).Select(id => new BrowserItem(id, $"{id:D3}  {_metadata.GetMedalName(id)}")));
         _battleLevelOptions.AddRange(Enumerable.Range(0, 101).Select(level => new BrowserItem(level, $"Level {level:D3}")));
+        _botBattleFacingOptions.Add(new BrowserItem(0, "Facing Right / Default"));
+        _botBattleFacingOptions.Add(new BrowserItem(1, "Facing Left / Mirrored"));
         PartMedalCompatibilityComboBox.ItemsSource = _partMedalOptions;
         PartSpecialityComboBox.ItemsSource = _partSpecialityOptions;
         PartTechniqueComboBox.ItemsSource = _partTechniqueOptions;
         PartGenderComboBox.ItemsSource = _partGenderOptions;
         PartLegTypeComboBox.ItemsSource = _partLegTypeOptions;
+        BotBattleFacingComboBox.ItemsSource = _botBattleFacingOptions;
         InitializeBattleCycleComboBoxes();
         InitializeBattleLoadoutComboBoxes();
         _eventOperationOptions.AddRange(_eventOperationRegistry.Definitions
@@ -222,23 +227,20 @@ public partial class MainWindow : Window
         try
         {
             var loadedProject = await RomHackProjectSerializer.LoadAsync(projectPath);
-            var romPath = await ResolveProjectRomPathAsync(loadedProject.SourceRomPath);
-            if (string.IsNullOrWhiteSpace(romPath))
+            var projectSession = await OpenCompatibleProjectSessionAsync(loadedProject);
+            if (projectSession is null)
             {
                 return;
             }
 
-            SetLoadingState(true, "Opening ROM...", 0.02);
-            var session = await RomHackSession.OpenAsync(romPath);
             loadedProject.ProjectFilePath = projectPath;
-            loadedProject.SourceRomPath = romPath;
 
-            _session = session;
+            _session = projectSession.Value.Session;
             _project = loadedProject;
+            _project.SourceRomPath = projectSession.Value.RomPath;
+            _project.TextProfileId = projectSession.Value.Profile.Id;
             PrepareProjectForEditing();
             _session.ApplyPatches(_project.PendingActions);
-            SetLoadingState(true, "Detecting profile...", 0.08);
-            TryDetectTextProfile();
             await LoadBrowsableDataAsync();
             SetLoadingState(false, string.Empty, 0);
             UpdateStatus();
@@ -377,8 +379,7 @@ public partial class MainWindow : Window
         _allSpriteNodes.AddRange(BuildSpriteTreeNodes());
         _allEncounterItems.Clear();
         _allEncounterItems.AddRange(_loadedEncounters.Select(encounter => new BrowserItem(encounter.Id, $"{encounter.Id:D3}  Battles {encounter.Battle1}/{encounter.Battle2}/{encounter.Battle3}/{encounter.Battle4}")));
-        _allEventItems.Clear();
-        _allEventItems.AddRange(Enumerable.Range(0, profile.EventCount).Select(id => new EventBrowserItem { Id = id }));
+        RebuildEventBrowserItems(profile);
         UpdateEventBrowserPatchStatuses();
 
         RefreshMessageFilter();
@@ -790,7 +791,7 @@ public partial class MainWindow : Window
         ProfileStatusLabel.Text = $"Text profile: {ResolveProfileName()}";
         SessionStatusLabel.Text = _session is null ? "No ROM loaded." : $"Loaded: {_session.RomFile.FilePath}";
         RomSizeLabel.Text = _session is null ? "ROM size: n/a" : $"ROM size: {_session.RomFile.Length:N0} bytes";
-        PatchCountLabel.Text = $"Message patches: {_allPatchItems.Count} | Event patches: {_eventProjectScriptPatches.Count} | Pending patch actions: {_project.PendingActions.Count}";
+        PatchCountLabel.Text = $"Staged messages: {stagedMessagePatchCount} | Staged events: {_eventProjectScriptPatches.Count} | Pending patch actions: {_project.PendingActions.Count}";
         FooterProjectLabel.Text = $"Project: {projectDisplayName}";
         FooterChangesLabel.Text = $"Staged changes: messages {stagedMessagePatchCount}, events {_eventProjectScriptPatches.Count}, pending patch actions {_project.PendingActions.Count}";
         FooterPathLabel.Text = romFileName;
@@ -804,36 +805,8 @@ public partial class MainWindow : Window
     private void RefreshChangesView(int stagedMessagePatchCount)
     {
         _allChangeItems.Clear();
-
-        void AddRange(string prefix, IEnumerable<string> values)
-        {
-            foreach (var value in values)
-            {
-                _allChangeItems.Add(new BrowserItem(_allChangeItems.Count, $"{prefix}: {value}"));
-            }
-        }
-
-        AddRange("Message", _project.MessagePatches.Select(patch => $"Bank {patch.Id.Bank:D3}, Index {patch.Id.Index:D3}"));
-        AddRange("Event Script", _project.EventScriptPatches.Select(patch => $"Event {patch.EventId:D4}"));
-        AddRange("Deleted Event", _project.DeletedEventScriptIds.Select(id => $"Event {id:D4}"));
-        AddRange("Event Label", _project.EventLabels.Select(label => $"Event {label.EventId:D4} @ {label.Offset:X} -> {label.Label}"));
-        AddRange("Map Spawn", _project.MapEntitySpawnPatches.Select(patch => $"Map {patch.MapId:D3} ({patch.Records.Count} records)"));
-        AddRange("Map Warp", _project.MapWarpPatches.Select(patch => $"Map {patch.MapId:D3} ({patch.Records.Count} records)"));
-        AddRange("Map Collision", _project.MapCollisionPatches.Select(patch => $"Map {patch.MapId:D3} ({patch.ColorAttributeBytes.Length} bytes)"));
-        AddRange("Map Layer", _project.MapLayerPatches.Select(patch => $"Map {patch.MapId:D3}, Layer {patch.LayerIndex + 1} ({patch.TileEntries.Length} tiles)"));
-        AddRange("Map Metadata", BuildMapMetadataChangeDescriptions());
-        AddRange("Battle", _project.BattleEdits.Select(battle => $"Battle {battle.Id:D3}"));
-        AddRange("Part", _project.PartEdits.Select(part => $"Part {part.Id:D3}"));
-        AddRange("Large Display Split", _project.SplitLargeDisplayPartIds.Select(id => $"Part {id:D3}"));
-        AddRange("Staged Overworld Sprite", _project.OverworldSpriteEdits.Select(asset => $"Sprite {asset.SpriteId:D3}"));
-        AddRange("Staged Portrait", _project.PortraitEdits.Select(asset => $"Character {asset.CharacterId:D3}, Portrait {asset.PortraitIndex:D2}"));
-        AddRange("Staged Battle Sprite", _project.BattleCompositeSpriteEdits.Select(asset => $"Medabot {asset.MedabotId:D3}, Component {asset.ComponentIndex}"));
-        AddRange("Staged Large Display", _project.LargePartDisplayEdits.Select(asset => $"Part {asset.PartId:D3}, Variant {asset.VariantSelector}"));
-        AddRange("Sprite Draft", _editedOverworldSpriteAssets.Keys.Where(id => !_project.OverworldSpriteEdits.Any(asset => asset.SpriteId == id)).Select(id => $"Overworld {id:D3}"));
-        AddRange("Sprite Draft", _editedPortraitAssets.Keys.Where(key => !_project.PortraitEdits.Any(asset => asset.CharacterId == key.CharacterId && asset.PortraitIndex == key.PortraitIndex)).Select(key => $"Portrait {key.CharacterId:D3}:{key.PortraitIndex:D2}"));
-        AddRange("Sprite Draft", _editedBattleCompositeComponentAssets.Keys.Where(key => !_project.BattleCompositeSpriteEdits.Any(asset => asset.MedabotId == key.MedabotId && asset.ComponentIndex == key.ComponentIndex)).Select(key => $"Battle {key.MedabotId:D3}/{key.ComponentIndex}"));
-        AddRange("Sprite Draft", _editedLargePartDisplayAssets.Keys.Where(key => !_project.LargePartDisplayEdits.Any(asset => asset.PartId == key.PartId && asset.VariantSelector == key.VariantSelector)).Select(key => $"Large {key.PartId:D3}/{key.VariantSelector}"));
-        AddRange("Pending Patch Action", _project.PendingActions.Select(action => $"0x{action.Offset:X6} ({action.Data.Length} bytes) {action.Description}"));
+        AddCompiledProjectChanges();
+        AddDraftChanges();
 
         _visibleChangeItems.Clear();
         foreach (var item in _allChangeItems)
@@ -845,108 +818,67 @@ public partial class MainWindow : Window
         ChangesSummaryLabel.Text = $"Total staged changes: {totalCount}{Environment.NewLine}Messages: {stagedMessagePatchCount}  |  Event scripts: {_project.EventScriptPatches.Count}  |  Battles: {_project.BattleEdits.Count}  |  Parts: {_project.PartEdits.Count}  |  Map metadata: {_project.MapMusicPatches.Count + _project.MapEncounterPatches.Count + _project.MapEncounterStatePatches.Count + _project.MapEventObjectResourcePatches.Count}  |  Map overlays/layers: {_project.MapEntitySpawnPatches.Count + _project.MapWarpPatches.Count + _project.MapCollisionPatches.Count + _project.MapLayerPatches.Count}  |  Staged sprites: {_project.OverworldSpriteEdits.Count + _project.PortraitEdits.Count + _project.BattleCompositeSpriteEdits.Count + _project.LargePartDisplayEdits.Count}";
     }
 
-    private IEnumerable<string> BuildMapMetadataChangeDescriptions()
+    private void AddCompiledProjectChanges()
     {
-        var mapIds = _project.MapEncounterPatches.Select(patch => patch.MapId)
-            .Concat(_project.MapEncounterStatePatches.Select(patch => patch.MapId))
-            .Concat(_project.MapMusicPatches.Select(patch => patch.MapId))
-            .Concat(_project.MapEventObjectResourcePatches.Select(patch => patch.MapId))
-            .Distinct()
-            .OrderBy(id => id)
-            .ToArray();
-
-        foreach (var mapId in mapIds)
+        if (_session is null)
         {
-            var sourceAsset = TryGetSourceMapTilesetAsset(mapId);
-            var title = $"Map {mapId:D3}";
-            if (sourceAsset is null)
+            foreach (var system in _projectApplicator.Systems)
             {
-                yield return title;
-                continue;
-            }
-
-            var parts = new List<string>();
-            var encounterStatePatch = _project.MapEncounterStatePatches.FirstOrDefault(candidate => candidate.MapId == mapId);
-            if (encounterStatePatch is not null && encounterStatePatch.EncounterEnabledByte != sourceAsset.EncounterEnabledByte)
-            {
-                parts.Add($"encounters {(encounterStatePatch.EncounterEnabledByte != 0 ? "enabled" : "disabled")}");
-            }
-
-            var musicPatch = _project.MapMusicPatches.FirstOrDefault(candidate => candidate.MapId == mapId);
-            if (musicPatch is not null && musicPatch.MusicId != sourceAsset.MusicId)
-            {
-                parts.Add($"music {_metadata.GetSongName(musicPatch.MusicId)} ({musicPatch.MusicId})");
-            }
-
-            var encounterPatch = _project.MapEncounterPatches.FirstOrDefault(candidate => candidate.MapId == mapId);
-            if (encounterPatch is not null)
-            {
-                parts.Add($"encounters [{encounterPatch.Battle1:D3}, {encounterPatch.Battle2:D3}, {encounterPatch.Battle3:D3}, {encounterPatch.Battle4:D3}]");
-            }
-
-            var resourcePatch = _project.MapEventObjectResourcePatches.FirstOrDefault(candidate => candidate.MapId == mapId);
-            if (resourcePatch is not null)
-            {
-                var sourceResources = sourceAsset.EventObjectResourceIds.Take(16)
-                    .Concat(Enumerable.Repeat((byte)0xFF, Math.Max(0, 16 - sourceAsset.EventObjectResourceIds.Count)))
-                    .Take(16)
-                    .ToArray();
-                var changedSlots = resourcePatch.ResourceIds
-                    .Take(16)
-                    .Select((value, index) => (Value: value, Index: index))
-                    .Where(entry => entry.Index >= sourceResources.Length || entry.Value != sourceResources[entry.Index])
-                    .Select(entry => $"S{entry.Index:X}:{(entry.Value == 0xFF ? "--" : entry.Value.ToString("X2"))}")
-                    .ToArray();
-                if (changedSlots.Length > 0)
+                foreach (var value in system.DescribeChanges(_project))
                 {
-                    parts.Add($"sprite slots {string.Join(", ", changedSlots)}");
+                    _allChangeItems.Add(new BrowserItem(_allChangeItems.Count, $"{system.DisplayName}: {value}"));
                 }
             }
 
-            if (parts.Count > 0)
-            {
-                yield return $"{title} -> {string.Join(" | ", parts)}";
-            }
+            return;
         }
 
-        if (_mapMetadataDraftMapId.HasValue && _loadedMapTileset is not null)
+        foreach (var change in _projectApplicator.BuildChanges(_project, _session.RomFile))
         {
-            var draftMapId = _mapMetadataDraftMapId.Value;
-            var sourceAsset = TryGetSourceMapTilesetAsset(draftMapId) ?? _loadedMapTileset;
-            var draftParts = new List<string>();
-
-            if (_mapMetadataDraftEncounterEnabledByte.HasValue && _mapMetadataDraftEncounterEnabledByte.Value != sourceAsset.EncounterEnabledByte)
+            _allChangeItems.Add(new BrowserItem(_allChangeItems.Count, $"{change.Owner}: {change.Description}"));
+            foreach (var action in change.Actions)
             {
-                draftParts.Add($"encounters {(_mapMetadataDraftEncounterEnabledByte.Value != 0 ? "enabled" : "disabled")}");
-            }
-
-            if (_mapMetadataDraftMusicId.HasValue && _mapMetadataDraftMusicId.Value != sourceAsset.MusicId)
-            {
-                draftParts.Add($"music {_metadata.GetSongName(_mapMetadataDraftMusicId.Value)} ({_mapMetadataDraftMusicId.Value})");
-            }
-
-            if (_mapMetadataDraftEventObjectResourceIds is { Length: > 0 } draftResources)
-            {
-                var sourceResources = sourceAsset.EventObjectResourceIds.Take(16)
-                    .Concat(Enumerable.Repeat((byte)0xFF, Math.Max(0, 16 - sourceAsset.EventObjectResourceIds.Count)))
-                    .Take(16)
-                    .ToArray();
-                var changedSlots = draftResources.Take(16)
-                    .Select((value, index) => (Value: value, Index: index))
-                    .Where(entry => entry.Index >= sourceResources.Length || entry.Value != sourceResources[entry.Index])
-                    .Select(entry => $"S{entry.Index:X}:{(entry.Value == 0xFF ? "--" : entry.Value.ToString("X2"))}")
-                    .ToArray();
-                if (changedSlots.Length > 0)
-                {
-                    draftParts.Add($"sprite slots {string.Join(", ", changedSlots)}");
-                }
-            }
-
-            if (draftParts.Count > 0)
-            {
-                yield return $"Draft Map Metadata: Map {draftMapId:D3} -> {string.Join(" | ", draftParts)}";
+                _allChangeItems.Add(new BrowserItem(_allChangeItems.Count, $"  0x{action.Offset:X6} ({action.Data.Length} bytes) {action.Description}"));
             }
         }
+    }
+
+    private void AddDraftChanges()
+    {
+        foreach (var id in _project.SplitLargeDisplayPartIds.Select(id => $"Part {id:D3}"))
+        {
+            _allChangeItems.Add(new BrowserItem(_allChangeItems.Count, $"Large Display Split: {id}"));
+        }
+
+        foreach (var id in _editedOverworldSpriteAssets.Keys.Where(id => !_project.OverworldSpriteEdits.Any(asset => asset.SpriteId == id)).Select(id => $"Overworld {id:D3}"))
+        {
+            _allChangeItems.Add(new BrowserItem(_allChangeItems.Count, $"Sprite Draft: {id}"));
+        }
+
+        foreach (var key in _editedPortraitAssets.Keys.Where(key => !_project.PortraitEdits.Any(asset => asset.CharacterId == key.CharacterId && asset.PortraitIndex == key.PortraitIndex)).Select(key => $"Portrait {key.CharacterId:D3}:{key.PortraitIndex:D2}"))
+        {
+            _allChangeItems.Add(new BrowserItem(_allChangeItems.Count, $"Sprite Draft: {key}"));
+        }
+
+        foreach (var key in _editedBattleCompositeComponentAssets.Keys.Where(key => !_project.BattleCompositeSpriteEdits.Any(asset => asset.MedabotId == key.MedabotId && asset.ComponentIndex == key.ComponentIndex)).Select(key => $"Battle {key.MedabotId:D3}/{key.ComponentIndex}"))
+        {
+            _allChangeItems.Add(new BrowserItem(_allChangeItems.Count, $"Sprite Draft: {key}"));
+        }
+
+        foreach (var key in _editedLargePartDisplayAssets.Keys.Where(key => !_project.LargePartDisplayEdits.Any(asset => asset.PartId == key.PartId && asset.VariantSelector == key.VariantSelector)).Select(key => $"Large {key.PartId:D3}/{key.VariantSelector}"))
+        {
+            _allChangeItems.Add(new BrowserItem(_allChangeItems.Count, $"Sprite Draft: {key}"));
+        }
+    }
+
+    private void RebuildEventBrowserItems(MedabotsRomTextProfile profile)
+    {
+        _allEventItems.Clear();
+        var maxPatchedEventId = _project.EventScriptPatches.Count == 0
+            ? -1
+            : _project.EventScriptPatches.Max(patch => (int)patch.EventId);
+        var totalCount = Math.Max(profile.EventCount, maxPatchedEventId + 1);
+        _allEventItems.AddRange(Enumerable.Range(0, totalCount).Select(id => new EventBrowserItem { Id = id }));
     }
 
     private bool TrySyncPatchEditorIntoSelection(out string errorMessage)
@@ -1077,6 +1009,47 @@ public partial class MainWindow : Window
             "OK");
 
         return PickOpenFilePath("Select the source Medabots GBA ROM", "Game Boy Advance ROM (*.gba)|*.gba|All files (*.*)|*.*");
+    }
+
+    private async Task<(RomHackSession Session, string RomPath, MedabotsRomTextProfile Profile)?> OpenCompatibleProjectSessionAsync(RomHackProject project)
+    {
+        string? candidateRomPath = null;
+
+        while (true)
+        {
+            candidateRomPath = await ResolveProjectRomPathAsync(candidateRomPath ?? project.SourceRomPath);
+            if (string.IsNullOrWhiteSpace(candidateRomPath))
+            {
+                return null;
+            }
+
+            SetLoadingState(true, "Opening ROM...", 0.02);
+            var session = await RomHackSession.OpenAsync(candidateRomPath);
+            var detectedProfile = MedabotsRomTextProfiles.Detect(session.RomFile);
+            if (detectedProfile is null)
+            {
+                SetLoadingState(false, string.Empty, 0);
+                await DisplayAlertAsync("Unsupported ROM", "The selected ROM does not match a supported Medabots ROM profile. Select a compatible ROM.", "OK");
+                candidateRomPath = null;
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(project.TextProfileId) &&
+                !string.Equals(project.TextProfileId, detectedProfile.Id, StringComparison.Ordinal))
+            {
+                SetLoadingState(false, string.Empty, 0);
+                var expectedProfile = MedabotsRomTextProfiles.FindById(project.TextProfileId);
+                var expectedName = expectedProfile?.Name ?? project.TextProfileId;
+                await DisplayAlertAsync(
+                    "Incompatible ROM",
+                    $"This project expects ROM profile '{expectedName}', but the selected ROM is '{detectedProfile.Name}'. Select a compatible ROM.",
+                    "OK");
+                candidateRomPath = null;
+                continue;
+            }
+
+            return (session, candidateRomPath.Trim(), detectedProfile);
+        }
     }
 
     private async Task<string?> EnsureProjectSavePathAsync()

@@ -19,6 +19,10 @@ public sealed partial class ImageAssetRepository
     public const int CompositePreviewRightArmAppearanceTableOffset = MedabotsRomSchema.CompositePreviewRightArmAppearanceTableOffset;
     public const int CompositePreviewLeftArmAppearanceTableOffset = MedabotsRomSchema.CompositePreviewLeftArmAppearanceTableOffset;
     public const int CompositePreviewLegsAppearanceTableOffset = MedabotsRomSchema.CompositePreviewLegsAppearanceTableOffset;
+    public const int CompositePreviewHeadSyntheticDescriptorTemplateOffset = 0x07EE30;
+    public const int CompositePreviewRightArmSyntheticDescriptorTemplateOffset = 0x07EE48;
+    public const int CompositePreviewLeftArmSyntheticDescriptorTemplateOffset = 0x07EE60;
+    public const int CompositePreviewLegsSyntheticDescriptorTemplateOffset = 0x07EE78;
     public const int PartDetailObjPaletteBlockAOffset = MedabotsRomSchema.PartDetailObjPaletteBlockAOffset;
     public const int PartDetailObjPaletteBlockBOffset = MedabotsRomSchema.PartDetailObjPaletteBlockBOffset;
     public const int PartDetailObjPaletteBlockCOffset = MedabotsRomSchema.PartDetailObjPaletteBlockCOffset;

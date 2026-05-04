@@ -83,6 +83,13 @@
         <Grid DockPanel.Dock="Top" Visibility="Collapsed" Height="0">
             <TextBox x:Name="ProjectPathEntry" />
             <TextBox x:Name="RomPathEntry" />
+            <TextBlock x:Name="ProjectNameLabel" />
+            <TextBlock x:Name="ProfileStatusLabel" />
+            <TextBlock x:Name="SessionStatusLabel" />
+            <TextBlock x:Name="RomSizeLabel" />
+            <TextBlock x:Name="PatchCountLabel" />
+            <TextBlock x:Name="LoadingStatusLabel" Visibility="Collapsed" />
+            <ProgressBar x:Name="LoadingProgressBar" Visibility="Collapsed" />
         </Grid>
 
         <Menu DockPanel.Dock="Top" Background="#FFF8F8F8">
@@ -96,28 +103,6 @@
                 <MenuItem Header="E_xit" Click="OnExitClicked" />
             </MenuItem>
         </Menu>
-
-        <Border DockPanel.Dock="Top" Style="{StaticResource PanelBorderStyle}" Margin="12,12,12,0">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="2*" />
-                    <ColumnDefinition Width="3*" />
-                </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0">
-                    <TextBlock Text="Medabots ROM Toolkit" FontSize="22" FontWeight="SemiBold" Foreground="#FF111827" />
-                    <TextBlock Text="WPF editor workspace" Margin="0,4,0,0" Foreground="#FF6B7280" />
-                </StackPanel>
-                <StackPanel Grid.Column="1">
-                    <TextBlock x:Name="ProjectNameLabel" Foreground="#FF111827" TextWrapping="Wrap" />
-                    <TextBlock x:Name="ProfileStatusLabel" Margin="0,4,0,0" Foreground="#FF111827" TextWrapping="Wrap" />
-                    <TextBlock x:Name="SessionStatusLabel" Margin="0,4,0,0" Foreground="#FF111827" TextWrapping="Wrap" />
-                    <TextBlock x:Name="RomSizeLabel" Margin="0,4,0,0" Foreground="#FF111827" TextWrapping="Wrap" />
-                    <TextBlock x:Name="PatchCountLabel" Margin="0,4,0,0" Foreground="#FF111827" TextWrapping="Wrap" />
-                    <TextBlock x:Name="LoadingStatusLabel" Margin="0,4,0,0" Foreground="#FF2563EB" Visibility="Collapsed" />
-                    <ProgressBar x:Name="LoadingProgressBar" Margin="0,6,0,0" Height="14" Minimum="0" Maximum="100" Visibility="Collapsed" />
-                </StackPanel>
-            </Grid>
-        </Border>
 
         <StatusBar DockPanel.Dock="Bottom">
             <StatusBarItem Width="420">
@@ -214,14 +199,10 @@
                             <Grid Grid.Row="1" Margin="0,10,0,8" Background="#FFF3F4F6">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="60" />
-                                    <ColumnDefinition Width="70" />
-                                    <ColumnDefinition Width="70" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Grid.Column="0" Margin="8,6" FontWeight="SemiBold">Id</TextBlock>
-                                <TextBlock Grid.Column="1" Margin="8,6" FontWeight="SemiBold">Cache</TextBlock>
-                                <TextBlock Grid.Column="2" Margin="8,6" FontWeight="SemiBold">Patch</TextBlock>
-                                <TextBlock Grid.Column="3" Margin="8,6" FontWeight="SemiBold">Summary</TextBlock>
+                                <TextBlock Grid.Column="1" Margin="8,6" FontWeight="SemiBold">Summary</TextBlock>
                             </Grid>
                             <ListBox x:Name="EventCollectionView" Grid.Row="2" SelectionChanged="OnEventSelectionChanged">
                                 <ListBox.ItemTemplate>
@@ -235,14 +216,10 @@
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="60" />
-                                                    <ColumnDefinition Width="70" />
-                                                    <ColumnDefinition Width="70" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Grid.Column="0" Text="{Binding Id, StringFormat=D4}" />
-                                                <TextBlock Grid.Column="1" Text="{Binding CacheStatus}" />
-                                                <TextBlock Grid.Column="2" Text="{Binding PatchStatus}" Foreground="#FF1D4ED8" />
-                                                <TextBlock Grid.Column="3" Text="{Binding Summary}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Summary}" TextTrimming="CharacterEllipsis" />
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
@@ -1162,25 +1139,6 @@
                                                    RenderOptions.BitmapScalingMode="NearestNeighbor" />
                                         </StackPanel>
                                     </Border>
-                                    <TextBlock x:Name="MapOverlayScriptSummaryHeader"
-                                               Margin="0,12,0,0"
-                                               Text="Linked Event Script"
-                                               FontWeight="SemiBold"
-                                               Foreground="#FF111827"
-                                               Visibility="Collapsed" />
-                                    <TextBox x:Name="MapOverlayScriptSummaryTextBox"
-                                             Margin="0,8,0,0"
-                                             MinHeight="180"
-                                             AcceptsReturn="True"
-                                             IsReadOnly="True"
-                                             TextWrapping="Wrap"
-                                             VerticalScrollBarVisibility="Auto"
-                                             Visibility="Collapsed" />
-                                    <Button x:Name="OpenMapOverlayEventScriptEditorButton"
-                                            Margin="0,8,0,0"
-                                            HorizontalAlignment="Left"
-                                            Click="OnOpenMapOverlayEventScriptEditorClicked"
-                                            Visibility="Collapsed">Open Script Editor</Button>
                                     <StackPanel x:Name="MapWarpFieldsPanel" Margin="0,12,0,0" Visibility="Collapsed">
                                         <TextBlock Text="Warp Fields" FontWeight="SemiBold" Foreground="#FF111827" />
                                         <UniformGrid Margin="0,8,0,0" Columns="2">
@@ -1273,6 +1231,25 @@
                                             <TextBlock VerticalAlignment="Center">Chapter Mask</TextBlock>
                                             <TextBox x:Name="MapSpawnChapterMaskEntry" />
                                         </UniformGrid>
+                                        <TextBlock x:Name="MapOverlayScriptSummaryHeader"
+                                                   Margin="0,12,0,0"
+                                                   Text="Linked Event Script"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#FF111827"
+                                                   Visibility="Collapsed" />
+                                        <TextBox x:Name="MapOverlayScriptSummaryTextBox"
+                                                 Margin="0,8,0,0"
+                                                 MinHeight="180"
+                                                 AcceptsReturn="True"
+                                                 IsReadOnly="True"
+                                                 TextWrapping="Wrap"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 Visibility="Collapsed" />
+                                        <Button x:Name="OpenMapOverlayEventScriptEditorButton"
+                                                Margin="0,8,0,0"
+                                                HorizontalAlignment="Left"
+                                                Click="OnOpenMapOverlayEventScriptEditorClicked"
+                                                Visibility="Collapsed">Open Script Editor</Button>
                                     </StackPanel>
                                     <Button x:Name="ApplyMapOverlayChangesButton"
                                             Margin="0,12,0,0"
@@ -1316,7 +1293,7 @@
                                                     <MenuItem Header="Merge Large Display Variants" Click="OnMergeLargeDisplayMenuClicked" CommandParameter="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                                                 </ContextMenu>
                                             </TextBlock.ContextMenu>
-                                        </TextBlock>
+                                         </TextBlock>
                                     </HierarchicalDataTemplate>
                                 </TreeView.Resources>
                             </TreeView>
@@ -1406,6 +1383,66 @@
                                 <StackPanel>
                                     <TextBlock Text="Sprite Details" FontWeight="SemiBold" FontSize="14" />
                                     <TextBlock x:Name="SpriteSummaryLabel" Margin="0,12,0,0" TextWrapping="Wrap" />
+                                    <StackPanel x:Name="BotBattleFacingEditorPanel" Margin="0,12,0,0" Visibility="Collapsed">
+                                        <TextBlock Text="Battle Preview Facing" FontWeight="SemiBold" />
+                                        <ComboBox x:Name="BotBattleFacingComboBox"
+                                                  Margin="0,6,0,0"
+                                                  MinWidth="180"
+                                                  DisplayMemberPath="Title"
+                                                  SelectedValuePath="Id"
+                                                  SelectionChanged="OnBotBattleFacingSelectionChanged" />
+                                        <TextBlock x:Name="BotBattleFacingHintLabel"
+                                                   Margin="0,6,0,0"
+                                                   Foreground="#FF6B7280"
+                                                   TextWrapping="Wrap"
+                                                   Text="Battle preview currently exposes the left/right mirrored presentation used by the assembled battle sprite path." />
+                                    </StackPanel>
+                                    <StackPanel x:Name="ParsedDescriptorEditorPanel" Margin="0,12,0,0" Visibility="Collapsed">
+                                        <TextBlock Text="Descriptor Fields" FontWeight="SemiBold" />
+                                        <TextBlock x:Name="ParsedDescriptorHeaderLabel" Margin="0,8,0,0" Foreground="#FF6B7280" TextWrapping="Wrap" />
+                                        <UniformGrid Margin="0,8,0,0" Columns="4">
+                                            <TextBlock VerticalAlignment="Center">X</TextBlock>
+                                            <TextBox x:Name="ParsedDescriptorXEntry" Margin="0,0,8,0" />
+                                            <TextBlock VerticalAlignment="Center">Y</TextBlock>
+                                            <TextBox x:Name="ParsedDescriptorYEntry" />
+                                        </UniformGrid>
+                                        <UniformGrid Margin="0,8,0,0" Columns="4">
+                                            <TextBlock VerticalAlignment="Center">Sibling</TextBlock>
+                                            <TextBox x:Name="ParsedDescriptorSiblingEntry" Margin="0,0,8,0" />
+                                            <TextBlock VerticalAlignment="Center">Child</TextBlock>
+                                            <TextBox x:Name="ParsedDescriptorChildEntry" />
+                                        </UniformGrid>
+                                        <UniformGrid Margin="0,8,0,0" Columns="4">
+                                            <TextBlock VerticalAlignment="Center">Palette Bank</TextBlock>
+                                            <TextBox x:Name="ParsedDescriptorPaletteBankEntry" Margin="0,0,8,0" />
+                                            <TextBlock VerticalAlignment="Center">Width</TextBlock>
+                                            <TextBox x:Name="ParsedDescriptorWidthEntry" />
+                                        </UniformGrid>
+                                        <UniformGrid Margin="0,8,0,0" Columns="4">
+                                            <TextBlock VerticalAlignment="Center">Height</TextBlock>
+                                            <TextBox x:Name="ParsedDescriptorHeightEntry" Margin="0,0,8,0" />
+                                            <TextBlock VerticalAlignment="Center">Divisors</TextBlock>
+                                            <TextBox x:Name="ParsedDescriptorDivisorsEntry" />
+                                        </UniformGrid>
+                                        <UniformGrid Margin="0,8,0,0" Columns="6">
+                                            <TextBlock VerticalAlignment="Center">Byte 0C</TextBlock>
+                                            <TextBox x:Name="ParsedDescriptorRaw0CEntry" Margin="0,0,8,0" />
+                                            <TextBlock VerticalAlignment="Center">Byte 0D</TextBlock>
+                                            <TextBox x:Name="ParsedDescriptorRaw0DEntry" Margin="0,0,8,0" />
+                                            <TextBlock VerticalAlignment="Center">Byte 0E</TextBlock>
+                                            <TextBox x:Name="ParsedDescriptorRaw0EEntry" />
+                                        </UniformGrid>
+                                        <UniformGrid Margin="0,8,0,0" Columns="6">
+                                            <TextBlock VerticalAlignment="Center">Byte 15</TextBlock>
+                                            <TextBox x:Name="ParsedDescriptorRaw15Entry" Margin="0,0,8,0" />
+                                            <TextBlock VerticalAlignment="Center">Byte 16</TextBlock>
+                                            <TextBox x:Name="ParsedDescriptorRaw16Entry" Margin="0,0,8,0" />
+                                            <TextBlock VerticalAlignment="Center">Byte 17</TextBlock>
+                                            <TextBox x:Name="ParsedDescriptorRaw17Entry" />
+                                        </UniformGrid>
+                                        <TextBlock x:Name="ParsedDescriptorVariantInfoLabel" Margin="0,8,0,0" Foreground="#FF6B7280" TextWrapping="Wrap" />
+                                        <Button Margin="0,10,0,0" HorizontalAlignment="Left" Click="OnApplyParsedDescriptorChangesClicked">Apply Descriptor Changes</Button>
+                                    </StackPanel>
                                     <TextBlock Margin="0,16,0,0" Text="Palette" FontWeight="SemiBold" />
                                     <ItemsControl x:Name="SpritePaletteItemsControl" Margin="0,8,0,0">
                                         <ItemsControl.ItemsPanel>
@@ -1493,7 +1530,7 @@
                 </Grid>
             </TabItem>
 
-            <TabItem x:Name="EncountersSection" Header="Encounters">
+            <TabItem x:Name="EncountersSection" Header="Encounters" Visibility="Collapsed">
                 <Grid Margin="0,8,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="340" />
