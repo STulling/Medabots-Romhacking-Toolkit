@@ -253,22 +253,11 @@ internal sealed class SpriteBrowserTreeBuilder(
                 Title = "Battle Displays",
                 FilterText = $"Battle Displays Medabot {medabotGroup.Key:D3} {metadata.GetBotName(medabotGroup.Key)}"
             };
-            var descriptorNode = new SpriteBrowserNode
-            {
-                Title = "Parsed Descriptors",
-                FilterText = $"Parsed Descriptors Medabot {medabotGroup.Key:D3} {metadata.GetBotName(medabotGroup.Key)}"
-            };
             var editableSpritesNode = new SpriteBrowserNode
             {
                 Title = "Editable Sprites",
                 FilterText = $"Editable Sprites Medabot {medabotGroup.Key:D3} {metadata.GetBotName(medabotGroup.Key)}"
             };
-            var assembledNode = new SpriteBrowserNode
-            {
-                Title = "(Readonly) Complete Parts",
-                FilterText = $"Readonly Complete Parts Medabot {medabotGroup.Key:D3} {metadata.GetBotName(medabotGroup.Key)}"
-            };
-            var parsedDescriptors = new Dictionary<int, DescriptorListEntry>();
             var editableSprites = new Dictionary<int, EditableSpriteListEntry>();
 
             foreach (var part in medabotGroup.OrderBy(part => part.Kind).ThenBy(part => part.Id))
@@ -291,23 +280,6 @@ internal sealed class SpriteBrowserTreeBuilder(
                 foreach (var (componentIndex, title) in previewEntries)
                 {
                     var largeDisplayTitle = title.Replace("Battle Display", "Large Display");
-                    var largeDisplayNode = new SpriteBrowserNode
-                    {
-                        Title = largeDisplayTitle,
-                        FilterText = $"{largeDisplayTitle} Part {part.Id:D3} {metadata.GetPartName(part.Id)} Medabot {metadata.GetBotName(part.MedabotId)} {partKindLabel}",
-                        AssetKind = SpriteAssetKind.PartCompositePreview,
-                        PrimaryId = part.Id,
-                        SecondaryId = componentIndex
-                    };
-
-                    foreach (var descriptor in GetLargeDisplayDescriptorRecords(part, componentIndex))
-                    {
-                        if (!parsedDescriptors.ContainsKey(descriptor.RecordOffset))
-                        {
-                            parsedDescriptors[descriptor.RecordOffset] = new DescriptorListEntry(part, componentIndex, largeDisplayTitle, descriptor);
-                        }
-                    }
-
                     foreach (var descriptor in GetLargeDisplayDescriptorRecords(part, componentIndex))
                     {
                         if (descriptor.ImageOffset > 0 && !editableSprites.ContainsKey(descriptor.ImageOffset))
@@ -315,23 +287,7 @@ internal sealed class SpriteBrowserTreeBuilder(
                             editableSprites[descriptor.ImageOffset] = new EditableSpriteListEntry(part, componentIndex, largeDisplayTitle, descriptor);
                         }
                     }
-
-                    assembledNode.Children.Add(largeDisplayNode);
                 }
-            }
-
-            foreach (var descriptor in parsedDescriptors.Values.OrderBy(entry => entry.Piece.RecordOffset))
-            {
-                descriptorNode.Children.Add(new SpriteBrowserNode
-                {
-                    Title = $"0x{descriptor.Piece.RecordOffset:X6}  Descriptor {descriptor.Piece.DescriptorId:D2}  {FormatPartKind(descriptor.Part.Kind)}  {descriptor.Part.Id:D3}  {metadata.GetPartName(descriptor.Part.Id)}  {descriptor.TitlePrefix}",
-                    FilterText = $"Parsed Descriptor 0x{descriptor.Piece.RecordOffset:X6} Descriptor {descriptor.Piece.DescriptorId:D2} Part {descriptor.Part.Id:D3} {metadata.GetPartName(descriptor.Part.Id)} Medabot {metadata.GetBotName(descriptor.Part.MedabotId)} {FormatPartKind(descriptor.Part.Kind)}",
-                    AssetKind = SpriteAssetKind.PartCompositeParsedDescriptor,
-                    PrimaryId = descriptor.Part.Id,
-                    SecondaryId = descriptor.ComponentIndex,
-                    TertiaryId = descriptor.Piece.DescriptorId,
-                    DataOffset = descriptor.Piece.RecordOffset
-                });
             }
 
             foreach (var sprite in editableSprites.Values.OrderBy(entry => entry.Record.ImageOffset).ThenBy(entry => entry.Record.RecordOffset))
@@ -351,9 +307,7 @@ internal sealed class SpriteBrowserTreeBuilder(
 
             medabotNode.Children.Add(botPreviewNode);
             medabotNode.Children.Add(battleDisplaysNode);
-            medabotNode.Children.Add(descriptorNode);
             medabotNode.Children.Add(editableSpritesNode);
-            medabotNode.Children.Add(assembledNode);
             root.Children.Add(medabotNode);
         }
 
@@ -372,8 +326,6 @@ internal sealed class SpriteBrowserTreeBuilder(
             .OrderBy(record => record.DescriptorId)
             .ToArray();
     }
-
-    private sealed record DescriptorListEntry(PartDefinition Part, int ComponentIndex, string TitlePrefix, LargePartDisplayDescriptorRecord Piece);
 
     private sealed record EditableSpriteListEntry(PartDefinition Part, int ComponentIndex, string TitlePrefix, LargePartDisplayDescriptorRecord Record);
 

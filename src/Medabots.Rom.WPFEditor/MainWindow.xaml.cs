@@ -815,7 +815,7 @@ public partial class MainWindow : Window
         }
 
         var totalCount = _allChangeItems.Count;
-        ChangesSummaryLabel.Text = $"Total staged changes: {totalCount}{Environment.NewLine}Messages: {stagedMessagePatchCount}  |  Event scripts: {_project.EventScriptPatches.Count}  |  Battles: {_project.BattleEdits.Count}  |  Parts: {_project.PartEdits.Count}  |  Map metadata: {_project.MapMusicPatches.Count + _project.MapEncounterPatches.Count + _project.MapEncounterStatePatches.Count + _project.MapEventObjectResourcePatches.Count}  |  Map overlays/layers: {_project.MapEntitySpawnPatches.Count + _project.MapWarpPatches.Count + _project.MapCollisionPatches.Count + _project.MapLayerPatches.Count}  |  Staged sprites: {_project.OverworldSpriteEdits.Count + _project.PortraitEdits.Count + _project.BattleCompositeSpriteEdits.Count + _project.LargePartDisplayEdits.Count}";
+        ChangesSummaryLabel.Text = $"Total staged changes: {totalCount}{Environment.NewLine}Messages: {stagedMessagePatchCount}  |  Event scripts: {_project.EventScriptPatches.Count}  |  Battles: {_project.BattleEdits.Count}  |  Parts: {_project.PartEdits.Count}  |  Map metadata: {_project.MapMusicPatches.Count + _project.MapEncounterPatches.Count + _project.MapEncounterStatePatches.Count + _project.MapEventObjectResourcePatches.Count + _project.MapDimensionPatches.Count}  |  Map overlays/layers: {_project.MapEntitySpawnPatches.Count + _project.MapWarpPatches.Count + _project.MapCollisionPatches.Count + _project.MapLayerPatches.Count}  |  Staged sprites: {_project.OverworldSpriteEdits.Count + _project.PortraitEdits.Count + _project.BattleCompositeSpriteEdits.Count + _project.LargePartDisplayEdits.Count}";
     }
 
     private void AddCompiledProjectChanges()

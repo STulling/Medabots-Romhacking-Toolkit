@@ -45,7 +45,7 @@ public static class RomHackProjectSerializer
 
     private sealed class RomHackProjectDocument
     {
-        public int SchemaVersion { get; set; } = 11;
+        public int SchemaVersion { get; set; } = 12;
 
         public string Name { get; set; } = "New Medabots Hack";
 
@@ -77,6 +77,8 @@ public static class RomHackProjectSerializer
 
         public List<MapEventObjectResourcePatchDocument> MapEventObjectResourcePatches { get; set; } = [];
 
+        public List<MapDimensionPatchDocument> MapDimensionPatches { get; set; } = [];
+
         public List<SpriteAssetDocument> OverworldSpriteEdits { get; set; } = [];
 
         public List<PortraitAssetDocument> PortraitEdits { get; set; } = [];
@@ -95,7 +97,7 @@ public static class RomHackProjectSerializer
 
         public RomHackProject ToProject(string? projectFilePath)
         {
-            if (SchemaVersion is not 1 and not 2 and not 3 and not 4 and not 5 and not 6 and not 7 and not 8 and not 9 and not 10 and not 11)
+            if (SchemaVersion is not 1 and not 2 and not 3 and not 4 and not 5 and not 6 and not 7 and not 8 and not 9 and not 10 and not 11 and not 12)
             {
                 throw new InvalidDataException($"Unsupported project schema version '{SchemaVersion}'.");
             }
@@ -199,6 +201,14 @@ public static class RomHackProjectSerializer
                 project.MapEventObjectResourcePatches.Add(new Maps.MapEventObjectResourcePatch(
                     patch.MapId,
                     patch.ResourceIds.ToArray()));
+            }
+
+            foreach (var patch in MapDimensionPatches)
+            {
+                project.MapDimensionPatches.Add(new Maps.MapDimensionPatch(
+                    patch.MapId,
+                    patch.WidthInTiles,
+                    patch.HeightInTiles));
             }
 
             foreach (var asset in OverworldSpriteEdits)
@@ -461,6 +471,14 @@ public static class RomHackProjectSerializer
                     {
                         MapId = patch.MapId,
                         ResourceIds = patch.ResourceIds.ToList()
+                    })
+                    .ToList(),
+                MapDimensionPatches = project.MapDimensionPatches
+                    .Select(patch => new MapDimensionPatchDocument
+                    {
+                        MapId = patch.MapId,
+                        WidthInTiles = patch.WidthInTiles,
+                        HeightInTiles = patch.HeightInTiles
                     })
                     .ToList(),
                 OverworldSpriteEdits = project.OverworldSpriteEdits
@@ -908,5 +926,12 @@ public static class RomHackProjectSerializer
         public ushort HeaderOriginX2 { get; set; }
         public ushort HeaderOriginY2 { get; set; }
         public ushort[] TileEntries { get; set; } = [];
+    }
+
+    private sealed class MapDimensionPatchDocument
+    {
+        public int MapId { get; set; }
+        public byte WidthInTiles { get; set; }
+        public byte HeightInTiles { get; set; }
     }
 }

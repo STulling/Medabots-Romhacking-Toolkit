@@ -54,6 +54,9 @@ public partial class MainWindow : Window
         SpriteSummaryLabel.Text = "Select an overworld sheet, portrait, map tileset, Medabot composite sprite, or individual part preview to inspect its decoded image and palette data.";
         SpritePaletteSummaryLabel.Text = string.Empty;
         SpritePaletteItemsControl.ItemsSource = null;
+        LargeBotLivePreviewPanel.Visibility = Visibility.Collapsed;
+        LargeBotLivePreviewImage.Source = null;
+        LargeBotLivePreviewLabel.Text = string.Empty;
         SpritePaletteFamilyEditorPanel.Visibility = Visibility.Collapsed;
         SpritePaletteFamilyComboBox.SelectedItem = null;
         SpritePaletteFamilyHintLabel.Text = string.Empty;
@@ -314,6 +317,7 @@ public partial class MainWindow : Window
             UpdateSpritePaletteFamilyEditor(node);
             UpdateBotBattleFacingEditor(node);
             UpdateParsedDescriptorEditor(node);
+            UpdateLargeBotLivePreview(node);
             UpdateSpriteGridOverlay(preview.Bitmap.PixelWidth, preview.Bitmap.PixelHeight);
         }
         catch (Exception ex)
@@ -392,6 +396,17 @@ public partial class MainWindow : Window
 
     private SpritePreviewState BuildMedabotLargePreviewState(int medabotId)
     {
+        var preview = CreateMedabotLargePreviewStripBitmap(medabotId);
+        var summary =
+            $"Medabot {medabotId:D3}  {_metadata.GetBotName(medabotId)}{Environment.NewLine}" +
+            $"Large bot preview uses the combined battle-preview descriptor path traced from `FUN_08046d1c`; draft/staged part sprite edits are overlaid onto that ROM-derived placement/order.{Environment.NewLine}" +
+            "Left frame: game side 0  |  Right frame: game side 1";
+        var paletteSummary = "Palette colors: combined large-preview OBJ palette view from the game renderer path.";
+        return new SpritePreviewState(medabotId, preview.Bitmap, summary, paletteSummary, preview.Swatches);
+    }
+
+    private (BitmapSource Bitmap, IReadOnlyList<PaletteSwatchItem> Swatches) CreateMedabotLargePreviewStripBitmap(int medabotId)
+    {
         var previewRight = CreateMedabotLargePreviewFrameBitmap(medabotId, 0)
             ?? CreateLegacyLargePreviewVariantBitmap(new[]
             {
@@ -410,12 +425,7 @@ public partial class MainWindow : Window
             }, true);
         var bitmap = CreateBitmapStrip(previewRight.Bitmap, previewLeft.Bitmap, 24);
         var swatches = previewRight.Swatches.Count != 0 ? previewRight.Swatches : previewLeft.Swatches;
-        var summary =
-            $"Medabot {medabotId:D3}  {_metadata.GetBotName(medabotId)}{Environment.NewLine}" +
-            $"Large bot preview prefers the combined battle-preview descriptor path traced from `FUN_08046d1c`, with a fallback to the slot-anchor composition when the ROM does not expose a drawable combined root.{Environment.NewLine}" +
-            "Left frame: game side 0  |  Right frame: game side 1";
-        var paletteSummary = "Palette colors: combined large-preview OBJ palette view from the game renderer path.";
-        return new SpritePreviewState(medabotId, bitmap, summary, paletteSummary, swatches);
+        return (bitmap, swatches);
     }
 
     private SpritePreviewState BuildMedabotBattlePreviewState(int medabotId)
@@ -593,6 +603,7 @@ public partial class MainWindow : Window
             return null;
         }
 
+        frame = ApplyPreviewLargeDisplayEditsToMedabotFrame(frame);
         var renderedPieces = frame.Pieces
             .Select(piece => (Piece: piece, Image: GetRenderedLargeDisplayPieceImage(piece, PartKind.Head, frame.Pieces.Count), X: piece.X, Y: piece.Y))
             .ToArray();
@@ -604,6 +615,110 @@ public partial class MainWindow : Window
         }
 
         return (bitmap, BuildPaletteSwatches(ResolveDisplayedLargeDisplayPalette(frame.Pieces, finalBanks)));
+    }
+
+    private MedabotLargeDisplayFrame ApplyPreviewLargeDisplayEditsToMedabotFrame(MedabotLargeDisplayFrame frame)
+    {
+        var overridesByImageOffset = BuildLargeDisplayImageOverridesForMedabot(frame.MedabotId);
+        Dictionary<int, LargePartDisplayPieceAsset> mirroredSideArmOverridesByDescriptor = frame.Side == 0
+            ? []
+            : BuildMirroredSideArmOverridesForMedabot(frame.MedabotId);
+        if (overridesByImageOffset.Count == 0 && mirroredSideArmOverridesByDescriptor.Count == 0)
+        {
+            return frame;
+        }
+
+        var updatedPieces = frame.Pieces
+            .Select(piece =>
+            {
+                if (mirroredSideArmOverridesByDescriptor.TryGetValue(piece.DescriptorId, out var armOverride))
+                {
+                    return ApplyLargeDisplayImageOverride(piece, armOverride);
+                }
+
+                return overridesByImageOffset.TryGetValue(piece.ImageOffset, out var imageOverride)
+                    ? ApplyLargeDisplayImageOverride(piece, imageOverride)
+                    : piece;
+            })
+            .ToArray();
+        return frame with { Pieces = updatedPieces };
+    }
+
+    private Dictionary<int, LargePartDisplayPieceAsset> BuildMirroredSideArmOverridesForMedabot(int medabotId)
+    {
+        var overrides = new Dictionary<int, LargePartDisplayPieceAsset>();
+        foreach (var kind in new[] { PartKind.RightArm, PartKind.LeftArm })
+        {
+            var part = GetRequiredPartForMedabot(medabotId, kind);
+            var componentEntries = PartSpriteDisplayLayout.GetPreviewComponentEntriesForPartKind(kind);
+            var componentIndex = componentEntries[Math.Min(1, componentEntries.Count - 1)].ComponentIndex;
+            var asset = GetPreviewLargePartDisplayAsset(part.Id, componentIndex);
+            foreach (var piece in asset.Pieces.Where(piece => piece.ImageOffset > 0))
+            {
+                if (piece.DescriptorId == asset.RootDescriptorId)
+                {
+                    continue;
+                }
+
+                overrides[piece.DescriptorId] = piece;
+            }
+        }
+
+        return overrides;
+    }
+
+    private Dictionary<int, LargePartDisplayPieceAsset> BuildLargeDisplayImageOverridesForMedabot(int medabotId)
+    {
+        var overrides = new Dictionary<int, LargePartDisplayPieceAsset>();
+        foreach (var part in _loadedParts.Where(part => part.MedabotId == medabotId).OrderBy(part => part.Kind).ThenBy(part => part.Id))
+        {
+            foreach (var (componentIndex, _) in PartSpriteDisplayLayout.GetPreviewComponentEntriesForPartKind(part.Kind))
+            {
+                var asset = TryGetDraftOrStagedLargePartDisplayAsset(part.Id, componentIndex);
+                if (asset is null)
+                {
+                    continue;
+                }
+
+                foreach (var piece in asset.Pieces.Where(piece => piece.ImageOffset > 0))
+                {
+                    overrides[piece.ImageOffset] = piece;
+                }
+            }
+        }
+
+        return overrides;
+    }
+
+    private LargePartDisplayAsset? TryGetDraftOrStagedLargePartDisplayAsset(int partId, int componentIndex)
+    {
+        var part = GetRequiredPartDefinition(partId);
+        var variantSelector = PartSpriteDisplayLayout.GetLargeDisplayVariantSelectorForComponent(part.Kind, componentIndex);
+        if (_editedLargePartDisplayAssets.TryGetValue((partId, variantSelector), out var draft))
+        {
+            return draft;
+        }
+
+        return ProjectEditCollection.Find(_project, ProjectEditAdapters.LargeDisplaySprite, (partId, variantSelector));
+    }
+
+    private static LargePartDisplayPieceAsset ApplyLargeDisplayImageOverride(
+        LargePartDisplayPieceAsset framePiece,
+        LargePartDisplayPieceAsset imageOverride)
+    {
+        // The complete preview keeps the ROM-combined descriptor traversal, anchors, mirror flags,
+        // and z-order. Draft/staged part edits only replace the source graphics and palette data.
+        return framePiece with
+        {
+            PaletteBytes = imageOverride.PaletteBytes.ToArray(),
+            PaletteOffset = imageOverride.PaletteOffset,
+            PalettePointerOffset = imageOverride.PalettePointerOffset,
+            Image = new IndexedImage(
+                imageOverride.Image.TileWidth,
+                imageOverride.Image.TileHeight,
+                imageOverride.Image.PixelIndices.ToArray(),
+                imageOverride.Image.PaletteBytes.ToArray())
+        };
     }
 
     private static bool ShouldRenderCombinedMedabotLargePreview(MedabotLargeDisplayFrame frame)
@@ -1231,7 +1346,7 @@ public partial class MainWindow : Window
             SpriteAssetKind.BattleCompositePartComponent
                 => "Status: editing a Medabot/component battle sprite family. Palette changes affect every part using that shared family palette.",
             SpriteAssetKind.MedabotLargePreview
-                => "Status: readonly full Medabot large preview composed from complete part previews and caller slot anchors.",
+                => "Status: readonly full Medabot large preview using ROM-derived combined placement with draft/staged part sprite overlays.",
             SpriteAssetKind.MedabotBattlePreview
                 => "Status: readonly full Medabot battle preview composed from the 6 battle component sprites.",
             SpriteAssetKind.PartCompositePreview
@@ -1305,6 +1420,40 @@ public partial class MainWindow : Window
             $"Blob table: 0x{piece.BlobPointerTableOffset:X6}  |  Selected table index: {piece.TableIndex}{Environment.NewLine}" +
             $"Raw XY: ({piece.RawX}, {piece.RawY})  |  Effective size: {piece.EffectiveWidth}x{piece.EffectiveHeight}  |  Divisors: {piece.WidthDivisor}x{piece.HeightDivisor}";
         ParsedDescriptorVariantInfoLabel.Text = BuildLargeDisplayVariantResolutionInfo(piece);
+    }
+
+    private void UpdateLargeBotLivePreview(SpriteBrowserNode node)
+    {
+        if (!TryGetLargeDisplayMedabotIdForLivePreview(node, out var medabotId))
+        {
+            LargeBotLivePreviewPanel.Visibility = Visibility.Collapsed;
+            LargeBotLivePreviewImage.Source = null;
+            LargeBotLivePreviewLabel.Text = string.Empty;
+            return;
+        }
+
+        var preview = CreateMedabotLargePreviewStripBitmap(medabotId);
+        LargeBotLivePreviewImage.Source = preview.Bitmap;
+        LargeBotLivePreviewPanel.Visibility = Visibility.Visible;
+        LargeBotLivePreviewLabel.Text = $"Medabot {medabotId:D3} {_metadata.GetBotName(medabotId)}. Uses ROM combined-frame placement with current draft/staged large-display sprite edits.";
+    }
+
+    private bool TryGetLargeDisplayMedabotIdForLivePreview(SpriteBrowserNode node, out int medabotId)
+    {
+        medabotId = -1;
+        switch (node.AssetKind)
+        {
+            case SpriteAssetKind.PartCompositePreview:
+            case SpriteAssetKind.PartCompositeDescriptorPiece:
+            case SpriteAssetKind.PartCompositeParsedDescriptor:
+                medabotId = GetRequiredPartDefinition(node.PrimaryId).MedabotId;
+                return true;
+            case SpriteAssetKind.PartCompositeEditableSprite:
+                medabotId = node.PrimaryId;
+                return true;
+            default:
+                return false;
+        }
     }
 
     private bool IsCompositePaletteFamilyEditable(SpriteBrowserNode node)

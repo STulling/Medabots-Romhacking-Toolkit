@@ -43,6 +43,7 @@ public sealed class RomHackProjectTests
             project.MapEncounterStatePatches.Add(new MapEncounterStatePatch(16, 1));
             project.MapMusicPatches.Add(new MapMusicPatch(16, 29));
             project.MapEventObjectResourcePatches.Add(new MapEventObjectResourcePatch(16, [0x00, 0x02, 0x03, 0xFF]));
+            project.MapDimensionPatches.Add(new MapDimensionPatch(16, 40, 32));
             project.OverworldSpriteEdits.Add(new SpriteAsset(7, 0x10, 0x20, 0x30, 0x40, new IndexedImage(1, 1, [1, 2, 3, 4, 5, 6, 7, 8], new byte[32])));
             project.PortraitEdits.Add(new PortraitAsset(3, 1, 0x11, 0x21, 0x31, 0x41, new IndexedImage(1, 1, [8, 7, 6, 5, 4, 3, 2, 1], new byte[32])));
             project.BattleCompositeSpriteEdits.Add(new BattleCompositeSpriteComponentAsset(12, 2, 0x12, 0x32, 0x22, 0x42, 5, 7, 9, new IndexedImage(1, 1, [0, 1, 2, 3, 4, 5, 6, 7], new byte[32])));
@@ -123,6 +124,9 @@ public sealed class RomHackProjectTests
             Assert.Equal((byte)29, loaded.MapMusicPatches[0].MusicId);
             Assert.Single(loaded.MapEventObjectResourcePatches);
             Assert.Equal([0x00, 0x02, 0x03, 0xFF], loaded.MapEventObjectResourcePatches[0].ResourceIds);
+            Assert.Single(loaded.MapDimensionPatches);
+            Assert.Equal((byte)40, loaded.MapDimensionPatches[0].WidthInTiles);
+            Assert.Equal((byte)32, loaded.MapDimensionPatches[0].HeightInTiles);
             Assert.Single(loaded.OverworldSpriteEdits);
             Assert.Equal(7, loaded.OverworldSpriteEdits[0].SpriteId);
             Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8], loaded.OverworldSpriteEdits[0].Image.PixelIndices);

@@ -63,6 +63,26 @@ internal sealed class MapCollisionProjectEditSystem : IProjectEditSystem
     }
 }
 
+internal sealed class MapDimensionProjectEditSystem : IProjectEditSystem
+{
+    public string DisplayName => "Map Dimensions";
+
+    public IEnumerable<string> DescribeChanges(RomHackProject project) =>
+        project.MapDimensionPatches.Select(patch => $"Map {patch.MapId:D3} -> {patch.WidthInTiles}x{patch.HeightInTiles} tiles");
+
+    public IEnumerable<ProjectChange> BuildChanges(RomHackProject project, ProjectBuildContext context)
+    {
+        return project.MapDimensionPatches
+            .OrderBy(patch => patch.MapId)
+            .Select(patch =>
+            {
+                var offset = MedabotsRomSchema.MapDimensionsInMetaTilesTableOffset + (patch.MapId * 2);
+                return new ProjectChange(DisplayName, $"Map {patch.MapId} dimension patch", [RomPatchAction.Create(offset, [patch.WidthInTiles, patch.HeightInTiles], $"Apply map {patch.MapId} dimension patch")]);
+            })
+            .ToArray();
+    }
+}
+
 internal sealed class MapEncounterStateProjectEditSystem : IProjectEditSystem
 {
     public string DisplayName => "Map Encounter State";

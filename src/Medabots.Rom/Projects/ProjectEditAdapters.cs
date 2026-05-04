@@ -21,6 +21,8 @@ public static class ProjectEditAdapters
 
     public static IProjectEditCollectionAdapter<MapLayerPatch, (int MapId, int LayerIndex)> MapLayer { get; } = new MapLayerAdapter();
 
+    public static IProjectEditCollectionAdapter<MapDimensionPatch, int> MapDimension { get; } = new MapDimensionAdapter();
+
     private sealed class OverworldSpriteAdapter : IProjectEditCollectionAdapter<SpriteAsset, int>
     {
         public IList<SpriteAsset> GetCollection(RomHackProject project) => project.OverworldSpriteEdits;
@@ -61,5 +63,11 @@ public static class ProjectEditAdapters
     {
         public IList<MapLayerPatch> GetCollection(RomHackProject project) => project.MapLayerPatches;
         public (int MapId, int LayerIndex) GetKey(MapLayerPatch edit) => (edit.MapId, edit.LayerIndex);
+    }
+
+    private sealed class MapDimensionAdapter : IProjectEditCollectionAdapter<MapDimensionPatch, int>
+    {
+        public IList<MapDimensionPatch> GetCollection(RomHackProject project) => project.MapDimensionPatches;
+        public int GetKey(MapDimensionPatch edit) => edit.MapId;
     }
 }

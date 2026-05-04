@@ -77,6 +77,7 @@ public partial class MainWindow
     private bool _isRefreshingMapCollisionEditor;
     private bool _isRefreshingMapSpawnSelectors;
     private bool _isRefreshingMapMetadataEditor;
+    private bool _isRefreshingMapResizeEditor;
     private bool _isRefreshingSelectedMapSpriteSlotEditor;
     private bool _isDraggingMapTilesetSelection;
     private int _selectedMapSpriteSlotIndex;
@@ -149,13 +150,7 @@ public partial class MainWindow
         _mapMetadataDraftMusicId = (byte)musicId;
         _mapMetadataDraftEncounterBattleIds = encounterBattleIds;
         _mapMetadataDraftEventObjectResourceIds = spriteResourceIds;
-        MapMetadataStatusLabel.Text = $"Draft metadata for map {_loadedMapTileset.MapId:D3}.{Environment.NewLine}Music: {_metadata.GetSongName((byte)musicId)}  |  Encounters: {(hasEncounters ? "enabled" : "disabled")}{Environment.NewLine}Use Apply Changes to stage this map metadata into the project.";
-        UpdateMapOverlayStatus();
-        RefreshMapCompositePreview();
-        if (((MapEditLayerComboBox?.SelectedItem as MapLayerOption)?.Key ?? "layer1") != "metadata")
-        {
-            UpdateMapEditorSidebar();
-        }
+        StageCurrentMapMetadataIntoProject(refreshEditor: false);
     }
 
     private void OnMapSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -198,10 +193,7 @@ public partial class MainWindow
         }
 
         EnsureMapUiOptions();
-        var maxLayerWidth = asset.Layers.Count == 0 ? asset.WidthInTiles : asset.Layers.Max(layer => layer.HeaderWidthInTiles);
-        var maxLayerHeight = asset.Layers.Count == 0 ? asset.HeightInTiles : asset.Layers.Max(layer => layer.HeaderHeightInTiles);
-        var musicId = GetEffectiveMapMusicId(asset);
-        MapSummaryLabel.Text = $"Map {asset.MapId:D3}  {asset.Name}{Environment.NewLine}Base size: {asset.WidthInTiles}x{asset.HeightInTiles} tiles ({asset.WidthInMetaTiles}x{asset.HeightInMetaTiles} meta-tiles){Environment.NewLine}Layer size: {maxLayerWidth}x{maxLayerHeight} tiles{Environment.NewLine}Music: {_metadata.GetSongName(musicId)} ({musicId})  |  Sprite slots: {GetEffectiveMapEventObjectResourceIds(asset).Count}{Environment.NewLine}Graphics @ 0x{asset.GraphicsDataOffset:X}  Palette @ 0x{asset.PaletteDataOffset:X}{Environment.NewLine}Collision @ {(asset.CollisionDataOffset >= 0 ? $"0x{asset.CollisionDataOffset:X}" : "none")}  Color Attr @ {(asset.ColorAttributeDataOffset >= 0 ? $"0x{asset.ColorAttributeDataOffset:X}" : "none")}";
+        MapSummaryLabel.Text = $"Map {asset.MapId:D3}  {asset.Name}";
         MapTilesetSummaryLabel.Text = "Pick a tileset source, choose a tile from the palette, then paint directly on the active tilemap layer.";
 
         _selectedMapTileX = null;
@@ -677,6 +669,11 @@ public partial class MainWindow
         MapEditorTitleLabel.Text = "Layer Editor";
         MapMetadataEditorPanel.Visibility = Visibility.Collapsed;
         _isRefreshingMapMetadataEditor = false;
+        _isRefreshingMapResizeEditor = false;
+        MapMetadataOverviewLabel.Text = string.Empty;
+        MapWidthEntry.Text = string.Empty;
+        MapHeightEntry.Text = string.Empty;
+        MapResizeHintLabel.Text = "Resize is staged immediately. Existing tiles are copied from the top-left; new space is filled with empty tiles.";
         MapMusicComboBox.SelectedIndex = -1;
         MapHasEncountersCheckBox.IsChecked = false;
         MapEncounterBattle1ComboBox.SelectedIndex = -1;
@@ -801,6 +798,19 @@ public partial class MainWindow
 
             MapHasEncountersCheckBox.IsChecked = GetEffectiveMapHasEncounters(_loadedMapTileset);
             MapMusicComboBox.SelectedValue = GetEffectiveMapMusicId(_loadedMapTileset);
+            UpdateMapMetadataOverview();
+            var (effectiveWidth, effectiveHeight) = GetEffectiveMapSizeInTiles(_loadedMapTileset);
+            _isRefreshingMapResizeEditor = true;
+            try
+            {
+                MapWidthEntry.Text = effectiveWidth.ToString();
+                MapHeightEntry.Text = effectiveHeight.ToString();
+            }
+            finally
+            {
+                _isRefreshingMapResizeEditor = false;
+            }
+
             PopulateMapSpriteSlotEditorItems(_loadedMapTileset);
             if (_selectedMapSpriteSlotIndex < 0 || _selectedMapSpriteSlotIndex >= _mapSpriteSlotEditorItems.Count)
             {
@@ -819,7 +829,33 @@ public partial class MainWindow
             _isRefreshingMapMetadataEditor = false;
         }
 
-        MapMetadataStatusLabel.Text = $"Encounter slot: {_loadedMapTileset.MapId:D3}{Environment.NewLine}Music: {_metadata.GetSongName(GetEffectiveMapMusicId(_loadedMapTileset))}{Environment.NewLine}Edit metadata here, then use Apply Changes to stage it into the project.";
+        MapMetadataStatusLabel.Text = $"Encounter slot: {_loadedMapTileset.MapId:D3}{Environment.NewLine}Music: {_metadata.GetSongName(GetEffectiveMapMusicId(_loadedMapTileset))}{Environment.NewLine}Metadata edits are staged immediately.";
+    }
+
+    private void UpdateMapMetadataOverview()
+    {
+        if (_loadedMapTileset is null)
+        {
+            MapMetadataOverviewLabel.Text = string.Empty;
+            return;
+        }
+
+        var asset = _loadedMapTileset;
+        var (effectiveWidth, effectiveHeight) = GetEffectiveMapSizeInTiles(asset);
+        var effectiveMetaWidth = Math.Max(1, (effectiveWidth + 1) / 2);
+        var effectiveMetaHeight = Math.Max(1, (effectiveHeight + 1) / 2);
+        var (collisionWidth, collisionHeight) = GetCollisionGridDimensions(asset);
+        var maxSourceLayerWidth = asset.Layers.Count == 0 ? asset.WidthInTiles : asset.Layers.Max(layer => layer.HeaderWidthInTiles);
+        var maxSourceLayerHeight = asset.Layers.Count == 0 ? asset.HeightInTiles : asset.Layers.Max(layer => layer.HeaderHeightInTiles);
+        var musicId = GetEffectiveMapMusicId(asset);
+        MapMetadataOverviewLabel.Text =
+            $"Map {asset.MapId:D3}  {asset.Name}{Environment.NewLine}" +
+            $"Current size: {effectiveWidth}x{effectiveHeight} tiles ({effectiveMetaWidth}x{effectiveMetaHeight} meta-tiles){Environment.NewLine}" +
+            $"ROM base size: {asset.WidthInTiles}x{asset.HeightInTiles} tiles ({asset.WidthInMetaTiles}x{asset.HeightInMetaTiles} meta-tiles){Environment.NewLine}" +
+            $"ROM layer size: {maxSourceLayerWidth}x{maxSourceLayerHeight} tiles  |  Collision: {collisionWidth}x{collisionHeight} cells{Environment.NewLine}" +
+            $"Music: {_metadata.GetSongName(musicId)} ({musicId})  |  Sprite slots: {GetEffectiveMapEventObjectResourceIds(asset).Count}{Environment.NewLine}" +
+            $"Graphics @ 0x{asset.GraphicsDataOffset:X}  Palette @ 0x{asset.PaletteDataOffset:X}{Environment.NewLine}" +
+            $"Collision @ {(asset.CollisionDataOffset >= 0 ? $"0x{asset.CollisionDataOffset:X}" : "none")}  Color Attr @ {(asset.ColorAttributeDataOffset >= 0 ? $"0x{asset.ColorAttributeDataOffset:X}" : "none")}";
     }
 
     private void PopulateMapSpriteSlotEditorItems(MapTilesetAsset asset)
@@ -1190,19 +1226,29 @@ public partial class MainWindow
             var selectedTileText = _selectedMapTilesetTileIndex.HasValue
                 ? $"Selected paint tile: {_selectedMapTilesetTileIndex.Value} (bank {_selectedMapTilesetTilePaletteBank})"
                 : "No paint tile selected yet.";
-            MapTileEditorStatusLabel.Text = $"Layer size: {layer.HeaderWidthInTiles}x{layer.HeaderHeightInTiles} tiles.{Environment.NewLine}{selectedTileText}{Environment.NewLine}Click the tileset palette to choose a tile, then click the map to paint.";
+            var (editableWidth, editableHeight) = GetEffectiveMapSizeInTiles(_loadedMapTileset);
+            MapTileEditorStatusLabel.Text = $"Layer buffer: {layer.HeaderWidthInTiles}x{layer.HeaderHeightInTiles} tiles.{Environment.NewLine}Editable map area: {editableWidth}x{editableHeight} tiles.{Environment.NewLine}{selectedTileText}{Environment.NewLine}Click the tileset palette to choose a tile, then click the map to paint.";
             return;
         }
 
         var tileX = _selectedMapTileX.Value;
         var tileY = _selectedMapTileY.Value;
-        if (tileX < 0 || tileY < 0 || tileX >= layer.Image.TileWidth || tileY >= layer.Image.TileHeight)
+        var (editWidth, editHeight) = GetEffectiveMapSizeInTiles(_loadedMapTileset);
+        var (layerWidth, layerHeight) = GetEffectiveMapLayerSize(layer);
+        if (tileX < 0 || tileY < 0 || tileX >= editWidth || tileY >= editHeight)
         {
-            MapTileEditorStatusLabel.Text = $"Tile ({tileX}, {tileY}) is outside this layer.";
+            MapTileEditorStatusLabel.Text = $"Tile ({tileX}, {tileY}) is outside the ROM map area ({editWidth}x{editHeight}).";
             return;
         }
 
-        var tileEntry = layer.TileEntries[(tileY * layer.Image.TileWidth) + tileX];
+        if (tileX >= layerWidth || tileY >= layerHeight)
+        {
+            MapTileEditorStatusLabel.Text = $"Tile ({tileX}, {tileY}) is outside this layer buffer ({layerWidth}x{layerHeight}).";
+            return;
+        }
+
+        var tileEntries = GetEffectiveMapLayerEntries(layer);
+        var tileEntry = tileEntries[(tileY * layerWidth) + tileX];
         var selectedPaintTileText = _selectedMapTilesetTileIndex.HasValue
             ? $"Selected paint tile: {_selectedMapTilesetTileIndex.Value} (bank {_selectedMapTilesetTilePaletteBank})"
             : "Selected paint tile: none";
@@ -1535,6 +1581,36 @@ public partial class MainWindow
         RefreshCurrentMapMetadataDraft();
     }
 
+    private void OnMapResizeTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_isRefreshingMapResizeEditor || _isRefreshingMapMetadataEditor || !_isWindowFullyInitialized || _loadedMapTileset is null)
+        {
+            return;
+        }
+
+        if (!int.TryParse(MapWidthEntry.Text, out var widthInTiles) ||
+            !int.TryParse(MapHeightEntry.Text, out var heightInTiles))
+        {
+            MapResizeHintLabel.Text = "Enter numeric width and height in tiles.";
+            return;
+        }
+
+        if (widthInTiles < 1 || heightInTiles < 1 || widthInTiles > byte.MaxValue || heightInTiles > byte.MaxValue)
+        {
+            MapResizeHintLabel.Text = $"Size must be between 1 and {byte.MaxValue} tiles.";
+            return;
+        }
+
+        var (currentWidth, currentHeight) = GetEffectiveMapSizeInTiles(_loadedMapTileset);
+        if (widthInTiles == currentWidth && heightInTiles == currentHeight)
+        {
+            MapResizeHintLabel.Text = "Resize is staged immediately. Existing tiles are copied from the top-left; new space is filled with empty tiles.";
+            return;
+        }
+
+        StageMapResize(widthInTiles, heightInTiles);
+    }
+
     private void OnMapSpriteSlotSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (_isRefreshingMapMetadataEditor || MapSpriteSlotListBox?.SelectedIndex is not int selectedIndex || selectedIndex < 0)
@@ -1591,6 +1667,43 @@ public partial class MainWindow
 
         scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset - e.Delta);
         e.Handled = true;
+    }
+
+    private void OnMapEditorRootPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (MapSpriteSlotPickerPopup?.IsOpen != true)
+        {
+            return;
+        }
+
+        if (IsEventSourceWithinElement(e.OriginalSource as DependencyObject, MapSpriteSlotListBox) ||
+            IsEventSourceWithinElement(e.OriginalSource as DependencyObject, MapSelectedSpriteSlotOptionsListBox))
+        {
+            return;
+        }
+
+        MapSpriteSlotPickerPopup.IsOpen = false;
+    }
+
+    private static bool IsEventSourceWithinElement(DependencyObject? source, DependencyObject? ancestor)
+    {
+        if (source is null || ancestor is null)
+        {
+            return false;
+        }
+
+        var current = source;
+        while (current is not null)
+        {
+            if (ReferenceEquals(current, ancestor))
+            {
+                return true;
+            }
+
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        return false;
     }
 
     private async void OnApplyMapMetadataChangesClicked(object? sender, RoutedEventArgs e)
@@ -1669,7 +1782,7 @@ public partial class MainWindow
         }
     }
 
-    private void StageCurrentMapMetadataIntoProject()
+    private void StageCurrentMapMetadataIntoProject(bool refreshEditor = true)
     {
         if (!_isWindowFullyInitialized || _loadedMapTileset is null)
         {
@@ -1704,9 +1817,17 @@ public partial class MainWindow
             musicId,
             spriteResourceIds,
             encounterBattleIds);
-        MapMetadataStatusLabel.Text = $"Staged metadata changes for map {mapId:D3} in the project.{Environment.NewLine}Music: {_metadata.GetSongName(musicId)}  |  Encounters: {(hasEncounters ? "enabled" : "disabled")}";
+        MapMetadataStatusLabel.Text = $"Staged metadata changes for map {mapId:D3}.{Environment.NewLine}Music: {_metadata.GetSongName(musicId)}  |  Encounters: {(hasEncounters ? "enabled" : "disabled")}";
         ClearCurrentMapMetadataDraft();
-        UpdateMapMetadataEditor();
+        if (refreshEditor)
+        {
+            UpdateMapMetadataEditor();
+        }
+        else
+        {
+            UpdateMapMetadataOverview();
+        }
+
         UpdateMapOverlayStatus();
         RefreshMapCompositePreview();
         if (((MapEditLayerComboBox?.SelectedItem as MapLayerOption)?.Key ?? "layer1") != "metadata")
@@ -1715,6 +1836,153 @@ public partial class MainWindow
         }
 
         UpdateStatus();
+    }
+
+    private void StageMapResize(int widthInTiles, int heightInTiles)
+    {
+        if (_loadedMapTileset is null)
+        {
+            return;
+        }
+
+        var oldCollisionDimensions = GetCollisionGridDimensions(_loadedMapTileset);
+        var oldCollisionBytes = GetEffectiveMapCollisionBytes();
+        StageMapDimensions(widthInTiles, heightInTiles);
+        foreach (var layer in _loadedMapTileset.Layers)
+        {
+            var (oldWidth, oldHeight) = GetEffectiveMapLayerSize(layer);
+            var oldEntries = GetEffectiveMapLayerEntries(layer);
+            var resizedEntries = ResizeTileEntriesTopLeft(oldEntries, oldWidth, oldHeight, widthInTiles, heightInTiles);
+            StageMapLayerWithDimensions(layer, widthInTiles, heightInTiles, resizedEntries);
+        }
+
+        ResizeCurrentMapCollision(oldCollisionBytes, oldCollisionDimensions.WidthInCells, oldCollisionDimensions.HeightInCells, widthInTiles, heightInTiles);
+        UpdateMapMetadataOverview();
+        MapResizeHintLabel.Text = $"Staged resize to {widthInTiles}x{heightInTiles} tiles. Existing content remains anchored at top-left.";
+        UpdateMapOverlayStatus();
+        RefreshMapCompositePreview();
+        UpdateMapEditorSidebar();
+        UpdateStatus();
+    }
+
+    private void StageMapDimensions(int widthInTiles, int heightInTiles)
+    {
+        if (_loadedMapTileset is null)
+        {
+            return;
+        }
+
+        if (widthInTiles == _loadedMapTileset.WidthInTiles && heightInTiles == _loadedMapTileset.HeightInTiles)
+        {
+            ProjectEditCollection.Remove(_project, ProjectEditAdapters.MapDimension, _loadedMapTileset.MapId);
+            return;
+        }
+
+        ProjectEditCollection.Upsert(
+            _project,
+            ProjectEditAdapters.MapDimension,
+            new MapDimensionPatch(_loadedMapTileset.MapId, (byte)widthInTiles, (byte)heightInTiles));
+    }
+
+    private void StageMapLayerWithDimensions(MapLayerAsset sourceLayer, int widthInTiles, int heightInTiles, ushort[] tileEntries)
+    {
+        if (_loadedMapTileset is null)
+        {
+            return;
+        }
+
+        var existingPatch = ProjectEditCollection.Find(_project, ProjectEditAdapters.MapLayer, (_loadedMapTileset.MapId, sourceLayer.LayerIndex));
+        var headerOriginX = existingPatch?.HeaderOriginX ?? sourceLayer.HeaderOriginX;
+        var headerOriginY = existingPatch?.HeaderOriginY ?? sourceLayer.HeaderOriginY;
+        var headerOriginX2 = existingPatch?.HeaderOriginX2 ?? sourceLayer.HeaderOriginX2;
+        var headerOriginY2 = existingPatch?.HeaderOriginY2 ?? sourceLayer.HeaderOriginY2;
+        var sourceWidth = sourceLayer.HeaderWidthInTiles == 0 ? sourceLayer.Image.TileWidth : sourceLayer.HeaderWidthInTiles;
+        var sourceHeight = sourceLayer.HeaderHeightInTiles == 0 ? sourceLayer.Image.TileHeight : sourceLayer.HeaderHeightInTiles;
+        var matchesSource =
+            widthInTiles == sourceWidth &&
+            heightInTiles == sourceHeight &&
+            sourceLayer.TileEntries.Length == tileEntries.Length &&
+            sourceLayer.TileEntries.SequenceEqual(tileEntries);
+
+        if (matchesSource)
+        {
+            ProjectEditCollection.Remove(_project, ProjectEditAdapters.MapLayer, (_loadedMapTileset.MapId, sourceLayer.LayerIndex));
+            return;
+        }
+
+        var patch = new MapLayerPatch(
+            _loadedMapTileset.MapId,
+            sourceLayer.LayerIndex,
+            (ushort)widthInTiles,
+            (ushort)heightInTiles,
+            headerOriginX,
+            headerOriginY,
+            headerOriginX2,
+            headerOriginY2,
+            tileEntries);
+        ProjectEditCollection.Upsert(_project, ProjectEditAdapters.MapLayer, patch);
+    }
+
+    private void ResizeCurrentMapCollision(byte[] oldCollisionBytes, int oldWidthInCells, int oldHeightInCells, int widthInTiles, int heightInTiles)
+    {
+        if (_loadedMapTileset is null)
+        {
+            return;
+        }
+
+        var newWidthInCells = Math.Max(1, (widthInTiles + 1) / 2);
+        var newHeightInCells = Math.Max(1, (heightInTiles + 1) / 2);
+        var resized = ResizeByteGridTopLeft(oldCollisionBytes, oldWidthInCells, oldHeightInCells, newWidthInCells, newHeightInCells);
+        var sourceWidthInCells = Math.Max(1, _loadedMapTileset.WidthInMetaTiles);
+        var sourceHeightInCells = Math.Max(1, _loadedMapTileset.HeightInMetaTiles);
+        var sourceBytes = ResizeByteGridTopLeft(_loadedMapTileset.CollisionBytes ?? [], sourceWidthInCells, sourceHeightInCells, sourceWidthInCells, sourceHeightInCells);
+        if (newWidthInCells == sourceWidthInCells &&
+            newHeightInCells == sourceHeightInCells &&
+            sourceBytes.SequenceEqual(resized))
+        {
+            RemovePatchForMap(_project.MapCollisionPatches, _loadedMapTileset.MapId, patch => patch.MapId);
+            return;
+        }
+
+        _mapCollisionProjectEditor.UpsertCollisionPatch(_project, _loadedMapTileset.MapId, resized);
+    }
+
+    private static ushort[] ResizeTileEntriesTopLeft(ushort[] source, int sourceWidth, int sourceHeight, int targetWidth, int targetHeight)
+    {
+        var resized = new ushort[targetWidth * targetHeight];
+        var copyWidth = Math.Min(sourceWidth, targetWidth);
+        var copyHeight = Math.Min(sourceHeight, targetHeight);
+        for (var y = 0; y < copyHeight; y++)
+        {
+            var sourceIndex = y * sourceWidth;
+            if (sourceIndex >= source.Length)
+            {
+                break;
+            }
+
+            Array.Copy(source, sourceIndex, resized, y * targetWidth, Math.Min(copyWidth, source.Length - sourceIndex));
+        }
+
+        return resized;
+    }
+
+    private static byte[] ResizeByteGridTopLeft(byte[] source, int sourceWidth, int sourceHeight, int targetWidth, int targetHeight)
+    {
+        var resized = new byte[targetWidth * targetHeight];
+        var copyWidth = Math.Min(sourceWidth, targetWidth);
+        var copyHeight = Math.Min(sourceHeight, targetHeight);
+        for (var y = 0; y < copyHeight; y++)
+        {
+            var sourceIndex = y * sourceWidth;
+            if (sourceIndex >= source.Length)
+            {
+                break;
+            }
+
+            Array.Copy(source, sourceIndex, resized, y * targetWidth, Math.Min(copyWidth, source.Length - sourceIndex));
+        }
+
+        return resized;
     }
 
     private async void OnRevertMapMetadataChangesClicked(object? sender, RoutedEventArgs e)
@@ -1729,7 +1997,11 @@ public partial class MainWindow
         RemovePatchForMap(_project.MapEncounterStatePatches, mapId, patch => patch.MapId);
         RemovePatchForMap(_project.MapMusicPatches, mapId, patch => patch.MapId);
         RemovePatchForMap(_project.MapEventObjectResourcePatches, mapId, patch => patch.MapId);
+        RemovePatchForMap(_project.MapDimensionPatches, mapId, patch => patch.MapId);
+        RemovePatchForMap(_project.MapLayerPatches, mapId, patch => patch.MapId);
+        RemovePatchForMap(_project.MapCollisionPatches, mapId, patch => patch.MapId);
         ClearCurrentMapMetadataDraft();
+        _mapSpriteSlotEditorMapId = null;
 
         var freshAsset = _mapTilesetRepository.ReadMap(_session.RomFile, mapId, _metadata.GetMapName(mapId));
         _mapTilesetCache[mapId] = freshAsset;
@@ -1739,15 +2011,18 @@ public partial class MainWindow
         RefreshMapCompositePreview();
         UpdateMapEditorSidebar();
         UpdateStatus();
-        await DisplayAlertAsync("Metadata Reverted", $"Removed staged metadata changes for map {mapId:D3}.", "OK");
+        MapMetadataStatusLabel.Text = $"Reset metadata and map layout changes for map {mapId:D3}.";
+        await Task.CompletedTask;
     }
 
     private static void RemovePatchForMap<TPatch>(IList<TPatch> patches, int mapId, Func<TPatch, int> selector)
     {
-        var existing = patches.FirstOrDefault(patch => selector(patch) == mapId);
-        if (existing is not null)
+        for (var index = patches.Count - 1; index >= 0; index--)
         {
-            patches.Remove(existing);
+            if (selector(patches[index]) == mapId)
+            {
+                patches.RemoveAt(index);
+            }
         }
     }
 
@@ -2052,6 +2327,23 @@ public partial class MainWindow
         if (tileX < 0 || tileY < 0 || sourceX < 0 || sourceY < 0 || sourceX >= source.PixelWidth || sourceY >= source.PixelHeight)
         {
             return false;
+        }
+
+        if (_loadedMapTileset is not null && editLayerKey is "layer1" or "layer2" or "layer3")
+        {
+            var (editWidth, editHeight) = GetEffectiveMapSizeInTiles(_loadedMapTileset);
+            if (tileX >= editWidth || tileY >= editHeight)
+            {
+                return false;
+            }
+        }
+        else if (_loadedMapTileset is not null && editLayerKey is "events" or "warps" or "collision")
+        {
+            var (widthInCells, heightInCells) = GetCollisionGridDimensions(_loadedMapTileset);
+            if (tileX >= widthInCells || tileY >= heightInCells)
+            {
+                return false;
+            }
         }
 
         _selectedMapTileX = tileX;
@@ -2383,6 +2675,30 @@ public partial class MainWindow
         return $"Selected tiles: {selection.WidthInTiles}x{selection.HeightInTiles}  |  Start tile {selection.StartTileIndex}  |  Suggested palette bank {_selectedMapTilesetTilePaletteBank}";
     }
 
+    private (int WidthInTiles, int HeightInTiles) GetEffectiveMapSizeInTiles(MapTilesetAsset asset)
+    {
+        var dimensionPatch = ProjectEditCollection.Find(_project, ProjectEditAdapters.MapDimension, asset.MapId);
+        return dimensionPatch is not null
+            ? (Math.Max(1, (int)dimensionPatch.WidthInTiles), Math.Max(1, (int)dimensionPatch.HeightInTiles))
+            : (Math.Max(1, asset.WidthInTiles), Math.Max(1, asset.HeightInTiles));
+    }
+
+    private (int WidthInTiles, int HeightInTiles) GetEffectiveMapLayerSize(MapLayerAsset layer)
+    {
+        if (_loadedMapTileset is not null)
+        {
+            var patch = ProjectEditCollection.Find(_project, ProjectEditAdapters.MapLayer, (_loadedMapTileset.MapId, layer.LayerIndex));
+            if (patch is not null)
+            {
+                return (Math.Max(1, (int)patch.HeaderWidthInTiles), Math.Max(1, (int)patch.HeaderHeightInTiles));
+            }
+        }
+
+        return (
+            Math.Max(1, layer.HeaderWidthInTiles == 0 ? layer.Image.TileWidth : layer.HeaderWidthInTiles),
+            Math.Max(1, layer.HeaderHeightInTiles == 0 ? layer.Image.TileHeight : layer.HeaderHeightInTiles));
+    }
+
     private IReadOnlyList<MapLayerAsset> GetEffectiveMapLayers(MapTilesetAsset tilesetSource)
     {
         if (_loadedMapTileset is null)
@@ -2394,8 +2710,22 @@ public partial class MainWindow
             .Select(layer =>
             {
                 var entries = GetEffectiveMapLayerEntries(layer);
-                var image = RenderEffectiveMapLayerImage(layer.HeaderWidthInTiles == 0 ? layer.Image.TileWidth : layer.HeaderWidthInTiles, layer.HeaderHeightInTiles == 0 ? layer.Image.TileHeight : layer.HeaderHeightInTiles, entries, tilesetSource.RawTilesetPixelIndices, tilesetSource.PaletteBytes);
-                return new MapLayerAsset(layer.LayerIndex, layer.PointerOffset, layer.DataOffset, layer.HeaderWidthInTiles, layer.HeaderHeightInTiles, layer.HeaderOriginX, layer.HeaderOriginY, layer.HeaderOriginX2, layer.HeaderOriginY2, entries, image);
+                var existingPatch = ProjectEditCollection.Find(_project, ProjectEditAdapters.MapLayer, (_loadedMapTileset.MapId, layer.LayerIndex));
+                var width = existingPatch?.HeaderWidthInTiles ?? (layer.HeaderWidthInTiles == 0 ? layer.Image.TileWidth : layer.HeaderWidthInTiles);
+                var height = existingPatch?.HeaderHeightInTiles ?? (layer.HeaderHeightInTiles == 0 ? layer.Image.TileHeight : layer.HeaderHeightInTiles);
+                var image = RenderEffectiveMapLayerImage(width, height, entries, tilesetSource.RawTilesetPixelIndices, tilesetSource.PaletteBytes);
+                return new MapLayerAsset(
+                    layer.LayerIndex,
+                    layer.PointerOffset,
+                    layer.DataOffset,
+                    (ushort)width,
+                    (ushort)height,
+                    existingPatch?.HeaderOriginX ?? layer.HeaderOriginX,
+                    existingPatch?.HeaderOriginY ?? layer.HeaderOriginY,
+                    existingPatch?.HeaderOriginX2 ?? layer.HeaderOriginX2,
+                    existingPatch?.HeaderOriginY2 ?? layer.HeaderOriginY2,
+                    entries,
+                    image);
             })
             .ToArray();
     }
@@ -2409,15 +2739,18 @@ public partial class MainWindow
 
         var (width, height) = GetCollisionGridDimensions(_loadedMapTileset);
         var expectedLength = width * height;
-        var source = _loadedMapTileset.CollisionBytes ?? [];
+        var source = _project.MapCollisionPatches.FirstOrDefault(patch => patch.MapId == _loadedMapTileset.MapId)?.ColorAttributeBytes
+            ?? _loadedMapTileset.CollisionBytes
+            ?? [];
         var values = new byte[expectedLength];
         Array.Copy(source, values, Math.Min(source.Length, values.Length));
         return values;
     }
 
-    private static (int WidthInCells, int HeightInCells) GetCollisionGridDimensions(MapTilesetAsset asset)
+    private (int WidthInCells, int HeightInCells) GetCollisionGridDimensions(MapTilesetAsset asset)
     {
-        return (Math.Max(1, asset.WidthInMetaTiles), Math.Max(1, asset.HeightInMetaTiles));
+        var (widthInTiles, heightInTiles) = GetEffectiveMapSizeInTiles(asset);
+        return (Math.Max(1, (widthInTiles + 1) / 2), Math.Max(1, (heightInTiles + 1) / 2));
     }
 
     private void EnsureMapCollisionValueOptions()
@@ -2526,9 +2859,9 @@ public partial class MainWindow
         }
 
         var layer = _loadedMapTileset.Layers[layerIndex];
-        var width = layer.HeaderWidthInTiles == 0 ? layer.Image.TileWidth : layer.HeaderWidthInTiles;
-        var height = layer.HeaderHeightInTiles == 0 ? layer.Image.TileHeight : layer.HeaderHeightInTiles;
-        if (tileX < 0 || tileY < 0 || tileX >= width || tileY >= height)
+        var (editWidth, editHeight) = GetEffectiveMapSizeInTiles(_loadedMapTileset);
+        var (layerWidth, layerHeight) = GetEffectiveMapLayerSize(layer);
+        if (tileX < 0 || tileY < 0 || tileX >= editWidth || tileY >= editHeight || tileX >= layerWidth || tileY >= layerHeight)
         {
             return false;
         }
@@ -2543,7 +2876,7 @@ public partial class MainWindow
             {
                 var destTileX = tileX + offsetX;
                 var destTileY = tileY + offsetY;
-                if (destTileX < 0 || destTileY < 0 || destTileX >= width || destTileY >= height)
+                if (destTileX < 0 || destTileY < 0 || destTileX >= editWidth || destTileY >= editHeight || destTileX >= layerWidth || destTileY >= layerHeight)
                 {
                     continue;
                 }
@@ -2552,7 +2885,7 @@ public partial class MainWindow
                 var paletteBank = sourceTileIndex < tilesetAsset.TilePaletteBanks.Count && tilesetAsset.TilePaletteBanks[sourceTileIndex] >= 0
                     ? tilesetAsset.TilePaletteBanks[sourceTileIndex]
                     : _selectedMapTilesetTilePaletteBank;
-                edited[(destTileY * width) + destTileX] = (ushort)((paletteBank << 12) | (sourceTileIndex & 0x03FF));
+                edited[(destTileY * layerWidth) + destTileX] = (ushort)((paletteBank << 12) | (sourceTileIndex & 0x03FF));
             }
         }
 
@@ -2703,8 +3036,8 @@ public partial class MainWindow
         }
 
         var editLayerKey = (MapEditLayerComboBox?.SelectedItem as MapLayerOption)?.Key ?? "layer1";
-        var coordinateDivisor = editLayerKey == "collision" ? 16 : 8;
-        var overlayOffset = editLayerKey == "collision" ? GetMapOverlayPixelOffset() : default;
+        var coordinateDivisor = editLayerKey is "events" or "warps" or "collision" ? 16 : 8;
+        var overlayOffset = editLayerKey is "events" or "warps" or "collision" ? GetMapOverlayPixelOffset() : default;
         var sourceX = position.X / _mapPreviewZoom;
         var sourceY = position.Y / _mapPreviewZoom;
         var tileX = (int)((sourceX - overlayOffset.X) / coordinateDivisor);
@@ -2712,6 +3045,23 @@ public partial class MainWindow
         if (tileX < 0 || tileY < 0 || sourceX < 0 || sourceY < 0 || sourceX >= source.PixelWidth || sourceY >= source.PixelHeight)
         {
             return false;
+        }
+
+        if (_loadedMapTileset is not null && editLayerKey is "layer1" or "layer2" or "layer3")
+        {
+            var (editWidth, editHeight) = GetEffectiveMapSizeInTiles(_loadedMapTileset);
+            if (tileX >= editWidth || tileY >= editHeight)
+            {
+                return false;
+            }
+        }
+        else if (_loadedMapTileset is not null && editLayerKey is "events" or "warps" or "collision")
+        {
+            var (widthInCells, heightInCells) = GetCollisionGridDimensions(_loadedMapTileset);
+            if (tileX >= widthInCells || tileY >= heightInCells)
+            {
+                return false;
+            }
         }
 
         var changed = _hoveredMapTileX != tileX || _hoveredMapTileY != tileY;
@@ -2730,11 +3080,19 @@ public partial class MainWindow
 
         var tilesetAsset = GetSelectedMapTilesetAsset();
         var selection = GetSelectedMapTilesetTileSelection(tilesetAsset);
+        var (editWidth, editHeight) = GetEffectiveMapSizeInTiles(_loadedMapTileset);
+        var previewWidthInTiles = Math.Min(selection.WidthInTiles, editWidth - _hoveredMapTileX.Value);
+        var previewHeightInTiles = Math.Min(selection.HeightInTiles, editHeight - _hoveredMapTileY.Value);
+        if (previewWidthInTiles <= 0 || previewHeightInTiles <= 0)
+        {
+            return;
+        }
+
         var swatches = BuildPaletteSwatches(tilesetAsset.TilesetSheet.PaletteBytes);
 
-        for (var offsetY = 0; offsetY < selection.HeightInTiles; offsetY++)
+        for (var offsetY = 0; offsetY < previewHeightInTiles; offsetY++)
         {
-            for (var offsetX = 0; offsetX < selection.WidthInTiles; offsetX++)
+            for (var offsetX = 0; offsetX < previewWidthInTiles; offsetX++)
             {
                 var sourceTileIndex = selection.StartTileIndex + offsetX + (offsetY * tilesetAsset.TilesetSheet.TileWidth);
                 var destX = (_hoveredMapTileX.Value + offsetX) * 8;
@@ -2743,7 +3101,7 @@ public partial class MainWindow
             }
         }
 
-        DrawSelectionRectangle(pixels, bitmapWidth, bitmapHeight, _hoveredMapTileX.Value * 8, _hoveredMapTileY.Value * 8, selection.WidthInTiles * 8, selection.HeightInTiles * 8);
+        DrawSelectionRectangle(pixels, bitmapWidth, bitmapHeight, _hoveredMapTileX.Value * 8, _hoveredMapTileY.Value * 8, previewWidthInTiles * 8, previewHeightInTiles * 8);
     }
 
     private void DrawCollisionOverlay(byte[] pixels, int bitmapWidth, int bitmapHeight, double opacity)
@@ -2944,8 +3302,9 @@ public partial class MainWindow
             return default;
         }
 
-        var compactWidthInMetaTiles = _loadedMapTileset.WidthInTiles / 2;
-        var compactHeightInMetaTiles = _loadedMapTileset.HeightInTiles / 2;
+        var (widthInTiles, heightInTiles) = GetEffectiveMapSizeInTiles(_loadedMapTileset);
+        var compactWidthInMetaTiles = widthInTiles / 2;
+        var compactHeightInMetaTiles = heightInTiles / 2;
         var offsetX = compactWidthInMetaTiles < 15 ? (15 - compactWidthInMetaTiles) * 8 : 0;
         var offsetY = compactHeightInMetaTiles < 10 ? (10 - compactHeightInMetaTiles) * 8 : 0;
         return new System.Windows.Point(offsetX, offsetY);
@@ -3101,28 +3460,51 @@ public partial class MainWindow
             : default;
         var originX = originOffset.X * _mapPreviewZoom;
         var originY = originOffset.Y * _mapPreviewZoom;
+        double endX = pixelWidth * _mapPreviewZoom;
+        double endY = pixelHeight * _mapPreviewZoom;
+        if (_loadedMapTileset is not null)
+        {
+            if (editLayerKey is "events" or "warps" or "collision")
+            {
+                var (widthInCells, heightInCells) = GetCollisionGridDimensions(_loadedMapTileset);
+                endX = Math.Min(endX, originX + (widthInCells * cellSize * _mapPreviewZoom));
+                endY = Math.Min(endY, originY + (heightInCells * cellSize * _mapPreviewZoom));
+            }
+            else
+            {
+                var (widthInTiles, heightInTiles) = GetEffectiveMapSizeInTiles(_loadedMapTileset);
+                endX = Math.Min(endX, originX + (widthInTiles * cellSize * _mapPreviewZoom));
+                endY = Math.Min(endY, originY + (heightInTiles * cellSize * _mapPreviewZoom));
+            }
+        }
+
+        if (endX <= originX || endY <= originY)
+        {
+            return;
+        }
+
         var gridBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(80, 107, 114, 128));
 
-        for (var x = originX; x <= pixelWidth * _mapPreviewZoom; x += cellSize * _mapPreviewZoom)
+        for (var x = originX; x <= endX; x += cellSize * _mapPreviewZoom)
         {
             MapGridCanvas.Children.Add(new System.Windows.Shapes.Line
             {
                 X1 = x,
-                Y1 = 0,
+                Y1 = originY,
                 X2 = x,
-                Y2 = pixelHeight * _mapPreviewZoom,
+                Y2 = endY,
                 Stroke = gridBrush,
                 StrokeThickness = 1.0
             });
         }
 
-        for (var y = originY; y <= pixelHeight * _mapPreviewZoom; y += cellSize * _mapPreviewZoom)
+        for (var y = originY; y <= endY; y += cellSize * _mapPreviewZoom)
         {
             MapGridCanvas.Children.Add(new System.Windows.Shapes.Line
             {
-                X1 = 0,
+                X1 = originX,
                 Y1 = y,
-                X2 = pixelWidth * _mapPreviewZoom,
+                X2 = endX,
                 Y2 = y,
                 Stroke = gridBrush,
                 StrokeThickness = 1.0

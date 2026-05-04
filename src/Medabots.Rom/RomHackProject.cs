@@ -36,6 +36,8 @@ public sealed class RomHackProject
 
     public IList<Maps.MapEventObjectResourcePatch> MapEventObjectResourcePatches { get; } = new List<Maps.MapEventObjectResourcePatch>();
 
+    public IList<Maps.MapDimensionPatch> MapDimensionPatches { get; } = new List<Maps.MapDimensionPatch>();
+
     public IList<Images.SpriteAsset> OverworldSpriteEdits { get; } = new List<Images.SpriteAsset>();
 
     public IList<Images.PortraitAsset> PortraitEdits { get; } = new List<Images.PortraitAsset>();

@@ -79,6 +79,7 @@ public sealed partial class RomHackProjectApplicator
             new Maps.MapSpawnProjectEditSystem(_mapOverlayPatcher),
             new Maps.MapWarpProjectEditSystem(_mapOverlayPatcher),
             new Maps.MapCollisionProjectEditSystem(_mapOverlayPatcher),
+            new Maps.MapDimensionProjectEditSystem(),
             new Maps.MapLayerProjectEditSystem(_mapLayerPatcher),
             new Maps.MapEncounterStateProjectEditSystem(),
             new Maps.MapEncounterProjectEditSystem(_encounterTableReader),

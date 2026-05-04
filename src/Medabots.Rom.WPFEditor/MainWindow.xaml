@@ -823,7 +823,7 @@
             </TabItem>
 
             <TabItem x:Name="MapsSection" Header="Maps">
-                <Grid Margin="0,8,0,0">
+                <Grid Margin="0,8,0,0" PreviewMouseDown="OnMapEditorRootPreviewMouseDown">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="340" />
                         <ColumnDefinition Width="12" />
@@ -858,7 +858,7 @@
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
                             <TextBlock Text="Map Editor" FontWeight="SemiBold" FontSize="14" />
-                            <TextBlock x:Name="MapSummaryLabel" Grid.Row="1" Margin="0,10,0,0" TextWrapping="Wrap" />
+                            <TextBlock x:Name="MapSummaryLabel" Grid.Row="1" Margin="0,10,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
                             <ToolBarTray Grid.Row="2" Margin="0,14,0,0" Background="Transparent">
                                 <ToolBar Band="0" BandIndex="0">
                                     <TextBlock VerticalAlignment="Center">Edit</TextBlock>
@@ -948,6 +948,30 @@
                             <StackPanel>
                                 <StackPanel x:Name="MapMetadataEditorPanel" Margin="0,0,0,12" Visibility="Collapsed">
                                     <TextBlock Text="Map Metadata" FontWeight="SemiBold" FontSize="14" />
+                                    <Border Margin="0,12,0,0" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="10" Background="#FFF9FAFB">
+                                        <TextBlock x:Name="MapMetadataOverviewLabel" TextWrapping="Wrap" />
+                                    </Border>
+                                    <TextBlock Margin="0,12,0,0" Text="Map Size" FontWeight="SemiBold" Foreground="#FF111827" />
+                                    <Grid Margin="0,6,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="8" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="Width (tiles)" />
+                                            <TextBox x:Name="MapWidthEntry" Margin="0,4,0,0" TextChanged="OnMapResizeTextChanged" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="Height (tiles)" />
+                                            <TextBox x:Name="MapHeightEntry" Margin="0,4,0,0" TextChanged="OnMapResizeTextChanged" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock x:Name="MapResizeHintLabel"
+                                               Margin="0,6,0,0"
+                                               Foreground="#FF6B7280"
+                                               TextWrapping="Wrap"
+                                               Text="Resize is staged immediately. Existing tiles are copied from the top-left; new space is filled with empty tiles." />
                                     <TextBlock Margin="0,12,0,0" Text="Music" FontWeight="SemiBold" Foreground="#FF111827" />
                                     <ComboBox x:Name="MapMusicComboBox"
                                               Margin="0,6,0,0"
@@ -1056,13 +1080,9 @@
                                         </StackPanel>
                                     </Border>
                                     <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                                        <Button x:Name="ApplyMapMetadataChangesButton"
-                                                HorizontalAlignment="Left"
-                                                Click="OnApplyMapMetadataChangesClicked">Apply Changes</Button>
                                         <Button x:Name="RevertMapMetadataChangesButton"
-                                                Margin="8,0,0,0"
                                                 HorizontalAlignment="Left"
-                                                Click="OnRevertMapMetadataChangesClicked">Reset To Default</Button>
+                                                Click="OnRevertMapMetadataChangesClicked">Reset</Button>
                                     </StackPanel>
                                     <TextBlock x:Name="MapMetadataStatusLabel"
                                                Margin="0,8,0,0"
@@ -1383,6 +1403,30 @@
                                 <StackPanel>
                                     <TextBlock Text="Sprite Details" FontWeight="SemiBold" FontSize="14" />
                                     <TextBlock x:Name="SpriteSummaryLabel" Margin="0,12,0,0" TextWrapping="Wrap" />
+                                    <StackPanel x:Name="LargeBotLivePreviewPanel" Margin="0,12,0,0" Visibility="Collapsed">
+                                        <TextBlock Text="Complete Medabot Preview" FontWeight="SemiBold" />
+                                        <Border Margin="0,6,0,0"
+                                                Padding="6"
+                                                BorderBrush="#FFD1D5DB"
+                                                BorderThickness="1"
+                                                Background="#FFF9FAFB">
+                                            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                                          VerticalScrollBarVisibility="Disabled">
+                                                <Image x:Name="LargeBotLivePreviewImage"
+                                                       Stretch="None"
+                                                       HorizontalAlignment="Left"
+                                                       RenderOptions.BitmapScalingMode="NearestNeighbor">
+                                                    <Image.LayoutTransform>
+                                                        <ScaleTransform ScaleX="2" ScaleY="2" />
+                                                    </Image.LayoutTransform>
+                                                </Image>
+                                            </ScrollViewer>
+                                        </Border>
+                                        <TextBlock x:Name="LargeBotLivePreviewLabel"
+                                                   Margin="0,6,0,0"
+                                                   Foreground="#FF6B7280"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
                                     <StackPanel x:Name="BotBattleFacingEditorPanel" Margin="0,12,0,0" Visibility="Collapsed">
                                         <TextBlock Text="Battle Preview Facing" FontWeight="SemiBold" />
                                         <ComboBox x:Name="BotBattleFacingComboBox"
