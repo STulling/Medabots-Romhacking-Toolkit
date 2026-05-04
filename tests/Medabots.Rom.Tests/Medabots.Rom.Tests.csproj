@@ -25,7 +25,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\..\Medabots Rokusho Version (E).gba" Link="Medabots Rokusho Version (E).gba">
+    <None Include="..\..\Medabots Rokusho Version (E).gba" Link="Medabots Rokusho Version (E).gba" Condition="Exists('..\..\Medabots Rokusho Version (E).gba')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

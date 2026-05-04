@@ -34,7 +34,11 @@ jobs:
         run: dotnet restore Medabots.Romhacking.Toolkit.sln
 
       - name: Test
-        run: dotnet test tests/Medabots.Rom.Tests/Medabots.Rom.Tests.csproj --configuration Release --no-restore
+        run: >
+          dotnet test tests/Medabots.Rom.Tests/Medabots.Rom.Tests.csproj
+          --configuration Release
+          --no-restore
+          --filter "FullyQualifiedName~RomHackProjectTests|FullyQualifiedName~EventRegistryTests|FullyQualifiedName~RomHackSessionTests|FullyQualifiedName~MedabotsMetadataTests|FullyQualifiedName~PartDefinitionTests|FullyQualifiedName~MedabotsMessageTableTests|FullyQualifiedName~MedabotsRomSchemaTests|FullyQualifiedName~MedabotsTextCodecTests"
 
       - name: Publish WPF editor
         shell: pwsh
