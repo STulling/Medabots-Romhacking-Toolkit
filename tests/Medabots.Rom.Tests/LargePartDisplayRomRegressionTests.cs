@@ -175,6 +175,58 @@ public sealed class LargePartDisplayRomRegressionTests
     }
 
     [Theory]
+    [InlineData(13)]
+    [InlineData(23)]
+    public async Task ImageRepository_ReadMedabotLargeDisplayFrame_MirroredSideKeepsOriginalArmTemplatePaletteBanks(int medabotId)
+    {
+        var rom = await RomFile.LoadAsync(TestRomLocator.FindWorkspaceRom());
+        var repository = new ImageAssetRepository();
+        var parts = new PartTableReader().ReadAll(rom);
+
+        var left = repository.ReadMedabotLargeDisplayFrame(rom, parts, medabotId, side: 1);
+
+        Assert.Equal(1, left.Pieces.Single(piece => piece.DescriptorId == 17).PaletteBank);
+        Assert.Equal(1, left.Pieces.Single(piece => piece.DescriptorId == 18).PaletteBank);
+        Assert.Equal(2, left.Pieces.Single(piece => piece.DescriptorId == 14).PaletteBank);
+        Assert.Equal(2, left.Pieces.Single(piece => piece.DescriptorId == 15).PaletteBank);
+    }
+
+    [Theory]
+    [InlineData(13, 0x5B47F0, 0x5BA0FC, 0x5A756C, 0x5AD1A4)]
+    [InlineData(23, 0x5B4F64, 0x5BA7F4, 0x5A7D20, 0x5AD88C)]
+    public async Task ImageRepository_ReadMedabotLargeDisplayFrame_MirroredSideUsesRomArmCopyPassSources(
+        int medabotId,
+        int rightTopImageOffset,
+        int rightBottomImageOffset,
+        int leftTopImageOffset,
+        int leftBottomImageOffset)
+    {
+        var rom = await RomFile.LoadAsync(TestRomLocator.FindWorkspaceRom());
+        var repository = new ImageAssetRepository();
+        var parts = new PartTableReader().ReadAll(rom);
+
+        var left = repository.ReadMedabotLargeDisplayFrame(rom, parts, medabotId, side: 1);
+
+        Assert.Equal(rightTopImageOffset, left.Pieces.Single(piece => piece.DescriptorId == 17).ImageOffset);
+        Assert.Equal(rightBottomImageOffset, left.Pieces.Single(piece => piece.DescriptorId == 18).ImageOffset);
+        Assert.Equal(leftTopImageOffset, left.Pieces.Single(piece => piece.DescriptorId == 14).ImageOffset);
+        Assert.Equal(leftBottomImageOffset, left.Pieces.Single(piece => piece.DescriptorId == 15).ImageOffset);
+    }
+
+    [Fact]
+    public async Task ImageRepository_ReadMedabotLargeDisplayFrame_MirroredSideUsesOwnVariantWhenArmCopyPassSkipsNegativeEntries()
+    {
+        var rom = await RomFile.LoadAsync(TestRomLocator.FindWorkspaceRom());
+        var repository = new ImageAssetRepository();
+        var parts = new PartTableReader().ReadAll(rom);
+
+        var left = repository.ReadMedabotLargeDisplayFrame(rom, parts, medabotId: 42, side: 1);
+
+        Assert.Equal(0x5AEB14, left.Pieces.Single(piece => piece.DescriptorId == 18).ImageOffset);
+        Assert.Equal(0x5BBB40, left.Pieces.Single(piece => piece.DescriptorId == 15).ImageOffset);
+    }
+
+    [Theory]
     [InlineData(0, new[] { 7, 8, 16, 19, 30 })]
     [InlineData(28, new[] { 13, 14, 15, 17, 18, 25, 26, 27, 28, 29 })]
     [InlineData(30, new[] { 7, 8, 14, 15, 17, 18, 41, 42, 43, 44 })]

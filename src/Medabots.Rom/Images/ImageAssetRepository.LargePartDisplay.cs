@@ -181,6 +181,7 @@ public sealed partial class ImageAssetRepository
         var legsRootDescriptorId = GetFirstAppearanceDescriptorId(romFile, legs);
         var combinedAppearanceEntries = ReadCombinedCompositePreviewAppearanceEntries(romFile, head, rightArm, leftArm, legs);
         var resolvedSide = side & 1;
+        var imageSourceOverrides = BuildCompositePreviewImageSourceOverrides(romFile, rightArm, leftArm, resolvedSide);
         var syntheticDescriptors = BuildCombinedPreviewSyntheticDescriptors(
             romFile,
             headRootDescriptorId,
@@ -199,7 +200,8 @@ public sealed partial class ImageAssetRepository
             0x1C2,
             mutablePieces,
             new HashSet<int>(),
-            syntheticDescriptors);
+            syntheticDescriptors,
+            imageSourceOverrides);
 
         var combinedFrame = new MedabotLargeDisplayFrame(
             medabotId,
@@ -286,23 +288,45 @@ public sealed partial class ImageAssetRepository
         ICollection<MutableLargePartDisplayPiece> pieces,
         ISet<int> recursionStack,
         IReadOnlyDictionary<int, byte[]> syntheticDescriptors)
+        => ReadCompositeLargeDisplayDescriptorRecursive(
+            romFile,
+            appearanceEntries,
+            descriptorId,
+            side,
+            anchorYFixed,
+            anchorXFixed,
+            inheritedSortKey,
+            pieces,
+            recursionStack,
+            syntheticDescriptors,
+            new Dictionary<int, CompositePreviewImageSourceOverride>());
+
+    private void ReadCompositeLargeDisplayDescriptorRecursive(
+        RomFile romFile,
+        IReadOnlyList<uint> appearanceEntries,
+        int descriptorId,
+        int side,
+        int anchorYFixed,
+        int anchorXFixed,
+        int inheritedSortKey,
+        ICollection<MutableLargePartDisplayPiece> pieces,
+        ISet<int> recursionStack,
+        IReadOnlyDictionary<int, byte[]> syntheticDescriptors,
+        IReadOnlyDictionary<int, CompositePreviewImageSourceOverride> imageSourceOverrides)
     {
         if (descriptorId <= 0 || !recursionStack.Add(descriptorId))
         {
             return;
         }
 
-        var previewVariantSelector = 0;
         var appearanceEntryRaw = FindCombinedLargeDisplayAppearanceEntry(appearanceEntries, descriptorId);
         var renderDescriptorId = descriptorId;
         if (!syntheticDescriptors.ContainsKey(descriptorId) && (side & 1) != 0)
         {
             renderDescriptorId = MirrorCompositePreviewDescriptorId(descriptorId);
         }
-        var sourceDescriptorId = renderDescriptorId;
-        var sourceAppearanceEntryRaw = FindCombinedLargeDisplayAppearanceEntry(appearanceEntries, sourceDescriptorId);
 
-        if (!TryGetCombinedPreviewDescriptorRecord(romFile, descriptorId, syntheticDescriptors, out _, out var logicalDescriptorBytes, out _))
+        if (!TryGetCombinedPreviewDescriptorRecord(romFile, descriptorId, syntheticDescriptors, out var logicalDescriptorOffset, out var logicalDescriptorBytes, out _))
         {
             recursionStack.Remove(descriptorId);
             return;
@@ -314,17 +338,22 @@ public sealed partial class ImageAssetRepository
             return;
         }
 
-        if (!TryGetCombinedPreviewDescriptorRecord(romFile, sourceDescriptorId, syntheticDescriptors, out var descriptorOffset, out var sourceDescriptorBytes, out _))
+        var hasImageSourceOverride = imageSourceOverrides.TryGetValue(descriptorId, out var imageSourceOverride);
+        var imageSourceDescriptorId = hasImageSourceOverride ? imageSourceOverride.DescriptorId : descriptorId;
+        var imageSourceAppearanceEntryRaw = hasImageSourceOverride
+            ? imageSourceOverride.AppearanceEntryRaw
+            : appearanceEntryRaw;
+        if (!TryGetCombinedPreviewDescriptorRecord(romFile, imageSourceDescriptorId, syntheticDescriptors, out var imageSourceDescriptorOffset, out _, out _))
         {
             recursionStack.Remove(descriptorId);
             return;
         }
 
-        var rawHeightPixels = descriptorBytes[0x12];
-        var rawWidthPixels = descriptorBytes[0x13];
+        var rawHeightPixels = logicalDescriptorBytes[0x12];
+        var rawWidthPixels = logicalDescriptorBytes[0x13];
         var height = rawHeightPixels;
         var width = rawWidthPixels;
-        var divisors = descriptorBytes[0x14];
+        var divisors = logicalDescriptorBytes[0x14];
         var heightDivisor = Math.Max(1, divisors & 0x0F);
         var widthDivisor = Math.Max(1, divisors >> 4);
         width /= (byte)widthDivisor;
@@ -352,18 +381,23 @@ public sealed partial class ImageAssetRepository
 
         if (appearanceEntryRaw != 0)
         {
-            var imageAppearanceEntryRaw = sourceAppearanceEntryRaw != 0 ? sourceAppearanceEntryRaw : appearanceEntryRaw;
-            var resolvedTableIndex = ResolveCompositePreviewTableIndex(imageAppearanceEntryRaw, previewVariantSelector);
-            var blobPointerTableOffset = ReadRequiredPointer(romFile, descriptorOffset);
+            var imageAppearanceEntryRaw = imageSourceAppearanceEntryRaw != 0
+                ? imageSourceAppearanceEntryRaw
+                : appearanceEntryRaw;
+            var imageVariantSelector = hasImageSourceOverride ? 0 : side & 1;
+            var resolvedTableIndex = ResolveCompositePreviewTableIndex(imageAppearanceEntryRaw, imageVariantSelector);
+            var blobPointerTableOffset = ReadRequiredPointer(romFile, imageSourceDescriptorOffset);
             var imagePointerOffset = blobPointerTableOffset + (resolvedTableIndex * sizeof(uint));
             var imageOffset = ReadRequiredPointer(romFile, imagePointerOffset);
             var decoded = GbaLz77.Decompress(romFile.Data, imageOffset)
                 ?? throw new InvalidDataException($"Large part display descriptor {descriptorId} does not contain valid LZ77 image data.");
             var unpacked = TileImageCodec.Split4BppTiles(decoded);
-            var paletteOffset = TryReadOptionalPointer(romFile, imagePointerOffset + sizeof(uint), out var resolvedPaletteOffset)
+            var paletteTableIndex = ResolveCompositePreviewTableIndex(appearanceEntryRaw, side & 1);
+            var paletteBlobPointerTableOffset = ReadRequiredPointer(romFile, logicalDescriptorOffset);
+            var palettePointerOffset = paletteBlobPointerTableOffset + ((paletteTableIndex * sizeof(uint)) + sizeof(uint));
+            var paletteOffset = TryReadOptionalPointer(romFile, palettePointerOffset, out var resolvedPaletteOffset)
                 ? resolvedPaletteOffset
                 : 0;
-            var palettePointerOffset = imagePointerOffset + sizeof(uint);
             if (paletteOffset == imageOffset)
             {
                 paletteOffset = 0;
@@ -371,7 +405,7 @@ public sealed partial class ImageAssetRepository
             }
 
             var paletteBytes = paletteOffset == 0 ? [] : romFile.ReadBytes(paletteOffset, PaletteSize).ToArray();
-            var paletteBank = descriptorBytes[0x11];
+            var paletteBank = logicalDescriptorBytes[0x11];
             var loadedTileCount = Math.Max(1, unpacked.Length / 64);
             var allocatedPixels = new byte[Math.Max(tileWidth * tileHeight * 64, unpacked.Length)];
             Array.Copy(unpacked, allocatedPixels, Math.Min(unpacked.Length, allocatedPixels.Length));
@@ -379,8 +413,8 @@ public sealed partial class ImageAssetRepository
             pieces.Add(new MutableLargePartDisplayPiece(
                 descriptorId,
                 0,
-                descriptorOffset,
-                descriptorBytes,
+                logicalDescriptorOffset,
+                logicalDescriptorBytes,
                 imagePointerOffset,
                 palettePointerOffset,
                 imageOffset,
@@ -389,11 +423,11 @@ public sealed partial class ImageAssetRepository
                 paletteBank,
                 x,
                 y,
-                descriptorBytes[0x0F],
-                descriptorBytes[0x10],
-                descriptorBytes[0x13],
-                descriptorBytes[0x12],
-                descriptorBytes[0x14],
+                logicalDescriptorBytes[0x0F],
+                logicalDescriptorBytes[0x10],
+                logicalDescriptorBytes[0x13],
+                logicalDescriptorBytes[0x12],
+                logicalDescriptorBytes[0x14],
                 loadedTileCount,
                 tileWidth,
                 tileHeight,
@@ -416,7 +450,8 @@ public sealed partial class ImageAssetRepository
                 sortKey,
                 pieces,
                 recursionStack,
-                syntheticDescriptors);
+                syntheticDescriptors,
+                imageSourceOverrides);
         }
 
         var siblingDescriptorId = logicalDescriptorBytes[0x0F];
@@ -432,7 +467,8 @@ public sealed partial class ImageAssetRepository
                 inheritedSortKey,
                 pieces,
                 recursionStack,
-                syntheticDescriptors);
+                syntheticDescriptors,
+                imageSourceOverrides);
         }
 
         recursionStack.Remove(descriptorId);
@@ -1171,6 +1207,62 @@ public sealed partial class ImageAssetRepository
         };
     }
 
+    private IReadOnlyDictionary<int, CompositePreviewImageSourceOverride> BuildCompositePreviewImageSourceOverrides(
+        RomFile romFile,
+        PartDefinition rightArm,
+        PartDefinition leftArm,
+        int side)
+    {
+        if ((side & 1) == 0)
+        {
+            return new Dictionary<int, CompositePreviewImageSourceOverride>();
+        }
+
+        var overrides = new Dictionary<int, CompositePreviewImageSourceOverride>();
+        AddCompositePreviewArmCopyPassImageSourceOverrides(
+            overrides,
+            ReadCompositePreviewAppearanceRow(romFile, PartKind.RightArm, rightArm.Id / 4).Entries,
+            ReadCompositePreviewAppearanceRow(romFile, PartKind.LeftArm, rightArm.Id / 4).Entries);
+        AddCompositePreviewArmCopyPassImageSourceOverrides(
+            overrides,
+            ReadCompositePreviewAppearanceRow(romFile, PartKind.LeftArm, leftArm.Id / 4).Entries,
+            ReadCompositePreviewAppearanceRow(romFile, PartKind.RightArm, leftArm.Id / 4).Entries);
+        return overrides;
+    }
+
+    private static void AddCompositePreviewArmCopyPassImageSourceOverrides(
+        IDictionary<int, CompositePreviewImageSourceOverride> overrides,
+        IReadOnlyList<uint> targetEntries,
+        IReadOnlyList<uint> sourceEntries)
+    {
+        var count = Math.Min(targetEntries.Count, sourceEntries.Count);
+        for (var index = 0; index < count; index++)
+        {
+            var targetEntry = targetEntries[index];
+            var targetDescriptorId = (int)(targetEntry & 0x3F);
+            if (targetDescriptorId == 0)
+            {
+                break;
+            }
+
+            var sourceEntry = sourceEntries[index];
+            var sourceDescriptorId = (int)(sourceEntry & 0x3F);
+            if (sourceDescriptorId == 0)
+            {
+                continue;
+            }
+
+            // CopyCompositePreviewDescriptorGraphics only runs for non-negative byte 1 on the
+            // target row entry. It copies graphics from the opposite arm table at the same part
+            // ordinal and leaves the target descriptor's template/palette attributes intact.
+            var targetByte1Signed = unchecked((sbyte)((targetEntry >> 8) & 0xFF));
+            if (targetByte1Signed >= 0)
+            {
+                overrides[targetDescriptorId] = new CompositePreviewImageSourceOverride(sourceDescriptorId, sourceEntry);
+            }
+        }
+    }
+
     private int GetFirstAppearanceDescriptorId(RomFile romFile, PartDefinition part)
     {
         var (_, entries) = ReadCompositePreviewAppearanceRow(romFile, part.Kind, part.Id / 4);
@@ -1310,6 +1402,8 @@ public sealed partial class ImageAssetRepository
     {
         return (0x100, 0, 0, 0x100);
     }
+
+    private readonly record struct CompositePreviewImageSourceOverride(int DescriptorId, uint AppearanceEntryRaw);
 
     private sealed class MutableLargePartDisplayPiece
     {

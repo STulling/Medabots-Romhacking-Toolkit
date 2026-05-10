@@ -25,6 +25,11 @@ public static class MedabotsRomSchema
     public const int PartCount = 481;
     public const int EncounterSize = 4;
     public const int EncounterCount = 192;
+    public const int ShopCount = 15;
+    public const int ShopEntrySize = 4;
+    public const int ShopSlotCount = 4;
+    public const byte EmptyShopSlot = 0xFF;
+    public const byte ConditionalShopSlot = 0x20;
     public const int MapCount = 192;
     public const int MapLayerCount = 3;
     public const int MapChapterCount = 16;

@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:Medabots.Rom.WPFEditor"
         xmlns:localModels="clr-namespace:Medabots.Rom.WPFEditor.Models"
+        xmlns:editorModels="clr-namespace:Medabots.Rom.Editor"
         mc:Ignorable="d"
         Title="Medabots ROM WPF Editor"
         Height="980"
@@ -31,6 +32,11 @@
             <Setter Property="Padding" Value="12" />
             <Setter Property="CornerRadius" Value="2" />
         </Style>
+        <DataTemplate x:Key="BrowserItemChangeTemplate" DataType="{x:Type editorModels:BrowserItem}">
+            <TextBlock Text="{Binding Title}"
+                       Foreground="{Binding TextColor, Converter={StaticResource ColorToBrushConverter}}"
+                       TextWrapping="Wrap" />
+        </DataTemplate>
         <DataTemplate x:Key="BattleLoadoutOptionTemplate" DataType="{x:Type localModels:BattleLoadoutOption}">
             <Grid Margin="0,1,0,1">
                 <Grid.ColumnDefinitions>
@@ -41,7 +47,7 @@
                     <Image Source="{Binding Thumbnail}" Width="36" Height="36" Stretch="Fill" RenderOptions.BitmapScalingMode="NearestNeighbor" />
                 </Border>
                 <StackPanel Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center">
-                    <TextBlock FontWeight="SemiBold" Foreground="#FF111827" Text="{Binding Title}" TextWrapping="Wrap" />
+                    <TextBlock FontWeight="SemiBold" Text="{Binding Title}" TextWrapping="Wrap" />
                     <TextBlock Margin="0,2,0,0" FontSize="11" Foreground="#FF6B7280" Text="{Binding Subtitle}" TextWrapping="Wrap" />
                 </StackPanel>
             </Grid>
@@ -373,7 +379,7 @@
                 </Grid>
             </TabItem>
 
-            <TabItem x:Name="BattlesSection" Header="Battles">
+            <TabItem x:Name="BattlesSection" Header="Robobattles">
                 <Grid Margin="0,8,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="340" />
@@ -391,7 +397,7 @@
                                      Grid.Row="1"
                                      Margin="0,10,0,0"
                                      SelectionChanged="OnBattleSelectionChanged"
-                                     DisplayMemberPath="Title"
+                                     ItemTemplate="{StaticResource BrowserItemChangeTemplate}"
                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
                         </Grid>
@@ -399,7 +405,14 @@
                     <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <StackPanel>
-                                <TextBlock Text="Battle Details" FontWeight="SemiBold" FontSize="14" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Robobattle Details" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+                                    <Button Grid.Column="1" HorizontalAlignment="Right" Click="OnResetBattleClicked">Reset</Button>
+                                </Grid>
                                 <Border Margin="0,12,0,0" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="10" Background="#FFF9FAFB">
                                     <StackPanel>
                                         <TextBlock x:Name="BattleOverviewLabel" FontWeight="SemiBold" TextWrapping="Wrap" />
@@ -413,200 +426,176 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="12" />
                                         <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
 
                                     <StackPanel Grid.Column="0">
                                         <TextBlock Text="Battle Owner / Character" FontWeight="SemiBold" />
-                                        <TextBox x:Name="BattleCharacterEntry" Margin="0,4,0,0" />
-                                        <TextBlock x:Name="BattleCharacterHintLabel" Margin="0,4,0,0" Foreground="#FF6B7280" TextWrapping="Wrap" />
+                                        <ComboBox x:Name="BattleCharacterEntry" Margin="0,4,0,0" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                        <TextBlock x:Name="BattleCharacterHintLabel" Visibility="Collapsed" />
                                     </StackPanel>
 
                                     <StackPanel Grid.Column="2">
                                         <TextBlock Text="Active Bots" FontWeight="SemiBold" />
-                                        <TextBox x:Name="BattleBotCountEntry" Margin="0,4,0,0" />
-                                        <TextBlock x:Name="BattleBotCountHintLabel" Margin="0,4,0,0" Foreground="#FF6B7280" TextWrapping="Wrap" />
+                                        <ComboBox x:Name="BattleBotCountEntry" Margin="0,4,0,0" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                        <TextBlock x:Name="BattleBotCountHintLabel" Visibility="Collapsed" />
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="4">
+                                        <TextBlock Text="Roborobo Medal Reward" FontWeight="SemiBold" />
+                                        <ComboBox x:Name="BattleInitializationModeEntry" Margin="0,4,0,0" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="6">
+                                        <TextBlock Text="Part Loadout Mode" FontWeight="SemiBold" />
+                                        <ComboBox x:Name="BattleTemplateFlagEntry" Margin="0,4,0,0" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnBattleLoadoutSelectionChanged" />
                                     </StackPanel>
                                 </Grid>
-                                <TextBlock Margin="0,14,0,0" Text="Bot Loadouts" FontWeight="SemiBold" />
-                                <UniformGrid Margin="0,8,0,0" Columns="2">
-                                    <Border Margin="0,0,8,0" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="10">
-                                        <StackPanel>
-                                            <TextBlock Text="Bot 1" FontWeight="SemiBold" />
-                                            <TextBlock x:Name="BattleBot1SummaryLabel" Margin="0,6,0,0" Foreground="#FF6B7280" TextWrapping="Wrap" />
-                                            <Grid Margin="0,10,0,0">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="1.3*" />
-                                                    <ColumnDefinition Width="12" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <StackPanel Grid.Column="0">
-                                                    <TextBlock Text="Head Part" FontWeight="SemiBold" />
-                                                    <ComboBox x:Name="BattleBot1HeadEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
-                                                    <TextBlock Margin="0,8,0,0" Text="Right Arm" FontWeight="SemiBold" />
-                                                    <ComboBox x:Name="BattleBot1RightEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
-                                                    <TextBlock Margin="0,8,0,0" Text="Left Arm" FontWeight="SemiBold" />
-                                                    <ComboBox x:Name="BattleBot1LeftEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
-                                                    <TextBlock Margin="0,8,0,0" Text="Legs" FontWeight="SemiBold" />
-                                                    <ComboBox x:Name="BattleBot1LegsEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
-                                                    <TextBlock Margin="0,8,0,0" Text="Medal" FontWeight="SemiBold" />
-                                                    <ComboBox x:Name="BattleBot1MedalEntry" Margin="0,4,0,0" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnBattleLoadoutSelectionChanged" />
-                                                    <TextBlock Margin="0,8,0,0" Text="Medal Level" FontWeight="SemiBold" />
-                                                    <ComboBox x:Name="BattleBot1LevelEntry" Margin="0,4,0,0" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnBattleLoadoutSelectionChanged" />
-                                                </StackPanel>
-                                                <Border Grid.Column="2" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="8" Background="#FFF9FAFB">
-                                                    <StackPanel>
-                                                        <TextBlock Text="Derived Medal Stats" FontWeight="SemiBold" />
-                                                        <TextBlock x:Name="BattleBot1DerivedLabel" Margin="0,6,0,0" Foreground="#FF374151" TextWrapping="Wrap" />
-                                                    </StackPanel>
-                                                </Border>
-                                            </Grid>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Margin="8,0,0,0" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="10">
-                                        <StackPanel>
-                                            <TextBlock Text="Bot 2" FontWeight="SemiBold" />
-                                            <TextBlock x:Name="BattleBot2SummaryLabel" Margin="0,6,0,0" Foreground="#FF6B7280" TextWrapping="Wrap" />
-                                            <Grid Margin="0,10,0,0">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="1.3*" />
-                                                    <ColumnDefinition Width="12" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <StackPanel Grid.Column="0">
-                                                    <TextBlock Text="Head Part" FontWeight="SemiBold" />
-                                                    <ComboBox x:Name="BattleBot2HeadEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
-                                                    <TextBlock Margin="0,8,0,0" Text="Right Arm" FontWeight="SemiBold" />
-                                                    <ComboBox x:Name="BattleBot2RightEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
-                                                    <TextBlock Margin="0,8,0,0" Text="Left Arm" FontWeight="SemiBold" />
-                                                    <ComboBox x:Name="BattleBot2LeftEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
-                                                    <TextBlock Margin="0,8,0,0" Text="Legs" FontWeight="SemiBold" />
-                                                    <ComboBox x:Name="BattleBot2LegsEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
-                                                    <TextBlock Margin="0,8,0,0" Text="Medal" FontWeight="SemiBold" />
-                                                    <ComboBox x:Name="BattleBot2MedalEntry" Margin="0,4,0,0" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnBattleLoadoutSelectionChanged" />
-                                                    <TextBlock Margin="0,8,0,0" Text="Medal Level" FontWeight="SemiBold" />
-                                                    <ComboBox x:Name="BattleBot2LevelEntry" Margin="0,4,0,0" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnBattleLoadoutSelectionChanged" />
-                                                </StackPanel>
-                                                <Border Grid.Column="2" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="8" Background="#FFF9FAFB">
-                                                    <StackPanel>
-                                                        <TextBlock Text="Derived Medal Stats" FontWeight="SemiBold" />
-                                                        <TextBlock x:Name="BattleBot2DerivedLabel" Margin="0,6,0,0" Foreground="#FF374151" TextWrapping="Wrap" />
-                                                    </StackPanel>
-                                                </Border>
-                                            </Grid>
-                                        </StackPanel>
-                                    </Border>
-                                </UniformGrid>
 
-                                <Border Margin="0,12,0,0" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="10">
+                                <TextBlock Margin="0,14,0,0" Text="Bots" FontWeight="SemiBold" />
+
+                                <Border x:Name="BattleBot1Panel" Margin="0,8,0,0" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="10">
                                     <StackPanel>
-                                        <TextBlock Text="Bot 3" FontWeight="SemiBold" />
-                                        <TextBlock x:Name="BattleBot3SummaryLabel" Margin="0,6,0,0" Foreground="#FF6B7280" TextWrapping="Wrap" />
+                                        <TextBlock Text="Bot 1" FontWeight="SemiBold" />
+                                        <TextBlock x:Name="BattleBot1PresenceLabel" Visibility="Collapsed" />
+                                        <TextBlock x:Name="BattleBot1SummaryLabel" Visibility="Collapsed" />
                                         <Grid Margin="0,10,0,0">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="1.3*" />
-                                                <ColumnDefinition Width="12" />
-                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="1.25*" />
+                                                <ColumnDefinition Width="16" />
+                                                <ColumnDefinition Width="1.1*" />
+                                                <ColumnDefinition Width="16" />
+                                                <ColumnDefinition Width="0.9*" />
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Grid.Column="0">
                                                 <TextBlock Text="Head Part" FontWeight="SemiBold" />
-                                                <ComboBox x:Name="BattleBot3HeadEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                                <ComboBox x:Name="BattleBot1HeadEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
                                                 <TextBlock Margin="0,8,0,0" Text="Right Arm" FontWeight="SemiBold" />
-                                                <ComboBox x:Name="BattleBot3RightEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                                <ComboBox x:Name="BattleBot1RightEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
                                                 <TextBlock Margin="0,8,0,0" Text="Left Arm" FontWeight="SemiBold" />
-                                                <ComboBox x:Name="BattleBot3LeftEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                                <ComboBox x:Name="BattleBot1LeftEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
                                                 <TextBlock Margin="0,8,0,0" Text="Legs" FontWeight="SemiBold" />
-                                                <ComboBox x:Name="BattleBot3LegsEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                                <ComboBox x:Name="BattleBot1LegsEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
                                                 <TextBlock Margin="0,8,0,0" Text="Medal" FontWeight="SemiBold" />
-                                                <ComboBox x:Name="BattleBot3MedalEntry" Margin="0,4,0,0" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                                <ComboBox x:Name="BattleBot1MedalEntry" Margin="0,4,0,0" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnBattleLoadoutSelectionChanged" />
                                                 <TextBlock Margin="0,8,0,0" Text="Medal Level" FontWeight="SemiBold" />
-                                                <ComboBox x:Name="BattleBot3LevelEntry" Margin="0,4,0,0" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                                <ComboBox x:Name="BattleBot1LevelEntry" Margin="0,4,0,0" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnBattleLoadoutSelectionChanged" />
                                             </StackPanel>
-                                            <Border Grid.Column="2" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="8" Background="#FFF9FAFB">
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="AI Cycle" FontWeight="SemiBold" />
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot1Unknown0Entry" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot1Cycle1ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot1Unknown2Entry" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot1Cycle2ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot1Unknown4Entry" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot1Cycle3ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot1Cycle4Label" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot1Cycle4ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot1Cycle5Label" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot1Cycle5ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot1Cycle6Label" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot1Cycle6ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot1Cycle7Label" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot1Cycle7ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot1Cycle8Label" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot1Cycle8ComboBox" Grid.Column="1" /></Grid>
+                                                <TextBlock Margin="0,10,0,0" Text="Cycle Reset Value" FontWeight="SemiBold" />
+                                                <TextBox x:Name="BattleBot1CycleResetEntry" Margin="0,4,0,0" TextChanged="OnBattleEditorValueChanged" />
+                                            </StackPanel>
+                                            <Border Grid.Column="4" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="8" Background="#FFF9FAFB">
                                                 <StackPanel>
                                                     <TextBlock Text="Derived Medal Stats" FontWeight="SemiBold" />
-                                                    <TextBlock x:Name="BattleBot3DerivedLabel" Margin="0,6,0,0" Foreground="#FF374151" TextWrapping="Wrap" />
+                                                    <TextBlock x:Name="BattleBot1DerivedLabel" Margin="0,6,0,0" Foreground="#FF374151" TextWrapping="Wrap" />
+                                                    <TextBlock x:Name="BattleBot1Unknown1Entry" Visibility="Collapsed" />
+                                                    <TextBlock x:Name="BattleBot1Unknown3Entry" Visibility="Collapsed" />
+                                                    <TextBlock x:Name="BattleBot1Unknown5Entry" Visibility="Collapsed" />
+                                                    <TextBlock x:Name="BattleBot1Cycle4ValueLabel" Visibility="Collapsed" />
+                                                    <TextBlock x:Name="BattleBot1Cycle5ValueLabel" Visibility="Collapsed" />
+                                                    <TextBlock x:Name="BattleBot1Cycle6ValueLabel" Visibility="Collapsed" />
+                                                    <TextBlock x:Name="BattleBot1Cycle7ValueLabel" Visibility="Collapsed" />
+                                                    <TextBlock x:Name="BattleBot1Cycle8ValueLabel" Visibility="Collapsed" />
+                                                    <TextBox x:Name="BattleBot1ReservedEntry" Visibility="Collapsed" />
                                                 </StackPanel>
                                             </Border>
                                         </Grid>
                                     </StackPanel>
                                 </Border>
 
-                                <Button Margin="0,12,0,0" HorizontalAlignment="Left" Click="OnApplyBattleClicked">Stage Battle Changes</Button>
-                                <TextBlock Margin="0,14,0,0" Text="Battle Summary" FontWeight="SemiBold" />
-                                <TextBox x:Name="BattleEditor" Margin="0,12,0,0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" MinHeight="150" />
-                                <Expander Margin="0,14,0,0" Header="Advanced / Unresolved Fields">
-                                    <StackPanel Margin="0,8,0,0">
-                                        <TextBlock x:Name="BattleAdvancedHintLabel"
-                                                   Foreground="#FF6B7280"
-                                                   TextWrapping="Wrap" />
+                                <Border x:Name="BattleBot2Panel" Margin="0,12,0,0" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="10">
+                                    <StackPanel>
+                                        <TextBlock Text="Bot 2" FontWeight="SemiBold" />
+                                        <TextBlock x:Name="BattleBot2PresenceLabel" Visibility="Collapsed" />
+                                        <TextBlock x:Name="BattleBot2SummaryLabel" Visibility="Collapsed" />
                                         <Grid Margin="0,10,0,0">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="12" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="1.25*" /><ColumnDefinition Width="16" /><ColumnDefinition Width="1.1*" /><ColumnDefinition Width="16" /><ColumnDefinition Width="0.9*" /></Grid.ColumnDefinitions>
                                             <StackPanel Grid.Column="0">
-                                                <TextBlock Text="Initialization Mode" FontWeight="SemiBold" />
-                                                <TextBox x:Name="BattleUnknown1Entry" Margin="0,4,0,0" IsReadOnly="True" />
+                                                <TextBlock Text="Head Part" FontWeight="SemiBold" /><ComboBox x:Name="BattleBot2HeadEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                                <TextBlock Margin="0,8,0,0" Text="Right Arm" FontWeight="SemiBold" /><ComboBox x:Name="BattleBot2RightEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                                <TextBlock Margin="0,8,0,0" Text="Left Arm" FontWeight="SemiBold" /><ComboBox x:Name="BattleBot2LeftEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                                <TextBlock Margin="0,8,0,0" Text="Legs" FontWeight="SemiBold" /><ComboBox x:Name="BattleBot2LegsEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                                <TextBlock Margin="0,8,0,0" Text="Medal" FontWeight="SemiBold" /><ComboBox x:Name="BattleBot2MedalEntry" Margin="0,4,0,0" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                                <TextBlock Margin="0,8,0,0" Text="Medal Level" FontWeight="SemiBold" /><ComboBox x:Name="BattleBot2LevelEntry" Margin="0,4,0,0" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnBattleLoadoutSelectionChanged" />
                                             </StackPanel>
                                             <StackPanel Grid.Column="2">
-                                                <TextBlock Text="Part Loadout Mode" FontWeight="SemiBold" />
-                                                <TextBox x:Name="BattleAlwaysZeroEntry" Margin="0,4,0,0" IsReadOnly="True" />
+                                                <TextBlock Text="AI Cycle" FontWeight="SemiBold" />
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot2Unknown0Entry" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot2Cycle1ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot2Unknown2Entry" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot2Cycle2ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot2Unknown4Entry" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot2Cycle3ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot2Cycle4Label" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot2Cycle4ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot2Cycle5Label" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot2Cycle5ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot2Cycle6Label" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot2Cycle6ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot2Cycle7Label" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot2Cycle7ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot2Cycle8Label" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot2Cycle8ComboBox" Grid.Column="1" /></Grid>
+                                                <TextBlock Margin="0,10,0,0" Text="Cycle Reset Value" FontWeight="SemiBold" /><TextBox x:Name="BattleBot2CycleResetEntry" Margin="0,4,0,0" TextChanged="OnBattleEditorValueChanged" />
                                             </StackPanel>
-                                        </Grid>
-
-                                        <TextBlock Margin="0,12,0,0" Text="Bot 1 Medal Cycle" FontWeight="SemiBold" />
-                                        <UniformGrid Margin="0,8,0,0" Columns="4">
-                                            <StackPanel Margin="0,0,8,8"><TextBlock x:Name="BattleBot1Unknown0Entry" FontWeight="SemiBold" Text="Slot 1" /><TextBlock x:Name="BattleBot1Unknown1Entry" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot1Cycle1ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,8"><TextBlock x:Name="BattleBot1Unknown2Entry" FontWeight="SemiBold" Text="Slot 2" /><TextBlock x:Name="BattleBot1Unknown3Entry" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot1Cycle2ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,8"><TextBlock x:Name="BattleBot1Unknown4Entry" FontWeight="SemiBold" Text="Slot 3" /><TextBlock x:Name="BattleBot1Unknown5Entry" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot1Cycle3ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,8"><TextBlock x:Name="BattleBot1Cycle4Label" FontWeight="SemiBold" Text="Slot 4" /><TextBlock x:Name="BattleBot1Cycle4ValueLabel" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot1Cycle4ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,0"><TextBlock x:Name="BattleBot1Cycle5Label" FontWeight="SemiBold" Text="Slot 5" /><TextBlock x:Name="BattleBot1Cycle5ValueLabel" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot1Cycle5ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,0"><TextBlock x:Name="BattleBot1Cycle6Label" FontWeight="SemiBold" Text="Slot 6" /><TextBlock x:Name="BattleBot1Cycle6ValueLabel" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot1Cycle6ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,0"><TextBlock x:Name="BattleBot1Cycle7Label" FontWeight="SemiBold" Text="Slot 7" /><TextBlock x:Name="BattleBot1Cycle7ValueLabel" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot1Cycle7ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,0"><TextBlock x:Name="BattleBot1Cycle8Label" FontWeight="SemiBold" Text="Slot 8" /><TextBlock x:Name="BattleBot1Cycle8ValueLabel" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot1Cycle8ComboBox" /></StackPanel>
-                                        </UniformGrid>
-                                        <Grid Margin="0,8,0,0">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0"><TextBlock Text="Cycle Reset Value" FontWeight="SemiBold" /><TextBox x:Name="BattleBot1CycleResetEntry" Margin="0,4,0,0" IsReadOnly="True" /></StackPanel>
-                                            <StackPanel Grid.Column="2"><TextBlock Text="Reserved Zero Byte" FontWeight="SemiBold" /><TextBox x:Name="BattleBot1ReservedEntry" Margin="0,4,0,0" IsReadOnly="True" /></StackPanel>
-                                        </Grid>
-
-                                        <TextBlock Margin="0,12,0,0" Text="Bot 2 Medal Cycle" FontWeight="SemiBold" />
-                                        <UniformGrid Margin="0,8,0,0" Columns="4">
-                                            <StackPanel Margin="0,0,8,8"><TextBlock x:Name="BattleBot2Unknown0Entry" FontWeight="SemiBold" Text="Slot 1" /><TextBlock x:Name="BattleBot2Unknown1Entry" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot2Cycle1ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,8"><TextBlock x:Name="BattleBot2Unknown2Entry" FontWeight="SemiBold" Text="Slot 2" /><TextBlock x:Name="BattleBot2Unknown3Entry" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot2Cycle2ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,8"><TextBlock x:Name="BattleBot2Unknown4Entry" FontWeight="SemiBold" Text="Slot 3" /><TextBlock x:Name="BattleBot2Unknown5Entry" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot2Cycle3ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,8"><TextBlock x:Name="BattleBot2Cycle4Label" FontWeight="SemiBold" Text="Slot 4" /><TextBlock x:Name="BattleBot2Cycle4ValueLabel" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot2Cycle4ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,0"><TextBlock x:Name="BattleBot2Cycle5Label" FontWeight="SemiBold" Text="Slot 5" /><TextBlock x:Name="BattleBot2Cycle5ValueLabel" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot2Cycle5ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,0"><TextBlock x:Name="BattleBot2Cycle6Label" FontWeight="SemiBold" Text="Slot 6" /><TextBlock x:Name="BattleBot2Cycle6ValueLabel" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot2Cycle6ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,0"><TextBlock x:Name="BattleBot2Cycle7Label" FontWeight="SemiBold" Text="Slot 7" /><TextBlock x:Name="BattleBot2Cycle7ValueLabel" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot2Cycle7ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,0"><TextBlock x:Name="BattleBot2Cycle8Label" FontWeight="SemiBold" Text="Slot 8" /><TextBlock x:Name="BattleBot2Cycle8ValueLabel" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot2Cycle8ComboBox" /></StackPanel>
-                                        </UniformGrid>
-                                        <Grid Margin="0,8,0,0">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0"><TextBlock Text="Cycle Reset Value" FontWeight="SemiBold" /><TextBox x:Name="BattleBot2CycleResetEntry" Margin="0,4,0,0" IsReadOnly="True" /></StackPanel>
-                                            <StackPanel Grid.Column="2"><TextBlock Text="Reserved Zero Byte" FontWeight="SemiBold" /><TextBox x:Name="BattleBot2ReservedEntry" Margin="0,4,0,0" IsReadOnly="True" /></StackPanel>
-                                        </Grid>
-
-                                        <TextBlock Margin="0,12,0,0" Text="Bot 3 Medal Cycle" FontWeight="SemiBold" />
-                                        <UniformGrid Margin="0,8,0,0" Columns="4">
-                                            <StackPanel Margin="0,0,8,8"><TextBlock x:Name="BattleBot3Unknown0Entry" FontWeight="SemiBold" Text="Slot 1" /><TextBlock x:Name="BattleBot3Unknown1Entry" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot3Cycle1ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,8"><TextBlock x:Name="BattleBot3Unknown2Entry" FontWeight="SemiBold" Text="Slot 2" /><TextBlock x:Name="BattleBot3Unknown3Entry" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot3Cycle2ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,8"><TextBlock x:Name="BattleBot3Unknown4Entry" FontWeight="SemiBold" Text="Slot 3" /><TextBlock x:Name="BattleBot3Unknown5Entry" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot3Cycle3ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,8"><TextBlock x:Name="BattleBot3Cycle4Label" FontWeight="SemiBold" Text="Slot 4" /><TextBlock x:Name="BattleBot3Cycle4ValueLabel" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot3Cycle4ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,0"><TextBlock x:Name="BattleBot3Cycle5Label" FontWeight="SemiBold" Text="Slot 5" /><TextBlock x:Name="BattleBot3Cycle5ValueLabel" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot3Cycle5ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,0"><TextBlock x:Name="BattleBot3Cycle6Label" FontWeight="SemiBold" Text="Slot 6" /><TextBlock x:Name="BattleBot3Cycle6ValueLabel" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot3Cycle6ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,0"><TextBlock x:Name="BattleBot3Cycle7Label" FontWeight="SemiBold" Text="Slot 7" /><TextBlock x:Name="BattleBot3Cycle7ValueLabel" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot3Cycle7ComboBox" /></StackPanel>
-                                            <StackPanel Margin="0,0,8,0"><TextBlock x:Name="BattleBot3Cycle8Label" FontWeight="SemiBold" Text="Slot 8" /><TextBlock x:Name="BattleBot3Cycle8ValueLabel" Margin="0,2,0,4" Foreground="#FF6B7280" TextWrapping="Wrap" /><ComboBox x:Name="BattleBot3Cycle8ComboBox" /></StackPanel>
-                                        </UniformGrid>
-                                        <Grid Margin="0,8,0,0">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0"><TextBlock Text="Cycle Reset Value" FontWeight="SemiBold" /><TextBox x:Name="BattleBot3CycleResetEntry" Margin="0,4,0,0" IsReadOnly="True" /></StackPanel>
-                                            <StackPanel Grid.Column="2"><TextBlock Text="Reserved Zero Byte" FontWeight="SemiBold" /><TextBox x:Name="BattleBot3ReservedEntry" Margin="0,4,0,0" IsReadOnly="True" /></StackPanel>
+                                            <Border Grid.Column="4" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="8" Background="#FFF9FAFB">
+                                                <StackPanel>
+                                                    <TextBlock Text="Derived Medal Stats" FontWeight="SemiBold" /><TextBlock x:Name="BattleBot2DerivedLabel" Margin="0,6,0,0" Foreground="#FF374151" TextWrapping="Wrap" />
+                                                    <TextBlock x:Name="BattleBot2Unknown1Entry" Visibility="Collapsed" /><TextBlock x:Name="BattleBot2Unknown3Entry" Visibility="Collapsed" /><TextBlock x:Name="BattleBot2Unknown5Entry" Visibility="Collapsed" />
+                                                    <TextBlock x:Name="BattleBot2Cycle4ValueLabel" Visibility="Collapsed" /><TextBlock x:Name="BattleBot2Cycle5ValueLabel" Visibility="Collapsed" /><TextBlock x:Name="BattleBot2Cycle6ValueLabel" Visibility="Collapsed" /><TextBlock x:Name="BattleBot2Cycle7ValueLabel" Visibility="Collapsed" /><TextBlock x:Name="BattleBot2Cycle8ValueLabel" Visibility="Collapsed" />
+                                                    <TextBox x:Name="BattleBot2ReservedEntry" Visibility="Collapsed" />
+                                                </StackPanel>
+                                            </Border>
                                         </Grid>
                                     </StackPanel>
-                                </Expander>
+                                </Border>
+
+                                <Border x:Name="BattleBot3Panel" Margin="0,12,0,0" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="10">
+                                    <StackPanel>
+                                        <TextBlock Text="Bot 3" FontWeight="SemiBold" />
+                                        <TextBlock x:Name="BattleBot3PresenceLabel" Visibility="Collapsed" />
+                                        <TextBlock x:Name="BattleBot3SummaryLabel" Visibility="Collapsed" />
+                                        <Grid Margin="0,10,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="1.25*" /><ColumnDefinition Width="16" /><ColumnDefinition Width="1.1*" /><ColumnDefinition Width="16" /><ColumnDefinition Width="0.9*" /></Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="Head Part" FontWeight="SemiBold" /><ComboBox x:Name="BattleBot3HeadEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                                <TextBlock Margin="0,8,0,0" Text="Right Arm" FontWeight="SemiBold" /><ComboBox x:Name="BattleBot3RightEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                                <TextBlock Margin="0,8,0,0" Text="Left Arm" FontWeight="SemiBold" /><ComboBox x:Name="BattleBot3LeftEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                                <TextBlock Margin="0,8,0,0" Text="Legs" FontWeight="SemiBold" /><ComboBox x:Name="BattleBot3LegsEntry" Margin="0,4,0,0" ItemTemplate="{StaticResource BattleLoadoutOptionTemplate}" SelectedValuePath="Id" TextSearch.TextPath="Title" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                                <TextBlock Margin="0,8,0,0" Text="Medal" FontWeight="SemiBold" /><ComboBox x:Name="BattleBot3MedalEntry" Margin="0,4,0,0" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                                <TextBlock Margin="0,8,0,0" Text="Medal Level" FontWeight="SemiBold" /><ComboBox x:Name="BattleBot3LevelEntry" Margin="0,4,0,0" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="OnBattleLoadoutSelectionChanged" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="AI Cycle" FontWeight="SemiBold" />
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot3Unknown0Entry" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot3Cycle1ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot3Unknown2Entry" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot3Cycle2ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot3Unknown4Entry" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot3Cycle3ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot3Cycle4Label" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot3Cycle4ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot3Cycle5Label" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot3Cycle5ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot3Cycle6Label" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot3Cycle6ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot3Cycle7Label" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot3Cycle7ComboBox" Grid.Column="1" /></Grid>
+                                                <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="70" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock x:Name="BattleBot3Cycle8Label" VerticalAlignment="Center" /><ComboBox x:Name="BattleBot3Cycle8ComboBox" Grid.Column="1" /></Grid>
+                                                <TextBlock Margin="0,10,0,0" Text="Cycle Reset Value" FontWeight="SemiBold" /><TextBox x:Name="BattleBot3CycleResetEntry" Margin="0,4,0,0" TextChanged="OnBattleEditorValueChanged" />
+                                            </StackPanel>
+                                            <Border Grid.Column="4" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="8" Background="#FFF9FAFB">
+                                                <StackPanel>
+                                                    <TextBlock Text="Derived Medal Stats" FontWeight="SemiBold" /><TextBlock x:Name="BattleBot3DerivedLabel" Margin="0,6,0,0" Foreground="#FF374151" TextWrapping="Wrap" />
+                                                    <TextBlock x:Name="BattleBot3Unknown1Entry" Visibility="Collapsed" /><TextBlock x:Name="BattleBot3Unknown3Entry" Visibility="Collapsed" /><TextBlock x:Name="BattleBot3Unknown5Entry" Visibility="Collapsed" />
+                                                    <TextBlock x:Name="BattleBot3Cycle4ValueLabel" Visibility="Collapsed" /><TextBlock x:Name="BattleBot3Cycle5ValueLabel" Visibility="Collapsed" /><TextBlock x:Name="BattleBot3Cycle6ValueLabel" Visibility="Collapsed" /><TextBlock x:Name="BattleBot3Cycle7ValueLabel" Visibility="Collapsed" /><TextBlock x:Name="BattleBot3Cycle8ValueLabel" Visibility="Collapsed" />
+                                                    <TextBox x:Name="BattleBot3ReservedEntry" Visibility="Collapsed" />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+
+                                <TextBlock Margin="0,14,0,0" Text="Battle Summary" FontWeight="SemiBold" />
+                                <TextBox x:Name="BattleEditor" Margin="0,12,0,0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" MinHeight="150" />
                             </StackPanel>
                         </ScrollViewer>
                     </Border>
@@ -631,7 +620,7 @@
                                      Grid.Row="1"
                                      Margin="0,10,0,0"
                                      SelectionChanged="OnPartSelectionChanged"
-                                     DisplayMemberPath="Title"
+                                     ItemTemplate="{StaticResource BrowserItemChangeTemplate}"
                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
                         </Grid>
@@ -639,7 +628,10 @@
                     <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                                 <StackPanel>
-                                    <TextBlock Text="Part Details" FontWeight="SemiBold" FontSize="14" />
+                                    <Grid>
+                                        <TextBlock Text="Part Details" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+                                        <Button HorizontalAlignment="Right" Click="OnResetPartClicked">Reset</Button>
+                                    </Grid>
                                     <Border Margin="0,12,0,0" BorderBrush="#FFE5E7EB" BorderThickness="1" CornerRadius="4" Padding="10" Background="#FFF9FAFB">
                                         <StackPanel>
                                             <TextBlock x:Name="PartOverviewLabel" FontWeight="SemiBold" TextWrapping="Wrap" />
@@ -814,8 +806,6 @@
                                             </UniformGrid>
                                         </StackPanel>
                                     </Expander>
-
-                                    <Button Margin="0,12,0,0" HorizontalAlignment="Left" Click="OnApplyPartClicked">Stage Part Changes</Button>
                                 </StackPanel>
                         </ScrollViewer>
                     </Border>
@@ -1619,19 +1609,53 @@
                     <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}">
                         <StackPanel>
                             <TextBox x:Name="ShopFilterEntry" TextChanged="OnShopFilterChanged" />
-                            <UniformGrid Margin="0,10,0,0" Columns="2">
-                                <TextBox x:Name="ShopEntryLengthEntry" Margin="0,0,8,0" Text="6" />
-                                <TextBox x:Name="ShopCountEntry" Text="64" />
-                            </UniformGrid>
-                            <Button Margin="0,10,0,0" HorizontalAlignment="Left" Click="OnLoadShopListClicked">Load Shop List</Button>
-                            <ListBox x:Name="ShopCollectionView" Margin="0,10,0,0" SelectionChanged="OnShopSelectionChanged" DisplayMemberPath="Title" />
+                            <TextBlock Margin="0,10,0,0" Foreground="#FF6B7280" TextWrapping="Wrap">The ROM contains 15 shops. Each shop has up to four visible part sets.</TextBlock>
+                            <ListBox x:Name="ShopCollectionView" Margin="0,10,0,0" SelectionChanged="OnShopSelectionChanged" ItemTemplate="{StaticResource BrowserItemChangeTemplate}" />
                         </StackPanel>
                     </Border>
                     <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}">
                         <StackPanel>
-                            <TextBlock Text="Shop Details" FontWeight="SemiBold" FontSize="14" />
-                            <TextBox x:Name="ShopContentsEditor" Margin="0,12,0,0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" MinHeight="220" />
-                            <Button Margin="0,12,0,0" HorizontalAlignment="Left" Click="OnApplyShopClicked">Apply Shop Changes</Button>
+                            <Grid>
+                                <TextBlock Text="Shop Details" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+                                <Button HorizontalAlignment="Right" Click="OnResetShopClicked">Reset</Button>
+                            </Grid>
+                            <TextBlock x:Name="ShopSummaryLabel" Margin="0,10,0,0" TextWrapping="Wrap" />
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" FontWeight="SemiBold">Slot 1</TextBlock>
+                                <StackPanel Grid.Row="0" Grid.Column="1">
+                                    <ComboBox x:Name="ShopSlot1Entry" />
+                                    <TextBlock x:Name="ShopSlot1DetailLabel" Margin="0,4,0,8" Foreground="#FF6B7280" TextWrapping="Wrap" />
+                                </StackPanel>
+
+                                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" FontWeight="SemiBold">Slot 2</TextBlock>
+                                <StackPanel Grid.Row="1" Grid.Column="1">
+                                    <ComboBox x:Name="ShopSlot2Entry" />
+                                    <TextBlock x:Name="ShopSlot2DetailLabel" Margin="0,4,0,8" Foreground="#FF6B7280" TextWrapping="Wrap" />
+                                </StackPanel>
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" FontWeight="SemiBold">Slot 3</TextBlock>
+                                <StackPanel Grid.Row="2" Grid.Column="1">
+                                    <ComboBox x:Name="ShopSlot3Entry" />
+                                    <TextBlock x:Name="ShopSlot3DetailLabel" Margin="0,4,0,8" Foreground="#FF6B7280" TextWrapping="Wrap" />
+                                </StackPanel>
+
+                                <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" FontWeight="SemiBold">Slot 4</TextBlock>
+                                <StackPanel Grid.Row="3" Grid.Column="1">
+                                    <ComboBox x:Name="ShopSlot4Entry" />
+                                    <TextBlock x:Name="ShopSlot4DetailLabel" Margin="0,4,0,0" Foreground="#FF6B7280" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Grid>
                         </StackPanel>
                     </Border>
                 </Grid>
@@ -1645,22 +1669,21 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <Border Grid.Column="0" Style="{StaticResource PanelBorderStyle}">
-                        <StackPanel>
-                            <TextBlock Text="Starter Data" FontWeight="SemiBold" FontSize="14" />
-                            <Button Margin="0,12,0,0" HorizontalAlignment="Left" Click="OnLoadStarterClicked">Load Starter Data</Button>
-                        </StackPanel>
+                        <TextBlock Text="Starter data is loaded from the ROM automatically. Edits below are staged immediately." TextWrapping="Wrap" />
                     </Border>
                     <Border Grid.Column="2" Style="{StaticResource PanelBorderStyle}">
                         <StackPanel>
-                            <TextBlock Text="Starter Details" FontWeight="SemiBold" FontSize="14" />
+                            <Grid>
+                                <TextBlock Text="Starter Details" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+                                <Button HorizontalAlignment="Right" Click="OnResetStarterClicked">Reset</Button>
+                            </Grid>
                             <UniformGrid Margin="0,12,0,0" Columns="4">
-                                <TextBlock VerticalAlignment="Center">Part</TextBlock>
-                                <TextBox x:Name="StarterPartEntry" Margin="0,0,16,0" />
+                                <TextBlock VerticalAlignment="Center">Bot</TextBlock>
+                                <ComboBox x:Name="StarterPartEntry" Margin="0,0,16,0" DisplayMemberPath="Title" SelectedValuePath="Id" />
                                 <TextBlock VerticalAlignment="Center">Medal</TextBlock>
-                                <TextBox x:Name="StarterMedalEntry" />
+                                <ComboBox x:Name="StarterMedalEntry" DisplayMemberPath="Title" SelectedValuePath="Id" />
                             </UniformGrid>
                             <CheckBox x:Name="StarterIsFemaleSwitch" Margin="0,12,0,0" Content="Female" />
-                            <Button Margin="0,12,0,0" HorizontalAlignment="Left" Click="OnApplyStarterClicked">Apply Starter Changes</Button>
                             <TextBox x:Name="StarterEditor" Margin="0,12,0,0" AcceptsReturn="True" TextWrapping="Wrap" IsReadOnly="True" MinHeight="130" VerticalScrollBarVisibility="Auto" />
                         </StackPanel>
                     </Border>

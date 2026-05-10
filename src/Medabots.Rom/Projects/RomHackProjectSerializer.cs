@@ -45,7 +45,7 @@ public static class RomHackProjectSerializer
 
     private sealed class RomHackProjectDocument
     {
-        public int SchemaVersion { get; set; } = 12;
+        public int SchemaVersion { get; set; } = 13;
 
         public string Name { get; set; } = "New Medabots Hack";
 
@@ -91,13 +91,17 @@ public static class RomHackProjectSerializer
 
         public List<PartDefinitionDocument> PartEdits { get; set; } = [];
 
+        public List<ShopDefinitionDocument> ShopEdits { get; set; } = [];
+
+        public List<StarterDefinitionDocument> StarterEdits { get; set; } = [];
+
         public List<MapLayerPatchDocument> MapLayerPatches { get; set; } = [];
 
         public List<int> SplitLargeDisplayPartIds { get; set; } = [];
 
         public RomHackProject ToProject(string? projectFilePath)
         {
-            if (SchemaVersion is not 1 and not 2 and not 3 and not 4 and not 5 and not 6 and not 7 and not 8 and not 9 and not 10 and not 11 and not 12)
+            if (SchemaVersion is not 1 and not 2 and not 3 and not 4 and not 5 and not 6 and not 7 and not 8 and not 9 and not 10 and not 11 and not 12 and not 13)
             {
                 throw new InvalidDataException($"Unsupported project schema version '{SchemaVersion}'.");
             }
@@ -331,6 +335,24 @@ public static class RomHackProjectSerializer
                     part.Unknown6,
                     part.Unknown7,
                     part.Unknown8));
+            }
+
+            foreach (var shop in ShopEdits)
+            {
+                project.ShopEdits.Add(new Shops.ShopDefinition(
+                    shop.Id,
+                    shop.DataOffset,
+                    Convert.FromBase64String(shop.ContentsBase64)));
+            }
+
+            foreach (var starter in StarterEdits)
+            {
+                project.StarterEdits.Add(new Starter.StarterDefinition(
+                    starter.PartsOffset,
+                    starter.MedalOffset,
+                    starter.PartId,
+                    starter.MedalId,
+                    starter.IsFemale));
             }
 
             foreach (var patch in MapLayerPatches)
@@ -615,6 +637,24 @@ public static class RomHackProjectSerializer
                         Unknown6 = part.Unknown6,
                         Unknown7 = part.Unknown7,
                         Unknown8 = part.Unknown8
+                    })
+                    .ToList(),
+                ShopEdits = project.ShopEdits
+                    .Select(shop => new ShopDefinitionDocument
+                    {
+                        Id = shop.Id,
+                        DataOffset = shop.DataOffset,
+                        ContentsBase64 = Convert.ToBase64String(shop.Contents)
+                    })
+                    .ToList(),
+                StarterEdits = project.StarterEdits
+                    .Select(starter => new StarterDefinitionDocument
+                    {
+                        PartsOffset = starter.PartsOffset,
+                        MedalOffset = starter.MedalOffset,
+                        PartId = starter.PartId,
+                        MedalId = starter.MedalId,
+                        IsFemale = starter.IsFemale
                     })
                     .ToList(),
                 MapLayerPatches = project.MapLayerPatches
@@ -913,6 +953,22 @@ public static class RomHackProjectSerializer
         public byte Unknown6 { get; set; }
         public byte Unknown7 { get; set; }
         public byte Unknown8 { get; set; }
+    }
+
+    private sealed class ShopDefinitionDocument
+    {
+        public int Id { get; set; }
+        public int DataOffset { get; set; }
+        public string ContentsBase64 { get; set; } = string.Empty;
+    }
+
+    private sealed class StarterDefinitionDocument
+    {
+        public int PartsOffset { get; set; }
+        public int MedalOffset { get; set; }
+        public byte PartId { get; set; }
+        public byte MedalId { get; set; }
+        public bool IsFemale { get; set; }
     }
 
     private sealed class MapLayerPatchDocument

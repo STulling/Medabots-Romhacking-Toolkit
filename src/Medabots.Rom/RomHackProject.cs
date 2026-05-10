@@ -50,6 +50,10 @@ public sealed class RomHackProject
 
     public IList<Parts.PartDefinition> PartEdits { get; } = new List<Parts.PartDefinition>();
 
+    public IList<Shops.ShopDefinition> ShopEdits { get; } = new List<Shops.ShopDefinition>();
+
+    public IList<Starter.StarterDefinition> StarterEdits { get; } = new List<Starter.StarterDefinition>();
+
     public IList<Maps.MapLayerPatch> MapLayerPatches { get; } = new List<Maps.MapLayerPatch>();
 
     public IList<int> SplitLargeDisplayPartIds { get; } = new List<int>();

@@ -620,10 +620,7 @@ public partial class MainWindow : Window
     private MedabotLargeDisplayFrame ApplyPreviewLargeDisplayEditsToMedabotFrame(MedabotLargeDisplayFrame frame)
     {
         var overridesByImageOffset = BuildLargeDisplayImageOverridesForMedabot(frame.MedabotId);
-        Dictionary<int, LargePartDisplayPieceAsset> mirroredSideArmOverridesByDescriptor = frame.Side == 0
-            ? []
-            : BuildMirroredSideArmOverridesForMedabot(frame.MedabotId);
-        if (overridesByImageOffset.Count == 0 && mirroredSideArmOverridesByDescriptor.Count == 0)
+        if (overridesByImageOffset.Count == 0)
         {
             return frame;
         }
@@ -631,40 +628,12 @@ public partial class MainWindow : Window
         var updatedPieces = frame.Pieces
             .Select(piece =>
             {
-                if (mirroredSideArmOverridesByDescriptor.TryGetValue(piece.DescriptorId, out var armOverride))
-                {
-                    return ApplyLargeDisplayImageOverride(piece, armOverride);
-                }
-
                 return overridesByImageOffset.TryGetValue(piece.ImageOffset, out var imageOverride)
                     ? ApplyLargeDisplayImageOverride(piece, imageOverride)
                     : piece;
             })
             .ToArray();
         return frame with { Pieces = updatedPieces };
-    }
-
-    private Dictionary<int, LargePartDisplayPieceAsset> BuildMirroredSideArmOverridesForMedabot(int medabotId)
-    {
-        var overrides = new Dictionary<int, LargePartDisplayPieceAsset>();
-        foreach (var kind in new[] { PartKind.RightArm, PartKind.LeftArm })
-        {
-            var part = GetRequiredPartForMedabot(medabotId, kind);
-            var componentEntries = PartSpriteDisplayLayout.GetPreviewComponentEntriesForPartKind(kind);
-            var componentIndex = componentEntries[Math.Min(1, componentEntries.Count - 1)].ComponentIndex;
-            var asset = GetPreviewLargePartDisplayAsset(part.Id, componentIndex);
-            foreach (var piece in asset.Pieces.Where(piece => piece.ImageOffset > 0))
-            {
-                if (piece.DescriptorId == asset.RootDescriptorId)
-                {
-                    continue;
-                }
-
-                overrides[piece.DescriptorId] = piece;
-            }
-        }
-
-        return overrides;
     }
 
     private Dictionary<int, LargePartDisplayPieceAsset> BuildLargeDisplayImageOverridesForMedabot(int medabotId)

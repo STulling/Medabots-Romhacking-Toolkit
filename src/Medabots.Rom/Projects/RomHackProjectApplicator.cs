@@ -12,9 +12,11 @@ public sealed partial class RomHackProjectApplicator
     private readonly Images.ImageAssetPatcher _imageAssetPatcher;
     private readonly Battles.BattlePatcher _battlePatcher;
     private readonly Parts.PartPatcher _partPatcher;
+    private readonly Shops.ShopPatcher _shopPatcher;
+    private readonly Starter.StarterPatcher _starterPatcher;
     private readonly IReadOnlyList<IProjectEditSystem> _systems;
 
-    public RomHackProjectApplicator(Text.MedabotsTextPatcher? textPatcher = null, Events.EventInstructionPatcher? eventInstructionPatcher = null, Maps.MapOverlayPatcher? mapOverlayPatcher = null, Maps.MapLayerPatcher? mapLayerPatcher = null, Images.ImageAssetPatcher? imageAssetPatcher = null, Battles.BattlePatcher? battlePatcher = null, Parts.PartPatcher? partPatcher = null)
+    public RomHackProjectApplicator(Text.MedabotsTextPatcher? textPatcher = null, Events.EventInstructionPatcher? eventInstructionPatcher = null, Maps.MapOverlayPatcher? mapOverlayPatcher = null, Maps.MapLayerPatcher? mapLayerPatcher = null, Images.ImageAssetPatcher? imageAssetPatcher = null, Battles.BattlePatcher? battlePatcher = null, Parts.PartPatcher? partPatcher = null, Shops.ShopPatcher? shopPatcher = null, Starter.StarterPatcher? starterPatcher = null)
     {
         _textPatcher = textPatcher ?? new Text.MedabotsTextPatcher();
         _eventInstructionPatcher = eventInstructionPatcher ?? new Events.EventInstructionPatcher();
@@ -24,6 +26,8 @@ public sealed partial class RomHackProjectApplicator
         _imageAssetPatcher = imageAssetPatcher ?? new Images.ImageAssetPatcher();
         _battlePatcher = battlePatcher ?? new Battles.BattlePatcher();
         _partPatcher = partPatcher ?? new Parts.PartPatcher();
+        _shopPatcher = shopPatcher ?? new Shops.ShopPatcher();
+        _starterPatcher = starterPatcher ?? new Starter.StarterPatcher();
         _systems = BuildSystems();
     }
 
@@ -87,6 +91,8 @@ public sealed partial class RomHackProjectApplicator
             new Maps.MapSpriteSlotProjectEditSystem(_mapOverlayPatcher),
             new Battles.BattleProjectEditSystem(_battlePatcher),
             new Parts.PartProjectEditSystem(_partPatcher),
+            new Shops.ShopProjectEditSystem(_shopPatcher),
+            new Starter.StarterProjectEditSystem(_starterPatcher),
             new Images.SpriteProjectEditSystem(_imageAssetPatcher)
         ];
     }

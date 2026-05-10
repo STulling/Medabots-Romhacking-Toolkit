@@ -2,6 +2,8 @@ using Medabots.Rom.Battles;
 using Medabots.Rom.Images;
 using Medabots.Rom.Maps;
 using Medabots.Rom.Parts;
+using Medabots.Rom.Shops;
+using Medabots.Rom.Starter;
 
 namespace Medabots.Rom.Projects;
 
@@ -18,6 +20,10 @@ public static class ProjectEditAdapters
     public static IProjectEditCollectionAdapter<BattleDefinition, int> Battle { get; } = new BattleAdapter();
 
     public static IProjectEditCollectionAdapter<PartDefinition, int> Part { get; } = new PartAdapter();
+
+    public static IProjectEditCollectionAdapter<ShopDefinition, int> Shop { get; } = new ShopAdapter();
+
+    public static IProjectEditCollectionAdapter<StarterDefinition, int> Starter { get; } = new StarterAdapter();
 
     public static IProjectEditCollectionAdapter<MapLayerPatch, (int MapId, int LayerIndex)> MapLayer { get; } = new MapLayerAdapter();
 
@@ -57,6 +63,18 @@ public static class ProjectEditAdapters
     {
         public IList<PartDefinition> GetCollection(RomHackProject project) => project.PartEdits;
         public int GetKey(PartDefinition edit) => edit.Id;
+    }
+
+    private sealed class ShopAdapter : IProjectEditCollectionAdapter<ShopDefinition, int>
+    {
+        public IList<ShopDefinition> GetCollection(RomHackProject project) => project.ShopEdits;
+        public int GetKey(ShopDefinition edit) => edit.Id;
+    }
+
+    private sealed class StarterAdapter : IProjectEditCollectionAdapter<StarterDefinition, int>
+    {
+        public IList<StarterDefinition> GetCollection(RomHackProject project) => project.StarterEdits;
+        public int GetKey(StarterDefinition edit) => edit.PartsOffset;
     }
 
     private sealed class MapLayerAdapter : IProjectEditCollectionAdapter<MapLayerPatch, (int MapId, int LayerIndex)>

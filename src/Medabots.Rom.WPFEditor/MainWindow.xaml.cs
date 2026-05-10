@@ -10,6 +10,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Forms = System.Windows.Forms;
 using WpfColor = System.Windows.Media.Color;
+using WpfBrushes = System.Windows.Media.Brushes;
 using WpfPoint = System.Windows.Point;
 using WpfMouseEventArgs = System.Windows.Input.MouseEventArgs;
 using WpfTextBox = System.Windows.Controls.TextBox;
@@ -81,9 +82,7 @@ public partial class MainWindow : Window
     private readonly EncounterTableReader _encounterTableReader = new();
     private readonly EncounterPatcher _encounterPatcher = new();
     private readonly ShopTableReader _shopTableReader = new();
-    private readonly ShopPatcher _shopPatcher = new();
     private readonly StarterReader _starterReader = new();
-    private readonly StarterPatcher _starterPatcher = new();
     private readonly EventOperationRegistry _eventOperationRegistry = EventOperationRegistry.LoadDefault();
     private readonly MedabotsMetadata _metadata = MedabotsMetadata.Default;
     private readonly Dictionary<MessageId, string> _originalMessages = [];
@@ -101,7 +100,8 @@ public partial class MainWindow : Window
     private readonly Dictionary<int, Medabots.Rom.Maps.MapTilesetAsset> _mapTilesetCache = [];
     private readonly Dictionary<int, MapOverlayAsset> _mapOverlayCache = [];
     private readonly Dictionary<string, SpriteEditHistory> _spriteEditHistories = [];
-    private readonly Dictionary<(int EntryLength, int ShopId), ShopDefinition> _shopCache = [];
+    private readonly Dictionary<int, ShopDefinition> _shopCache = [];
+    private readonly Dictionary<int, ShopDefinition> _sourceShopDefinitions = [];
     private readonly Dictionary<int, BattleDefinition> _sourceBattleDefinitions = [];
     private readonly Dictionary<int, PartDefinition> _sourcePartDefinitions = [];
     private readonly List<EventOperationOption> _eventOperationOptions = [];
@@ -111,6 +111,10 @@ public partial class MainWindow : Window
     private readonly List<BrowserItem> _partTechniqueOptions = [];
     private readonly List<BrowserItem> _partGenderOptions = [];
     private readonly List<BrowserItem> _partLegTypeOptions = [];
+    private readonly List<BrowserItem> _battleCharacterOptions = [];
+    private readonly List<BrowserItem> _battleBotCountOptions = [];
+    private readonly List<BrowserItem> _battleInitializationModeOptions = [];
+    private readonly List<BrowserItem> _battleTemplateFlagOptions = [];
     private readonly List<BrowserItem> _battleCycleEntryOptions = [];
     private readonly List<BattleLoadoutOption> _battleHeadOptions = [];
     private readonly List<BattleLoadoutOption> _battleRightOptions = [];
@@ -118,6 +122,9 @@ public partial class MainWindow : Window
     private readonly List<BattleLoadoutOption> _battleLegsOptions = [];
     private readonly List<BrowserItem> _battleMedalOptions = [];
     private readonly List<BrowserItem> _battleLevelOptions = [];
+    private readonly List<BrowserItem> _shopSlotOptions = [];
+    private readonly List<BrowserItem> _starterBotOptions = [];
+    private readonly List<BrowserItem> _starterMedalOptions = [];
     private readonly List<BrowserItem> _botBattleFacingOptions = [];
 
     private RomHackSession? _session;
@@ -134,6 +141,10 @@ public partial class MainWindow : Window
     private bool _hasCapturedUndoForCurrentStroke;
     private bool _isPanningSpritePreview;
     private bool _isUpdatingSpritePaletteFamilyUi;
+    private bool _isRefreshingBattleEditor;
+    private bool _isRefreshingPartEditor;
+    private bool _isRefreshingShopEditor;
+    private bool _isRefreshingStarterEditor;
     private bool _isWindowFullyInitialized;
     private int _selectedBotBattleFacing;
     private WpfPoint _spritePanStartPoint;
@@ -153,6 +164,7 @@ public partial class MainWindow : Window
     private Medabots.Rom.Maps.MapTilesetAsset? _loadedMapTileset;
     private ShopDefinition? _loadedShop;
     private StarterDefinition? _loadedStarter;
+    private StarterDefinition? _sourceStarterDefinition;
 
     public MainWindow()
     {
@@ -175,9 +187,19 @@ public partial class MainWindow : Window
         _partTechniqueOptions.AddRange(Enumerable.Range(0, _metadata.Catalog.Techniques.Count).Select(id => new BrowserItem(id, $"{id:D3}  {_metadata.GetTechniqueName(id)}")));
         _partGenderOptions.Add(new BrowserItem(0, "000  Male / Default"));
         _partGenderOptions.Add(new BrowserItem(1, "001  Female / Alternate"));
+        _battleCharacterOptions.AddRange(Enumerable.Range(0, _metadata.Catalog.Characters.Count).Select(id => new BrowserItem(id, $"{id:D3}  {_metadata.GetCharacterName(id)}")));
+        _battleBotCountOptions.AddRange(Enumerable.Range(1, MedabotsRomSchema.BattleBotCount).Select(count => new BrowserItem(count, count.ToString())));
+        _battleInitializationModeOptions.Add(new BrowserItem(0, "No"));
+        _battleInitializationModeOptions.Add(new BrowserItem(1, "Yes"));
+        _battleTemplateFlagOptions.Add(new BrowserItem(0, "0  Reroll from candidate tiers"));
+        _battleTemplateFlagOptions.Add(new BrowserItem(1, "1  Use stored loadout directly"));
         _battleCycleEntryOptions.AddRange(Enumerable.Range(0, 16).Select(value => new BrowserItem(value, $"{value:D2}  {GetBattleCycleEntryName((byte)value)}")));
         _battleMedalOptions.AddRange(Enumerable.Range(0, _metadata.Catalog.Medals.Count).Select(id => new BrowserItem(id, $"{id:D3}  {_metadata.GetMedalName(id)}")));
-        _battleLevelOptions.AddRange(Enumerable.Range(0, 101).Select(level => new BrowserItem(level, $"Level {level:D3}")));
+        _battleLevelOptions.AddRange(Enumerable.Range(0, 101).Select(level => new BrowserItem(level, level.ToString())));
+        _shopSlotOptions.Add(new BrowserItem(MedabotsRomSchema.EmptyShopSlot, "Empty / end of visible shop list"));
+        _shopSlotOptions.AddRange(Enumerable.Range(0, ImageAssetRepository.CompositeBattleSpritePartCount).Select(id => new BrowserItem(id, BuildShopSlotOptionTitle(id))));
+        _starterBotOptions.AddRange(Enumerable.Range(0, Math.Min(_metadata.Catalog.Bots.Count, MedabotsRomSchema.PartCount / 4)).Select(id => new BrowserItem(id, $"{id:D3}  {_metadata.GetBotName(id)}")));
+        _starterMedalOptions.AddRange(Enumerable.Range(0, _metadata.Catalog.Medals.Count).Select(id => new BrowserItem(id, $"{id:D3}  {_metadata.GetMedalName(id)}")));
         _botBattleFacingOptions.Add(new BrowserItem(0, "Facing Right / Default"));
         _botBattleFacingOptions.Add(new BrowserItem(1, "Facing Left / Mirrored"));
         PartMedalCompatibilityComboBox.ItemsSource = _partMedalOptions;
@@ -185,7 +207,16 @@ public partial class MainWindow : Window
         PartTechniqueComboBox.ItemsSource = _partTechniqueOptions;
         PartGenderComboBox.ItemsSource = _partGenderOptions;
         PartLegTypeComboBox.ItemsSource = _partLegTypeOptions;
+        BattleCharacterEntry.ItemsSource = _battleCharacterOptions;
+        BattleBotCountEntry.ItemsSource = _battleBotCountOptions;
+        BattleInitializationModeEntry.ItemsSource = _battleInitializationModeOptions;
+        BattleTemplateFlagEntry.ItemsSource = _battleTemplateFlagOptions;
+        StarterPartEntry.ItemsSource = _starterBotOptions;
+        StarterMedalEntry.ItemsSource = _starterMedalOptions;
         BotBattleFacingComboBox.ItemsSource = _botBattleFacingOptions;
+        InitializePartEditorChangeHandlers();
+        InitializeShopEditorChangeHandlers();
+        InitializeStarterEditorChangeHandlers();
         InitializeBattleCycleComboBoxes();
         InitializeBattleLoadoutComboBoxes();
         _eventOperationOptions.AddRange(_eventOperationRegistry.Definitions
@@ -324,6 +355,7 @@ public partial class MainWindow : Window
         _eventCache.Clear();
         _eventViewCache.Clear();
         _shopCache.Clear();
+        _sourceShopDefinitions.Clear();
         _sourceBattleDefinitions.Clear();
         _sourcePartDefinitions.Clear();
 
@@ -371,8 +403,10 @@ public partial class MainWindow : Window
         RebuildMessageItems();
         _allBattleItems.Clear();
         _allBattleItems.AddRange(_loadedBattles.Select(battle => new BrowserItem(battle.Id, $"{battle.Id:D3}  {_metadata.GetCharacterName(battle.CharacterId)}")));
+        RefreshBattleBrowserChangeState();
         _allPartItems.Clear();
         _allPartItems.AddRange(_loadedParts.Select(part => new BrowserItem(part.Id, $"{part.Id:D3}  {_metadata.GetPartName(part.Id)}  ({part.Kind})")));
+        RefreshPartBrowserChangeState();
         _allMapItems.Clear();
         _allMapItems.AddRange(Enumerable.Range(0, Math.Min(MedabotsRomSchema.MapCount, _metadata.Catalog.Maps.Count)).Select(mapId => new BrowserItem(mapId, $"{mapId:D3}  {_metadata.GetMapName(mapId)}")));
         _allSpriteNodes.Clear();
@@ -396,7 +430,8 @@ public partial class MainWindow : Window
         ClearMapPreview();
         ClearSpritePreview();
 
-        _loadedStarter = _starterReader.Read(_session.RomFile, profile);
+        _sourceStarterDefinition = _starterReader.Read(_session.RomFile, profile);
+        _loadedStarter = ProjectEditCollection.Find(_project, ProjectEditAdapters.Starter, _sourceStarterDefinition.PartsOffset) ?? _sourceStarterDefinition;
         PopulateStarterEditor(_loadedStarter);
         StarterEditor.Text = FormatStarter(_loadedStarter, _metadata);
 
@@ -551,12 +586,12 @@ public partial class MainWindow : Window
     private void LoadShopList()
     {
         _allShopItems.Clear();
-        var count = Math.Max(0, ParseIntOrDefault(ShopCountEntry.Text, 64));
-        for (var id = 0; id < count; id++)
+        for (var id = 0; id < ShopTableReader.ShopCount; id++)
         {
             _allShopItems.Add(new BrowserItem(id, $"Shop {id:D3}"));
         }
 
+        RefreshShopBrowserChangeState();
         RefreshShopFilter();
     }
 
@@ -574,16 +609,17 @@ public partial class MainWindow : Window
 
         try
         {
-            var entryLength = ParseInt(ShopEntryLengthEntry.Text, "Shop entry length");
-            var cacheKey = (entryLength, item.Id);
-            if (!_shopCache.TryGetValue(cacheKey, out var shop))
+            if (!_shopCache.TryGetValue(item.Id, out var shop))
             {
-                shop = _shopTableReader.Read(_session.RomFile, item.Id, entryLength);
-                _shopCache[cacheKey] = shop;
+                var source = _shopTableReader.Read(_session.RomFile, item.Id);
+                _sourceShopDefinitions[item.Id] = source;
+                shop = ProjectEditCollection.Find(_project, ProjectEditAdapters.Shop, item.Id) ?? source;
+                shop = NormalizeShopDefinition(shop, source);
+                _shopCache[item.Id] = shop;
             }
 
             _loadedShop = shop;
-            ShopContentsEditor.Text = FormatBytes(_loadedShop.Contents);
+            PopulateShopEditor(_loadedShop);
         }
         catch (Exception ex)
         {
@@ -599,24 +635,32 @@ public partial class MainWindow : Window
             return;
         }
 
-        try
+        if (!TryStageCurrentBattleFromEditor(out var errorMessage))
         {
-            var updated = BuildBattleFromEditor(_loadedBattle);
-            var source = GetSourceBattleDefinition(updated.Id);
-            var staged = _battleProjectEditor.StageBattle(_project, source, updated);
-            var effective = staged ?? source;
-            _loadedBattles = _loadedBattles.Select(battle => battle.Id == effective.Id ? effective : battle).ToArray();
-            _loadedBattle = effective;
-            BattleEditor.Text = FormatBattle(effective);
-            UpdateStatus();
-        }
-        catch (Exception ex)
-        {
-            await DisplayAlertAsync("Battle Update Failed", ex.Message, "OK");
+            await DisplayAlertAsync("Battle Update Failed", errorMessage, "OK");
         }
     }
 
-    private async void OnApplyPartClicked(object? sender, RoutedEventArgs e)
+    private async void OnResetBattleClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_loadedBattle is null)
+        {
+            await DisplayAlertAsync("No Battle Loaded", "Select a battle first.", "OK");
+            return;
+        }
+
+        var source = GetSourceBattleDefinition(_loadedBattle.Id);
+        ProjectEditCollection.Remove(_project, ProjectEditAdapters.Battle, source.Id);
+        _loadedBattles = _loadedBattles.Select(battle => battle.Id == source.Id ? source : battle).ToArray();
+        _loadedBattle = source;
+        PopulateBattleEditor(source);
+        BattleEditor.Text = FormatBattle(source);
+        RefreshBattleBrowserChangeState();
+        RefreshBattleFilter();
+        UpdateStatus();
+    }
+
+    private async void OnResetPartClicked(object? sender, RoutedEventArgs e)
     {
         if (_loadedPart is null)
         {
@@ -624,21 +668,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        try
-        {
-            var updated = BuildPartFromEditor(_loadedPart);
-            var source = GetSourcePartDefinition(updated.Id);
-            var staged = _partProjectEditor.StagePart(_project, source, updated);
-            var effective = staged ?? source;
-            _loadedParts = _loadedParts.Select(part => part.Id == effective.Id ? effective : part).ToArray();
-            _loadedPart = effective;
-            PopulatePartEditor(effective);
-            UpdateStatus();
-        }
-        catch (Exception ex)
-        {
-            await DisplayAlertAsync("Part Update Failed", ex.Message, "OK");
-        }
+        var source = GetSourcePartDefinition(_loadedPart.Id);
+        ProjectEditCollection.Remove(_project, ProjectEditAdapters.Part, source.Id);
+        _loadedParts = _loadedParts.Select(part => part.Id == source.Id ? source : part).ToArray();
+        _loadedPart = source;
+        PopulatePartEditor(source);
+        RefreshPartBrowserItem(source);
+        RefreshPartFilter();
+        UpdateStatus();
     }
 
     private async void OnApplyEncounterClicked(object? sender, RoutedEventArgs e)
@@ -664,76 +701,37 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnApplyShopClicked(object? sender, RoutedEventArgs e)
+    private async void OnResetShopClicked(object? sender, RoutedEventArgs e)
     {
-        if (_session is null || _loadedShop is null)
+        if (_loadedShop is null)
         {
             await DisplayAlertAsync("No Shop Loaded", "Select a shop first.", "OK");
             return;
         }
 
-        try
-        {
-            var updated = new ShopDefinition(_loadedShop.Id, _loadedShop.DataOffset, ParseBytes(ShopContentsEditor.Text));
-            _shopPatcher.Apply(_session, updated);
-            _loadedShop = updated;
-            var entryLength = ParseInt(ShopEntryLengthEntry.Text, "Shop entry length");
-            _shopCache[(entryLength, updated.Id)] = updated;
-            ShopContentsEditor.Text = FormatBytes(updated.Contents);
-            UpdateStatus();
-        }
-        catch (Exception ex)
-        {
-            await DisplayAlertAsync("Shop Update Failed", ex.Message, "OK");
-        }
+        var source = GetSourceShopDefinition(_loadedShop.Id);
+        ProjectEditCollection.Remove(_project, ProjectEditAdapters.Shop, source.Id);
+        _loadedShop = source;
+        _shopCache[source.Id] = source;
+        PopulateShopEditor(source);
+        RefreshShopBrowserItem(source.Id);
+        RefreshShopFilter();
+        UpdateStatus();
     }
 
-    private async void OnLoadStarterClicked(object? sender, RoutedEventArgs e)
+    private async void OnResetStarterClicked(object? sender, RoutedEventArgs e)
     {
-        if (_session is null)
+        if (_sourceStarterDefinition is null)
         {
-            await DisplayAlertAsync("No Session", "Open a ROM first.", "OK");
+            await DisplayAlertAsync("No Starter Loaded", "Open a supported ROM first.", "OK");
             return;
         }
 
-        var profile = RequireProfile();
-        if (profile is null)
-        {
-            return;
-        }
-
-        try
-        {
-            _loadedStarter = _starterReader.Read(_session.RomFile, profile);
-            PopulateStarterEditor(_loadedStarter);
-            StarterEditor.Text = FormatStarter(_loadedStarter, _metadata);
-        }
-        catch (Exception ex)
-        {
-            await DisplayAlertAsync("Starter Load Failed", ex.Message, "OK");
-        }
-    }
-
-    private async void OnApplyStarterClicked(object? sender, RoutedEventArgs e)
-    {
-        if (_session is null || _loadedStarter is null)
-        {
-            await DisplayAlertAsync("No Starter Loaded", "Load starter data first.", "OK");
-            return;
-        }
-
-        try
-        {
-            var updated = new StarterDefinition(_loadedStarter.PartsOffset, _loadedStarter.MedalOffset, ParseByte(StarterPartEntry.Text, "Starter part"), ParseByte(StarterMedalEntry.Text, "Starter medal"), StarterIsFemaleSwitch.IsChecked == true);
-            _starterPatcher.Apply(_session, updated);
-            _loadedStarter = updated;
-            StarterEditor.Text = FormatStarter(updated, _metadata);
-            UpdateStatus();
-        }
-        catch (Exception ex)
-        {
-            await DisplayAlertAsync("Starter Update Failed", ex.Message, "OK");
-        }
+        ProjectEditCollection.Remove(_project, ProjectEditAdapters.Starter, _sourceStarterDefinition.PartsOffset);
+        _loadedStarter = _sourceStarterDefinition;
+        PopulateStarterEditor(_loadedStarter);
+        StarterEditor.Text = FormatStarter(_loadedStarter, _metadata);
+        UpdateStatus();
     }
     private void OnAddPatchClicked(object? sender, RoutedEventArgs e)
     {
@@ -784,6 +782,24 @@ public partial class MainWindow : Window
         var stagedMessagePatchCount = _originalMessages.Count == 0
             ? _allPatchItems.Count
             : _allPatchItems.Count(item => item.IsModified);
+        var stagedProjectEditCount =
+            _project.BattleEdits.Count +
+            _project.PartEdits.Count +
+            _project.ShopEdits.Count +
+            _project.StarterEdits.Count +
+            _project.MapEncounterPatches.Count +
+            _project.MapMusicPatches.Count +
+            _project.MapEventObjectResourcePatches.Count +
+            _project.MapDimensionPatches.Count +
+            _project.MapLayerPatches.Count +
+            _project.MapCollisionPatches.Count +
+            _project.MapEntitySpawnPatches.Count +
+            _project.MapWarpPatches.Count +
+            _project.MapEncounterStatePatches.Count +
+            _project.OverworldSpriteEdits.Count +
+            _project.PortraitEdits.Count +
+            _project.BattleCompositeSpriteEdits.Count +
+            _project.LargePartDisplayEdits.Count;
         var projectDisplayName = string.IsNullOrWhiteSpace(_project.Name) ? "Unnamed project" : _project.Name;
         var romFileName = _session is null ? "No ROM loaded" : Path.GetFileName(_session.RomFile.FilePath);
 
@@ -791,9 +807,9 @@ public partial class MainWindow : Window
         ProfileStatusLabel.Text = $"Text profile: {ResolveProfileName()}";
         SessionStatusLabel.Text = _session is null ? "No ROM loaded." : $"Loaded: {_session.RomFile.FilePath}";
         RomSizeLabel.Text = _session is null ? "ROM size: n/a" : $"ROM size: {_session.RomFile.Length:N0} bytes";
-        PatchCountLabel.Text = $"Staged messages: {stagedMessagePatchCount} | Staged events: {_eventProjectScriptPatches.Count} | Pending patch actions: {_project.PendingActions.Count}";
+        PatchCountLabel.Text = $"Staged messages: {stagedMessagePatchCount} | Staged events: {_eventProjectScriptPatches.Count} | Staged project edits: {stagedProjectEditCount} | Pending patch actions: {_project.PendingActions.Count}";
         FooterProjectLabel.Text = $"Project: {projectDisplayName}";
-        FooterChangesLabel.Text = $"Staged changes: messages {stagedMessagePatchCount}, events {_eventProjectScriptPatches.Count}, pending patch actions {_project.PendingActions.Count}";
+        FooterChangesLabel.Text = $"Staged changes: messages {stagedMessagePatchCount}, events {_eventProjectScriptPatches.Count}, project edits {stagedProjectEditCount}, pending patch actions {_project.PendingActions.Count}";
         FooterPathLabel.Text = romFileName;
         OpenRomCommandButton.IsEnabled = _session is null;
         OpenProjectCommandButton.IsEnabled = true;
@@ -815,7 +831,7 @@ public partial class MainWindow : Window
         }
 
         var totalCount = _allChangeItems.Count;
-        ChangesSummaryLabel.Text = $"Total staged changes: {totalCount}{Environment.NewLine}Messages: {stagedMessagePatchCount}  |  Event scripts: {_project.EventScriptPatches.Count}  |  Battles: {_project.BattleEdits.Count}  |  Parts: {_project.PartEdits.Count}  |  Map metadata: {_project.MapMusicPatches.Count + _project.MapEncounterPatches.Count + _project.MapEncounterStatePatches.Count + _project.MapEventObjectResourcePatches.Count + _project.MapDimensionPatches.Count}  |  Map overlays/layers: {_project.MapEntitySpawnPatches.Count + _project.MapWarpPatches.Count + _project.MapCollisionPatches.Count + _project.MapLayerPatches.Count}  |  Staged sprites: {_project.OverworldSpriteEdits.Count + _project.PortraitEdits.Count + _project.BattleCompositeSpriteEdits.Count + _project.LargePartDisplayEdits.Count}";
+        ChangesSummaryLabel.Text = $"Total staged changes: {totalCount}{Environment.NewLine}Messages: {stagedMessagePatchCount}  |  Event scripts: {_project.EventScriptPatches.Count}  |  Battles: {_project.BattleEdits.Count}  |  Parts: {_project.PartEdits.Count}  |  Shops: {_project.ShopEdits.Count}  |  Starter: {_project.StarterEdits.Count}  |  Map metadata: {_project.MapMusicPatches.Count + _project.MapEncounterPatches.Count + _project.MapEncounterStatePatches.Count + _project.MapEventObjectResourcePatches.Count + _project.MapDimensionPatches.Count}  |  Map overlays/layers: {_project.MapEntitySpawnPatches.Count + _project.MapWarpPatches.Count + _project.MapCollisionPatches.Count + _project.MapLayerPatches.Count}  |  Staged sprites: {_project.OverworldSpriteEdits.Count + _project.PortraitEdits.Count + _project.BattleCompositeSpriteEdits.Count + _project.LargePartDisplayEdits.Count}";
     }
 
     private void AddCompiledProjectChanges()
@@ -1144,6 +1160,23 @@ public partial class MainWindow : Window
         throw new InvalidOperationException($"Could not resolve source part {partId}.");
     }
 
+    private ShopDefinition GetSourceShopDefinition(int shopId)
+    {
+        if (_sourceShopDefinitions.TryGetValue(shopId, out var shop))
+        {
+            return shop;
+        }
+
+        if (_session is null)
+        {
+            throw new InvalidOperationException($"Could not resolve source shop {shopId}.");
+        }
+
+        shop = _shopTableReader.Read(_session.RomFile, shopId);
+        _sourceShopDefinitions[shopId] = shop;
+        return shop;
+    }
+
     private void PopulatePatchEditor(MessagePatchItem? patch)
     {
         if (patch is null)
@@ -1166,6 +1199,9 @@ public partial class MainWindow : Window
 
     private void ClearPartEditor()
     {
+        _isRefreshingPartEditor = true;
+        try
+        {
         PartMedalCompatibilityComboBox.SelectedIndex = -1;
         PartSpecialityComboBox.SelectedIndex = -1;
         PartGenderComboBox.SelectedIndex = -1;
@@ -1204,6 +1240,11 @@ public partial class MainWindow : Window
         PartUnknown5Label.Text = "Unknown5";
         PartUnknown45HintLabel.Text = string.Empty;
         ResetPartEditorLabels(PartKind.Head);
+        }
+        finally
+        {
+            _isRefreshingPartEditor = false;
+        }
     }
 
     private static string BuildEventSummary(EventScript script)
@@ -1235,25 +1276,36 @@ public partial class MainWindow : Window
 
     private void PopulateBattleEditor(BattleDefinition battle)
     {
-        BattleOverviewLabel.Text = $"{battle.Id:D3}  Battle";
-        BattleOverviewHintLabel.Text = $"Character: {_metadata.GetCharacterName(battle.CharacterId)} ({battle.CharacterId})   Data: 0x{battle.DataOffset:X}   Pointer: 0x{battle.PointerOffset:X}";
-        BattleCharacterEntry.Text = battle.CharacterId.ToString();
-        BattleBotCountEntry.Text = battle.NumberOfBots.ToString();
-        BattleCharacterHintLabel.Text = $"Battle owner / script-facing character: {_metadata.GetCharacterName(battle.CharacterId)} ({battle.CharacterId}).";
-        BattleBotCountHintLabel.Text = "Number of active bot slots used by this encounter. The ROM stores three loadout slots total.";
-        PopulateBattleBotEntries(battle.Bots[0], BattleBot1HeadEntry, BattleBot1RightEntry, BattleBot1LeftEntry, BattleBot1LegsEntry, BattleBot1MedalEntry, BattleBot1LevelEntry);
-        PopulateBattleBotEntries(battle.Bots[1], BattleBot2HeadEntry, BattleBot2RightEntry, BattleBot2LeftEntry, BattleBot2LegsEntry, BattleBot2MedalEntry, BattleBot2LevelEntry);
-        PopulateBattleBotEntries(battle.Bots[2], BattleBot3HeadEntry, BattleBot3RightEntry, BattleBot3LeftEntry, BattleBot3LegsEntry, BattleBot3MedalEntry, BattleBot3LevelEntry);
-        BattleBot1SummaryLabel.Text = BuildBattleBotSummary(battle.Bots[0].HeadPartId, battle.Bots[0].RightArmPartId, battle.Bots[0].LeftArmPartId, battle.Bots[0].LegsPartId, battle.Bots[0].MedalId, battle.Bots[0].MedalLevel);
-        BattleBot2SummaryLabel.Text = BuildBattleBotSummary(battle.Bots[1].HeadPartId, battle.Bots[1].RightArmPartId, battle.Bots[1].LeftArmPartId, battle.Bots[1].LegsPartId, battle.Bots[1].MedalId, battle.Bots[1].MedalLevel);
-        BattleBot3SummaryLabel.Text = BuildBattleBotSummary(battle.Bots[2].HeadPartId, battle.Bots[2].RightArmPartId, battle.Bots[2].LeftArmPartId, battle.Bots[2].LegsPartId, battle.Bots[2].MedalId, battle.Bots[2].MedalLevel);
-        RefreshBattleDerivedLabels();
-        BattleAdvancedHintLabel.Text = "Initialization Mode: 0 = normal battle setup from the current player state, 1 = reuse preinitialized battle-side state. Part Loadout Mode: 0 = reroll from four candidate tier ids, 1 = use the stored loadout bytes directly. Each packed speciality seed byte contains two 4-bit speciality seed values that expand into the live 8-slot speciality cycle.";
-        BattleUnknown1Entry.Text = $"{battle.InitializationMode} ({GetBattleInitializationModeName(battle.InitializationMode)})";
-        BattleAlwaysZeroEntry.Text = $"{battle.TemplateFlags} ({GetBattleTemplateFlagName(battle.TemplateFlags)})";
-        PopulateBattleUnknownEntries(battle.Bots[0], battle.Bots[0].MedalId, battle.Bots[0].MedalLevel, [BattleBot1Cycle1ComboBox, BattleBot1Cycle2ComboBox, BattleBot1Cycle3ComboBox, BattleBot1Cycle4ComboBox, BattleBot1Cycle5ComboBox, BattleBot1Cycle6ComboBox, BattleBot1Cycle7ComboBox, BattleBot1Cycle8ComboBox], [BattleBot1Unknown0Entry, BattleBot1Unknown2Entry, BattleBot1Unknown4Entry, BattleBot1Cycle4Label, BattleBot1Cycle5Label, BattleBot1Cycle6Label, BattleBot1Cycle7Label, BattleBot1Cycle8Label], [BattleBot1Unknown1Entry, BattleBot1Unknown3Entry, BattleBot1Unknown5Entry, BattleBot1Cycle4ValueLabel, BattleBot1Cycle5ValueLabel, BattleBot1Cycle6ValueLabel, BattleBot1Cycle7ValueLabel, BattleBot1Cycle8ValueLabel], BattleBot1CycleResetEntry, BattleBot1ReservedEntry);
-        PopulateBattleUnknownEntries(battle.Bots[1], battle.Bots[1].MedalId, battle.Bots[1].MedalLevel, [BattleBot2Cycle1ComboBox, BattleBot2Cycle2ComboBox, BattleBot2Cycle3ComboBox, BattleBot2Cycle4ComboBox, BattleBot2Cycle5ComboBox, BattleBot2Cycle6ComboBox, BattleBot2Cycle7ComboBox, BattleBot2Cycle8ComboBox], [BattleBot2Unknown0Entry, BattleBot2Unknown2Entry, BattleBot2Unknown4Entry, BattleBot2Cycle4Label, BattleBot2Cycle5Label, BattleBot2Cycle6Label, BattleBot2Cycle7Label, BattleBot2Cycle8Label], [BattleBot2Unknown1Entry, BattleBot2Unknown3Entry, BattleBot2Unknown5Entry, BattleBot2Cycle4ValueLabel, BattleBot2Cycle5ValueLabel, BattleBot2Cycle6ValueLabel, BattleBot2Cycle7ValueLabel, BattleBot2Cycle8ValueLabel], BattleBot2CycleResetEntry, BattleBot2ReservedEntry);
-        PopulateBattleUnknownEntries(battle.Bots[2], battle.Bots[2].MedalId, battle.Bots[2].MedalLevel, [BattleBot3Cycle1ComboBox, BattleBot3Cycle2ComboBox, BattleBot3Cycle3ComboBox, BattleBot3Cycle4ComboBox, BattleBot3Cycle5ComboBox, BattleBot3Cycle6ComboBox, BattleBot3Cycle7ComboBox, BattleBot3Cycle8ComboBox], [BattleBot3Unknown0Entry, BattleBot3Unknown2Entry, BattleBot3Unknown4Entry, BattleBot3Cycle4Label, BattleBot3Cycle5Label, BattleBot3Cycle6Label, BattleBot3Cycle7Label, BattleBot3Cycle8Label], [BattleBot3Unknown1Entry, BattleBot3Unknown3Entry, BattleBot3Unknown5Entry, BattleBot3Cycle4ValueLabel, BattleBot3Cycle5ValueLabel, BattleBot3Cycle6ValueLabel, BattleBot3Cycle7ValueLabel, BattleBot3Cycle8ValueLabel], BattleBot3CycleResetEntry, BattleBot3ReservedEntry);
+        _isRefreshingBattleEditor = true;
+        try
+        {
+            BattleOverviewLabel.Text = $"{battle.Id:D3}  Battle";
+            BattleOverviewHintLabel.Text = $"Character: {_metadata.GetCharacterName(battle.CharacterId)} ({battle.CharacterId})   Data: 0x{battle.DataOffset:X}   Pointer: 0x{battle.PointerOffset:X}";
+            BattleCharacterEntry.SelectedValue = (int)battle.CharacterId;
+            BattleBotCountEntry.SelectedValue = Math.Clamp((int)battle.NumberOfBots, 1, MedabotsRomSchema.BattleBotCount);
+            BattleInitializationModeEntry.SelectedValue = (int)battle.InitializationMode;
+            BattleTemplateFlagEntry.SelectedValue = (int)battle.TemplateFlags;
+            BattleCharacterHintLabel.Text = $"Battle owner / script-facing character: {_metadata.GetCharacterName(battle.CharacterId)} ({battle.CharacterId}).";
+            BattleBotCountHintLabel.Text = $"Active bot slots used by this battle. Valid range is 1-{MedabotsRomSchema.BattleBotCount}; inactive stored slots can still be edited below.";
+            PopulateBattleBotEntries(battle.Bots[0], BattleBot1HeadEntry, BattleBot1RightEntry, BattleBot1LeftEntry, BattleBot1LegsEntry, BattleBot1MedalEntry, BattleBot1LevelEntry);
+            PopulateBattleBotEntries(battle.Bots[1], BattleBot2HeadEntry, BattleBot2RightEntry, BattleBot2LeftEntry, BattleBot2LegsEntry, BattleBot2MedalEntry, BattleBot2LevelEntry);
+            PopulateBattleBotEntries(battle.Bots[2], BattleBot3HeadEntry, BattleBot3RightEntry, BattleBot3LeftEntry, BattleBot3LegsEntry, BattleBot3MedalEntry, BattleBot3LevelEntry);
+            BattleBot1SummaryLabel.Text = BuildBattleBotSummary(battle.Bots[0].HeadPartId, battle.Bots[0].RightArmPartId, battle.Bots[0].LeftArmPartId, battle.Bots[0].LegsPartId, battle.Bots[0].MedalId, battle.Bots[0].MedalLevel);
+            BattleBot2SummaryLabel.Text = BuildBattleBotSummary(battle.Bots[1].HeadPartId, battle.Bots[1].RightArmPartId, battle.Bots[1].LeftArmPartId, battle.Bots[1].LegsPartId, battle.Bots[1].MedalId, battle.Bots[1].MedalLevel);
+            BattleBot3SummaryLabel.Text = BuildBattleBotSummary(battle.Bots[2].HeadPartId, battle.Bots[2].RightArmPartId, battle.Bots[2].LeftArmPartId, battle.Bots[2].LegsPartId, battle.Bots[2].MedalId, battle.Bots[2].MedalLevel);
+            RefreshBattleDerivedLabels();
+            PopulateBattleUnknownEntries(battle.Bots[0], battle.Bots[0].MedalId, battle.Bots[0].MedalLevel, [BattleBot1Cycle1ComboBox, BattleBot1Cycle2ComboBox, BattleBot1Cycle3ComboBox, BattleBot1Cycle4ComboBox, BattleBot1Cycle5ComboBox, BattleBot1Cycle6ComboBox, BattleBot1Cycle7ComboBox, BattleBot1Cycle8ComboBox], [BattleBot1Unknown0Entry, BattleBot1Unknown2Entry, BattleBot1Unknown4Entry, BattleBot1Cycle4Label, BattleBot1Cycle5Label, BattleBot1Cycle6Label, BattleBot1Cycle7Label, BattleBot1Cycle8Label], [BattleBot1Unknown1Entry, BattleBot1Unknown3Entry, BattleBot1Unknown5Entry, BattleBot1Cycle4ValueLabel, BattleBot1Cycle5ValueLabel, BattleBot1Cycle6ValueLabel, BattleBot1Cycle7ValueLabel, BattleBot1Cycle8ValueLabel], BattleBot1CycleResetEntry, BattleBot1ReservedEntry);
+            PopulateBattleUnknownEntries(battle.Bots[1], battle.Bots[1].MedalId, battle.Bots[1].MedalLevel, [BattleBot2Cycle1ComboBox, BattleBot2Cycle2ComboBox, BattleBot2Cycle3ComboBox, BattleBot2Cycle4ComboBox, BattleBot2Cycle5ComboBox, BattleBot2Cycle6ComboBox, BattleBot2Cycle7ComboBox, BattleBot2Cycle8ComboBox], [BattleBot2Unknown0Entry, BattleBot2Unknown2Entry, BattleBot2Unknown4Entry, BattleBot2Cycle4Label, BattleBot2Cycle5Label, BattleBot2Cycle6Label, BattleBot2Cycle7Label, BattleBot2Cycle8Label], [BattleBot2Unknown1Entry, BattleBot2Unknown3Entry, BattleBot2Unknown5Entry, BattleBot2Cycle4ValueLabel, BattleBot2Cycle5ValueLabel, BattleBot2Cycle6ValueLabel, BattleBot2Cycle7ValueLabel, BattleBot2Cycle8ValueLabel], BattleBot2CycleResetEntry, BattleBot2ReservedEntry);
+            PopulateBattleUnknownEntries(battle.Bots[2], battle.Bots[2].MedalId, battle.Bots[2].MedalLevel, [BattleBot3Cycle1ComboBox, BattleBot3Cycle2ComboBox, BattleBot3Cycle3ComboBox, BattleBot3Cycle4ComboBox, BattleBot3Cycle5ComboBox, BattleBot3Cycle6ComboBox, BattleBot3Cycle7ComboBox, BattleBot3Cycle8ComboBox], [BattleBot3Unknown0Entry, BattleBot3Unknown2Entry, BattleBot3Unknown4Entry, BattleBot3Cycle4Label, BattleBot3Cycle5Label, BattleBot3Cycle6Label, BattleBot3Cycle7Label, BattleBot3Cycle8Label], [BattleBot3Unknown1Entry, BattleBot3Unknown3Entry, BattleBot3Unknown5Entry, BattleBot3Cycle4ValueLabel, BattleBot3Cycle5ValueLabel, BattleBot3Cycle6ValueLabel, BattleBot3Cycle7ValueLabel, BattleBot3Cycle8ValueLabel], BattleBot3CycleResetEntry, BattleBot3ReservedEntry);
+        }
+        finally
+        {
+            _isRefreshingBattleEditor = false;
+        }
+
+        var source = GetSourceBattleDefinition(battle.Id);
+        RefreshBattlePresenceIndicators(battle.NumberOfBots);
+        RefreshBattleEditorChangeColors(battle, source);
     }
 
     private string BuildBattleBotSummary(byte headFamilyId, byte rightFamilyId, byte leftFamilyId, byte legsFamilyId, byte medalId, byte medalLevel)
@@ -1280,7 +1332,7 @@ public partial class MainWindow : Window
 
         for (var index = 0; index < BattleSpecialityTemplateHelper.CycleSlotCount; index++)
         {
-            cycleLabels[index].Text = GetBattleDerivedSpecialityName(index);
+            cycleLabels[index].Text = $"Action {index + 1}";
             valueLabels[index].Text = $"In-game value: {scaledValues[index]}";
             cycleCombos[index].SelectedValue = (int)cycleEntries[index];
         }
@@ -1289,79 +1341,275 @@ public partial class MainWindow : Window
         reservedEntry.Text = bot.ReservedZeroByte.ToString();
     }
 
+    private void RefreshBattlePresenceIndicators(byte activeBotCount)
+    {
+        var count = Math.Clamp((int)activeBotCount, 1, MedabotsRomSchema.BattleBotCount);
+        RefreshBattlePresenceIndicator(0, count, BattleBot1Panel, BattleBot1PresenceLabel);
+        RefreshBattlePresenceIndicator(1, count, BattleBot2Panel, BattleBot2PresenceLabel);
+        RefreshBattlePresenceIndicator(2, count, BattleBot3Panel, BattleBot3PresenceLabel);
+    }
+
+    private static void RefreshBattlePresenceIndicator(int botIndex, int activeBotCount, Border panel, WpfTextBlock label)
+    {
+        var isActive = botIndex < activeBotCount;
+        label.Text = string.Empty;
+        label.Foreground = isActive ? WpfBrushes.Black : WpfBrushes.DarkRed;
+        panel.Background = isActive ? WpfBrushes.White : new SolidColorBrush(WpfColor.FromRgb(0xFF, 0xF7, 0xED));
+        panel.Opacity = 1.0;
+    }
+
+    private void RefreshBattleEditorChangeColors(BattleDefinition current, BattleDefinition source)
+    {
+        SetBattleControlChanged(BattleCharacterEntry, current.CharacterId != source.CharacterId);
+        SetBattleControlChanged(BattleBotCountEntry, current.NumberOfBots != source.NumberOfBots);
+        SetBattleControlChanged(BattleInitializationModeEntry, current.InitializationMode != source.InitializationMode);
+        SetBattleControlChanged(BattleTemplateFlagEntry, current.TemplateFlags != source.TemplateFlags);
+        RefreshBattleBotChangeColors(0, current.Bots[0], source.Bots[0], BattleBot1SummaryLabel, BattleBot1Panel,
+            BattleBot1HeadEntry, BattleBot1RightEntry, BattleBot1LeftEntry, BattleBot1LegsEntry, BattleBot1MedalEntry, BattleBot1LevelEntry,
+            [BattleBot1Cycle1ComboBox, BattleBot1Cycle2ComboBox, BattleBot1Cycle3ComboBox, BattleBot1Cycle4ComboBox, BattleBot1Cycle5ComboBox, BattleBot1Cycle6ComboBox, BattleBot1Cycle7ComboBox, BattleBot1Cycle8ComboBox],
+            BattleBot1CycleResetEntry);
+        RefreshBattleBotChangeColors(1, current.Bots[1], source.Bots[1], BattleBot2SummaryLabel, BattleBot2Panel,
+            BattleBot2HeadEntry, BattleBot2RightEntry, BattleBot2LeftEntry, BattleBot2LegsEntry, BattleBot2MedalEntry, BattleBot2LevelEntry,
+            [BattleBot2Cycle1ComboBox, BattleBot2Cycle2ComboBox, BattleBot2Cycle3ComboBox, BattleBot2Cycle4ComboBox, BattleBot2Cycle5ComboBox, BattleBot2Cycle6ComboBox, BattleBot2Cycle7ComboBox, BattleBot2Cycle8ComboBox],
+            BattleBot2CycleResetEntry);
+        RefreshBattleBotChangeColors(2, current.Bots[2], source.Bots[2], BattleBot3SummaryLabel, BattleBot3Panel,
+            BattleBot3HeadEntry, BattleBot3RightEntry, BattleBot3LeftEntry, BattleBot3LegsEntry, BattleBot3MedalEntry, BattleBot3LevelEntry,
+            [BattleBot3Cycle1ComboBox, BattleBot3Cycle2ComboBox, BattleBot3Cycle3ComboBox, BattleBot3Cycle4ComboBox, BattleBot3Cycle5ComboBox, BattleBot3Cycle6ComboBox, BattleBot3Cycle7ComboBox, BattleBot3Cycle8ComboBox],
+            BattleBot3CycleResetEntry);
+    }
+
+    private static void RefreshBattleBotChangeColors(
+        int botIndex,
+        BattleBot current,
+        BattleBot source,
+        WpfTextBlock summaryLabel,
+        Border panel,
+        System.Windows.Controls.ComboBox head,
+        System.Windows.Controls.ComboBox right,
+        System.Windows.Controls.ComboBox left,
+        System.Windows.Controls.ComboBox legs,
+        System.Windows.Controls.ComboBox medal,
+        System.Windows.Controls.ComboBox level,
+        System.Windows.Controls.ComboBox[] cycleCombos,
+        WpfTextBox cycleReset)
+    {
+        var currentCycles = BattleSpecialityTemplateHelper.UnpackCycleEntries(current);
+        var sourceCycles = BattleSpecialityTemplateHelper.UnpackCycleEntries(source);
+        SetBattleControlChanged(head, current.HeadPartId != source.HeadPartId);
+        SetBattleControlChanged(right, current.RightArmPartId != source.RightArmPartId);
+        SetBattleControlChanged(left, current.LeftArmPartId != source.LeftArmPartId);
+        SetBattleControlChanged(legs, current.LegsPartId != source.LegsPartId);
+        SetBattleControlChanged(medal, current.MedalId != source.MedalId);
+        SetBattleControlChanged(level, current.MedalLevel != source.MedalLevel);
+        for (var index = 0; index < cycleCombos.Length; index++)
+        {
+            SetBattleControlChanged(cycleCombos[index], currentCycles[index] != sourceCycles[index]);
+        }
+        SetBattleControlChanged(cycleReset, current.SpecialityCycleResetValue != source.SpecialityCycleResetValue);
+
+        var changed = !current.Equals(source);
+        summaryLabel.Foreground = changed ? WpfBrushes.Red : WpfBrushes.Black;
+        if (changed)
+        {
+            panel.BorderBrush = WpfBrushes.Red;
+        }
+        else
+        {
+            panel.BorderBrush = new SolidColorBrush(WpfColor.FromRgb(0xE5, 0xE7, 0xEB));
+        }
+    }
+
+    private static void SetBattleControlChanged(System.Windows.Controls.Control control, bool changed)
+    {
+        control.Foreground = changed ? WpfBrushes.Red : WpfBrushes.Black;
+        control.BorderBrush = changed ? WpfBrushes.Red : new SolidColorBrush(WpfColor.FromRgb(0xAB, 0xAD, 0xB3));
+    }
+
+    private void RefreshBattleBrowserItem(BattleDefinition battle)
+    {
+        var source = GetSourceBattleDefinition(battle.Id);
+        var isModified = !BattleTableReader.Serialize(source).SequenceEqual(BattleTableReader.Serialize(battle));
+        var item = _allBattleItems.FirstOrDefault(candidate => candidate.Id == battle.Id);
+        if (item is null)
+        {
+            return;
+        }
+
+        item.Title = $"{battle.Id:D3}  {_metadata.GetCharacterName(battle.CharacterId)}";
+        item.IsModified = isModified;
+    }
+
+    private void RefreshBattleBrowserChangeState()
+    {
+        foreach (var battle in _loadedBattles)
+        {
+            RefreshBattleBrowserItem(battle);
+        }
+    }
+
     private BattleDefinition BuildBattleFromEditor(BattleDefinition original)
     {
         BattleBot[] bots =
         [
-            BuildBattleBot(original.Bots[0], BattleBot1HeadEntry, BattleBot1RightEntry, BattleBot1LeftEntry, BattleBot1LegsEntry, BattleBot1MedalEntry, BattleBot1LevelEntry, [BattleBot1Cycle1ComboBox, BattleBot1Cycle2ComboBox, BattleBot1Cycle3ComboBox, BattleBot1Cycle4ComboBox, BattleBot1Cycle5ComboBox, BattleBot1Cycle6ComboBox, BattleBot1Cycle7ComboBox, BattleBot1Cycle8ComboBox]),
-            BuildBattleBot(original.Bots[1], BattleBot2HeadEntry, BattleBot2RightEntry, BattleBot2LeftEntry, BattleBot2LegsEntry, BattleBot2MedalEntry, BattleBot2LevelEntry, [BattleBot2Cycle1ComboBox, BattleBot2Cycle2ComboBox, BattleBot2Cycle3ComboBox, BattleBot2Cycle4ComboBox, BattleBot2Cycle5ComboBox, BattleBot2Cycle6ComboBox, BattleBot2Cycle7ComboBox, BattleBot2Cycle8ComboBox]),
-            BuildBattleBot(original.Bots[2], BattleBot3HeadEntry, BattleBot3RightEntry, BattleBot3LeftEntry, BattleBot3LegsEntry, BattleBot3MedalEntry, BattleBot3LevelEntry, [BattleBot3Cycle1ComboBox, BattleBot3Cycle2ComboBox, BattleBot3Cycle3ComboBox, BattleBot3Cycle4ComboBox, BattleBot3Cycle5ComboBox, BattleBot3Cycle6ComboBox, BattleBot3Cycle7ComboBox, BattleBot3Cycle8ComboBox])
+            BuildBattleBot(original.Bots[0], BattleBot1HeadEntry, BattleBot1RightEntry, BattleBot1LeftEntry, BattleBot1LegsEntry, BattleBot1MedalEntry, BattleBot1LevelEntry, [BattleBot1Cycle1ComboBox, BattleBot1Cycle2ComboBox, BattleBot1Cycle3ComboBox, BattleBot1Cycle4ComboBox, BattleBot1Cycle5ComboBox, BattleBot1Cycle6ComboBox, BattleBot1Cycle7ComboBox, BattleBot1Cycle8ComboBox], BattleBot1CycleResetEntry),
+            BuildBattleBot(original.Bots[1], BattleBot2HeadEntry, BattleBot2RightEntry, BattleBot2LeftEntry, BattleBot2LegsEntry, BattleBot2MedalEntry, BattleBot2LevelEntry, [BattleBot2Cycle1ComboBox, BattleBot2Cycle2ComboBox, BattleBot2Cycle3ComboBox, BattleBot2Cycle4ComboBox, BattleBot2Cycle5ComboBox, BattleBot2Cycle6ComboBox, BattleBot2Cycle7ComboBox, BattleBot2Cycle8ComboBox], BattleBot2CycleResetEntry),
+            BuildBattleBot(original.Bots[2], BattleBot3HeadEntry, BattleBot3RightEntry, BattleBot3LeftEntry, BattleBot3LegsEntry, BattleBot3MedalEntry, BattleBot3LevelEntry, [BattleBot3Cycle1ComboBox, BattleBot3Cycle2ComboBox, BattleBot3Cycle3ComboBox, BattleBot3Cycle4ComboBox, BattleBot3Cycle5ComboBox, BattleBot3Cycle6ComboBox, BattleBot3Cycle7ComboBox, BattleBot3Cycle8ComboBox], BattleBot3CycleResetEntry)
         ];
 
-        return new BattleDefinition(original.Id, original.PointerOffset, original.DataOffset, ParseByte(BattleCharacterEntry.Text, "Battle character"), original.InitializationMode, ParseByte(BattleBotCountEntry.Text, "Battle bot count"), original.TemplateFlags, bots);
+        return new BattleDefinition(
+            original.Id,
+            original.PointerOffset,
+            original.DataOffset,
+            ParseComboBoxByteOrOriginal(BattleCharacterEntry, original.CharacterId),
+            ParseComboBoxByteOrOriginal(BattleInitializationModeEntry, original.InitializationMode),
+            ParseBattleBotCount(),
+            ParseComboBoxByteOrOriginal(BattleTemplateFlagEntry, original.TemplateFlags),
+            bots);
     }
 
-    private static BattleBot BuildBattleBot(BattleBot original, System.Windows.Controls.ComboBox head, System.Windows.Controls.ComboBox right, System.Windows.Controls.ComboBox left, System.Windows.Controls.ComboBox legs, System.Windows.Controls.ComboBox medal, System.Windows.Controls.ComboBox level, System.Windows.Controls.ComboBox[] cycleCombos)
+    private byte ParseBattleBotCount()
+    {
+        var value = ParseComboBoxByte(BattleBotCountEntry, "Active bots");
+        if (value is < 1 or > MedabotsRomSchema.BattleBotCount)
+        {
+            throw new InvalidOperationException($"Active bots must be between 1 and {MedabotsRomSchema.BattleBotCount}.");
+        }
+
+        return value;
+    }
+
+    private static BattleBot BuildBattleBot(BattleBot original, System.Windows.Controls.ComboBox head, System.Windows.Controls.ComboBox right, System.Windows.Controls.ComboBox left, System.Windows.Controls.ComboBox legs, System.Windows.Controls.ComboBox medal, System.Windows.Controls.ComboBox level, System.Windows.Controls.ComboBox[] cycleCombos, WpfTextBox cycleResetEntry)
     {
         var cycleEntries = cycleCombos.Select((comboBox, index) => ParseCycleEntry(comboBox, index)).ToArray();
         var packed = BattleSpecialityTemplateHelper.PackCycleEntries(cycleEntries);
-        return new BattleBot(ParseComboBoxByte(head, "Head part"), ParseComboBoxByte(right, "Right arm part"), ParseComboBoxByte(left, "Left arm part"), ParseComboBoxByte(legs, "Leg part"), ParseComboBoxByte(medal, "Medal"), ParseComboBoxByte(level, "Medal level"), packed[0], packed[1], packed[2], packed[3], original.SpecialityCycleResetValue, original.ReservedZeroByte);
+        return new BattleBot(
+            ParseComboBoxByteOrOriginal(head, original.HeadPartId),
+            ParseComboBoxByteOrOriginal(right, original.RightArmPartId),
+            ParseComboBoxByteOrOriginal(left, original.LeftArmPartId),
+            ParseComboBoxByteOrOriginal(legs, original.LegsPartId),
+            ParseComboBoxByteOrOriginal(medal, original.MedalId),
+            ParseComboBoxByteOrOriginal(level, original.MedalLevel),
+            packed[0],
+            packed[1],
+            packed[2],
+            packed[3],
+            ParseByte(cycleResetEntry.Text, "Cycle reset value"),
+            original.ReservedZeroByte);
     }
 
     private void OnBattleLoadoutSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         RefreshBattleDerivedLabels();
         RefreshBattleBotSummariesFromSelections();
+        if (!TryStageCurrentBattleFromEditor(out var errorMessage) && sender is System.Windows.Controls.Control control)
+        {
+            control.Foreground = WpfBrushes.Red;
+            control.BorderBrush = WpfBrushes.Red;
+            BattleBotCountHintLabel.Text = errorMessage;
+        }
+    }
+
+    private void OnBattleEditorValueChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (!TryStageCurrentBattleFromEditor(out var errorMessage) && sender is System.Windows.Controls.Control control)
+        {
+            control.Foreground = WpfBrushes.Red;
+            BattleBotCountHintLabel.Text = errorMessage;
+        }
+    }
+
+    private bool TryStageCurrentBattleFromEditor(out string errorMessage)
+    {
+        errorMessage = string.Empty;
+        if (!_isWindowFullyInitialized || _isRefreshingBattleEditor || _loadedBattle is null)
+        {
+            return true;
+        }
+
+        try
+        {
+            var source = GetSourceBattleDefinition(_loadedBattle.Id);
+            var updated = BuildBattleFromEditor(source);
+            var staged = _battleProjectEditor.StageBattle(_project, source, updated);
+            var effective = staged ?? source;
+            _loadedBattles = _loadedBattles.Select(battle => battle.Id == effective.Id ? effective : battle).ToArray();
+            _loadedBattle = effective;
+            BattleEditor.Text = FormatBattle(effective);
+            BattleCharacterHintLabel.Text = $"Battle owner / script-facing character: {_metadata.GetCharacterName(effective.CharacterId)} ({effective.CharacterId}).";
+            BattleBotCountHintLabel.Text = $"Active bot slots used by this battle. Valid range is 1-{MedabotsRomSchema.BattleBotCount}; inactive stored slots can still be edited below.";
+            RefreshBattlePresenceIndicators(effective.NumberOfBots);
+            RefreshBattleEditorChangeColors(updated, source);
+            RefreshBattleBrowserItem(effective);
+            UpdateStatus();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            return false;
+        }
     }
 
     private void PopulatePartEditor(PartDefinition part)
     {
-        PartOverviewLabel.Text = $"{part.Id:D3}  {_metadata.GetPartName(part.Id)}";
-        PartOverviewHintLabel.Text = $"Kind: {part.Kind}   Medabot: {_metadata.GetBotName(part.MedabotId)} ({part.MedabotId})   Data: 0x{part.DataOffset:X}";
-        PartMedalCompatibilityComboBox.SelectedValue = part.MedalCompatibility;
-        PartSpecialityComboBox.SelectedValue = part.Speciality;
-        PartGenderComboBox.SelectedValue = part.Gender;
-        PartArmorEntry.Text = part.Armor.ToString();
-        PartUnknown2Entry.Text = part.Unknown2.ToString();
-        PartUnknown3Entry.Text = part.Unknown3.ToString();
-        PartUnknown4Entry.Text = part.Unknown4.ToString();
-        PartUnknown5Entry.Text = part.Unknown5.ToString();
-        PartUnknown6Entry.Text = part.Unknown6.ToString();
-        PartUnknown7Entry.Text = part.Unknown7.ToString();
-        PartUnknown8Entry.Text = part.Unknown8.ToString();
-        ResetPartEditorLabels(part.Kind);
-
-        if (part.IsLegPart)
+        _isRefreshingPartEditor = true;
+        try
         {
-            var stats = part.AsLegPartStats();
-            PartTechniqueComboBox.Visibility = Visibility.Collapsed;
-            PartLegTypeComboBox.Visibility = Visibility.Visible;
-            PartValue1Entry.Visibility = Visibility.Collapsed;
-            PartLegTypeComboBox.SelectedValue = stats.LegType;
-            PartValue1Entry.Text = stats.LegType.ToString();
-            PartValue2Entry.Text = stats.Propulsion.ToString();
-            PartValue3Entry.Text = stats.Evasion.ToString();
-            PartValue4CheckBox.Visibility = Visibility.Collapsed;
-            PartValue4Entry.Visibility = Visibility.Visible;
-            PartValue4Entry.Text = stats.Defense.ToString();
-            PartValue5Entry.Text = stats.Conceal.ToString();
+            PartOverviewLabel.Text = $"{part.Id:D3}  {_metadata.GetPartName(part.Id)}";
+            PartOverviewHintLabel.Text = $"Kind: {part.Kind}   Medabot: {_metadata.GetBotName(part.MedabotId)} ({part.MedabotId})   Data: 0x{part.DataOffset:X}";
+            PartMedalCompatibilityComboBox.SelectedValue = part.MedalCompatibility;
+            PartSpecialityComboBox.SelectedValue = part.Speciality;
+            PartGenderComboBox.SelectedValue = part.Gender;
+            PartArmorEntry.Text = part.Armor.ToString();
+            PartUnknown2Entry.Text = part.Unknown2.ToString();
+            PartUnknown3Entry.Text = part.Unknown3.ToString();
+            PartUnknown4Entry.Text = part.Unknown4.ToString();
+            PartUnknown5Entry.Text = part.Unknown5.ToString();
+            PartUnknown6Entry.Text = part.Unknown6.ToString();
+            PartUnknown7Entry.Text = part.Unknown7.ToString();
+            PartUnknown8Entry.Text = part.Unknown8.ToString();
+            ResetPartEditorLabels(part.Kind);
+
+            if (part.IsLegPart)
+            {
+                var stats = part.AsLegPartStats();
+                PartTechniqueComboBox.Visibility = Visibility.Collapsed;
+                PartLegTypeComboBox.Visibility = Visibility.Visible;
+                PartValue1Entry.Visibility = Visibility.Collapsed;
+                PartLegTypeComboBox.SelectedValue = stats.LegType;
+                PartValue1Entry.Text = stats.LegType.ToString();
+                PartValue2Entry.Text = stats.Propulsion.ToString();
+                PartValue3Entry.Text = stats.Evasion.ToString();
+                PartValue4CheckBox.Visibility = Visibility.Collapsed;
+                PartValue4Entry.Visibility = Visibility.Visible;
+                PartValue4Entry.Text = stats.Defense.ToString();
+                PartValue5Entry.Text = stats.Conceal.ToString();
+            }
+            else
+            {
+                var combat = part.AsCombatPartStats();
+                PartTechniqueComboBox.Visibility = Visibility.Visible;
+                PartLegTypeComboBox.Visibility = Visibility.Collapsed;
+                PartValue1Entry.Visibility = Visibility.Collapsed;
+                PartTechniqueComboBox.SelectedValue = combat.Technique;
+                PartValue1Entry.Text = combat.Technique.ToString();
+                PartValue2Entry.Text = combat.Success.ToString();
+                PartValue3Entry.Text = combat.Power.ToString();
+                PartValue4Entry.Visibility = Visibility.Collapsed;
+                PartValue4CheckBox.Visibility = Visibility.Visible;
+                PartValue4CheckBox.IsChecked = combat.ChargeOrChainReaction != 0;
+                PartValue5Entry.Text = combat.Uses.ToString();
+            }
+
             RefreshPartEditorHelp(part);
-            return;
+        }
+        finally
+        {
+            _isRefreshingPartEditor = false;
         }
 
-        var combat = part.AsCombatPartStats();
-        PartTechniqueComboBox.Visibility = Visibility.Visible;
-        PartLegTypeComboBox.Visibility = Visibility.Collapsed;
-        PartValue1Entry.Visibility = Visibility.Collapsed;
-        PartTechniqueComboBox.SelectedValue = combat.Technique;
-        PartValue1Entry.Text = combat.Technique.ToString();
-        PartValue2Entry.Text = combat.Success.ToString();
-        PartValue3Entry.Text = combat.Power.ToString();
-        PartValue4Entry.Visibility = Visibility.Collapsed;
-        PartValue4CheckBox.Visibility = Visibility.Visible;
-        PartValue4CheckBox.IsChecked = combat.ChargeOrChainReaction != 0;
-        PartValue5Entry.Text = combat.Uses.ToString();
-        RefreshPartEditorHelp(part);
+        var source = GetSourcePartDefinition(part.Id);
+        RefreshPartEditorChangeColors(part, source);
     }
 
     private void ResetPartEditorLabels(PartKind kind)
@@ -1453,6 +1701,126 @@ public partial class MainWindow : Window
         return new PartDefinition(original.Id, original.MedabotId, original.Kind, original.DataOffset, medalCompatibility, value1, speciality, gender, ParseByte(PartArmorEntry.Text, "Armor"), ParseByte(PartValue2Entry.Text, PartValue2Label.Text), ParseByte(PartValue3Entry.Text, PartValue3Label.Text), value4, ParseByte(PartValue5Entry.Text, PartValue5Label.Text), ParseByte(PartUnknown2Entry.Text, "Unknown2"), ParseByte(PartUnknown3Entry.Text, "Unknown3"), ParseByte(PartUnknown4Entry.Text, "Unknown4"), ParseByte(PartUnknown5Entry.Text, "Unknown5"), ParseByte(PartUnknown6Entry.Text, "Unknown6"), ParseByte(PartUnknown7Entry.Text, "Unknown7"), ParseByte(PartUnknown8Entry.Text, "Unknown8"));
     }
 
+    private void InitializePartEditorChangeHandlers()
+    {
+        foreach (var comboBox in new[] { PartMedalCompatibilityComboBox, PartSpecialityComboBox, PartGenderComboBox, PartTechniqueComboBox, PartLegTypeComboBox })
+        {
+            comboBox.SelectionChanged += OnPartEditorSelectionChanged;
+        }
+
+        foreach (var textBox in new[] { PartArmorEntry, PartValue2Entry, PartValue3Entry, PartValue4Entry, PartValue5Entry, PartUnknown2Entry, PartUnknown3Entry, PartUnknown4Entry, PartUnknown5Entry, PartUnknown6Entry, PartUnknown7Entry, PartUnknown8Entry })
+        {
+            textBox.TextChanged += OnPartEditorValueChanged;
+        }
+
+        PartValue4CheckBox.Checked += OnPartEditorCheckChanged;
+        PartValue4CheckBox.Unchecked += OnPartEditorCheckChanged;
+    }
+
+    private void OnPartEditorSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!TryStageCurrentPartFromEditor(out var errorMessage) && sender is System.Windows.Controls.Control control)
+        {
+            control.Foreground = WpfBrushes.Red;
+            control.BorderBrush = WpfBrushes.Red;
+            PartOverviewHintLabel.Text = errorMessage;
+        }
+    }
+
+    private void OnPartEditorValueChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (!TryStageCurrentPartFromEditor(out var errorMessage) && sender is System.Windows.Controls.Control control)
+        {
+            control.Foreground = WpfBrushes.Red;
+            control.BorderBrush = WpfBrushes.Red;
+            PartOverviewHintLabel.Text = errorMessage;
+        }
+    }
+
+    private void OnPartEditorCheckChanged(object? sender, RoutedEventArgs e)
+    {
+        if (!TryStageCurrentPartFromEditor(out var errorMessage) && sender is System.Windows.Controls.Control control)
+        {
+            control.Foreground = WpfBrushes.Red;
+            control.BorderBrush = WpfBrushes.Red;
+            PartOverviewHintLabel.Text = errorMessage;
+        }
+    }
+
+    private bool TryStageCurrentPartFromEditor(out string errorMessage)
+    {
+        errorMessage = string.Empty;
+        if (!_isWindowFullyInitialized || _isRefreshingPartEditor || _loadedPart is null)
+        {
+            return true;
+        }
+
+        try
+        {
+            var source = GetSourcePartDefinition(_loadedPart.Id);
+            var updated = BuildPartFromEditor(source);
+            var staged = _partProjectEditor.StagePart(_project, source, updated);
+            var effective = staged ?? source;
+            _loadedParts = _loadedParts.Select(part => part.Id == effective.Id ? effective : part).ToArray();
+            _loadedPart = effective;
+            PartOverviewHintLabel.Text = $"Kind: {effective.Kind}   Medabot: {_metadata.GetBotName(effective.MedabotId)} ({effective.MedabotId})   Data: 0x{effective.DataOffset:X}";
+            RefreshPartEditorHelp(effective);
+            RefreshPartEditorChangeColors(updated, source);
+            RefreshPartBrowserItem(effective);
+            UpdateStatus();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            return false;
+        }
+    }
+
+    private void RefreshPartEditorChangeColors(PartDefinition current, PartDefinition source)
+    {
+        SetBattleControlChanged(PartMedalCompatibilityComboBox, current.MedalCompatibility != source.MedalCompatibility);
+        SetBattleControlChanged(PartSpecialityComboBox, current.Speciality != source.Speciality);
+        SetBattleControlChanged(PartGenderComboBox, current.Gender != source.Gender);
+        SetBattleControlChanged(PartTechniqueComboBox, !current.IsLegPart && current.TechniqueOrLegType != source.TechniqueOrLegType);
+        SetBattleControlChanged(PartLegTypeComboBox, current.IsLegPart && current.TechniqueOrLegType != source.TechniqueOrLegType);
+        SetBattleControlChanged(PartArmorEntry, current.Armor != source.Armor);
+        SetBattleControlChanged(PartValue2Entry, current.RateOfSuccessOrPropulsion != source.RateOfSuccessOrPropulsion);
+        SetBattleControlChanged(PartValue3Entry, current.PowerOrEvasion != source.PowerOrEvasion);
+        SetBattleControlChanged(PartValue4Entry, current.IsLegPart && current.ChainReactionOrDefense != source.ChainReactionOrDefense);
+        SetBattleControlChanged(PartValue4CheckBox, !current.IsLegPart && current.ChainReactionOrDefense != source.ChainReactionOrDefense);
+        SetBattleControlChanged(PartValue5Entry, current.AmountOfUsesOrProximity != source.AmountOfUsesOrProximity);
+        SetBattleControlChanged(PartUnknown2Entry, current.Unknown2 != source.Unknown2);
+        SetBattleControlChanged(PartUnknown3Entry, current.Unknown3 != source.Unknown3);
+        SetBattleControlChanged(PartUnknown4Entry, current.Unknown4 != source.Unknown4);
+        SetBattleControlChanged(PartUnknown5Entry, current.Unknown5 != source.Unknown5);
+        SetBattleControlChanged(PartUnknown6Entry, current.Unknown6 != source.Unknown6);
+        SetBattleControlChanged(PartUnknown7Entry, current.Unknown7 != source.Unknown7);
+        SetBattleControlChanged(PartUnknown8Entry, current.Unknown8 != source.Unknown8);
+    }
+
+    private void RefreshPartBrowserItem(PartDefinition part)
+    {
+        var source = GetSourcePartDefinition(part.Id);
+        var isModified = !PartTableReader.Serialize(source).SequenceEqual(PartTableReader.Serialize(part));
+        var item = _allPartItems.FirstOrDefault(candidate => candidate.Id == part.Id);
+        if (item is null)
+        {
+            return;
+        }
+
+        item.Title = $"{part.Id:D3}  {_metadata.GetPartName(part.Id)}  ({part.Kind})";
+        item.IsModified = isModified;
+    }
+
+    private void RefreshPartBrowserChangeState()
+    {
+        foreach (var part in _loadedParts)
+        {
+            RefreshPartBrowserItem(part);
+        }
+    }
+
     private void RefreshPartLegTypeOptions(IReadOnlyList<PartDefinition> parts)
     {
         _partLegTypeOptions.Clear();
@@ -1482,11 +1850,59 @@ public partial class MainWindow : Window
         throw new InvalidOperationException($"{fieldName} must be selected from the dropdown.");
     }
 
+    private static byte ParseComboBoxByteOrOriginal(System.Windows.Controls.ComboBox comboBox, byte originalValue)
+    {
+        if (comboBox.SelectedValue is int intValue && intValue >= 0 && intValue <= byte.MaxValue)
+        {
+            return (byte)intValue;
+        }
+
+        if (comboBox.SelectedValue is byte byteValue)
+        {
+            return byteValue;
+        }
+
+        return originalValue;
+    }
+
     private void PopulateStarterEditor(StarterDefinition starter)
     {
-        StarterPartEntry.Text = starter.PartId.ToString();
-        StarterMedalEntry.Text = starter.MedalId.ToString();
-        StarterIsFemaleSwitch.IsChecked = starter.IsFemale;
+        _isRefreshingStarterEditor = true;
+        try
+        {
+            StarterPartEntry.SelectedValue = (int)starter.PartId;
+            StarterMedalEntry.SelectedValue = (int)starter.MedalId;
+            StarterIsFemaleSwitch.IsChecked = starter.IsFemale;
+        }
+        finally
+        {
+            _isRefreshingStarterEditor = false;
+        }
+
+        if (_sourceStarterDefinition is not null)
+        {
+            RefreshStarterEditorChangeColors(starter, _sourceStarterDefinition);
+        }
+    }
+
+    private void PopulateShopEditor(ShopDefinition shop)
+    {
+        _isRefreshingShopEditor = true;
+        try
+        {
+            var contents = NormalizeShopContents(shop.Contents);
+            ShopSlot1Entry.SelectedValue = (int)contents[0];
+            ShopSlot2Entry.SelectedValue = (int)contents[1];
+            ShopSlot3Entry.SelectedValue = (int)contents[2];
+            ShopSlot4Entry.SelectedValue = (int)contents[3];
+            RefreshShopSlotLabels(contents);
+        }
+        finally
+        {
+            _isRefreshingShopEditor = false;
+        }
+
+        RefreshShopEditorChangeColors(shop);
     }
 
     private void PopulateEncounterEditor(EncounterDefinition encounter)
@@ -1502,7 +1918,7 @@ public partial class MainWindow : Window
         var builder = new StringBuilder();
         builder.AppendLine($"Battle {battle.Id} @ 0x{battle.DataOffset:X}");
         builder.AppendLine($"Character: {_metadata.GetCharacterName(battle.CharacterId)} ({battle.CharacterId})");
-        builder.AppendLine($"InitializationMode: {battle.InitializationMode} ({GetBattleInitializationModeName(battle.InitializationMode)})");
+        builder.AppendLine($"Roborobo Medal Reward: {battle.InitializationMode} ({GetBattleInitializationModeName(battle.InitializationMode)})");
         builder.AppendLine($"NumberOfBots: {battle.NumberOfBots}");
         builder.AppendLine($"PartLoadoutMode: {battle.TemplateFlags} ({GetBattleTemplateFlagName(battle.TemplateFlags)})");
         for (var index = 0; index < battle.Bots.Count; index++)
@@ -1516,7 +1932,7 @@ public partial class MainWindow : Window
 
     private static string FormatStarter(StarterDefinition starter, MedabotsMetadata metadata)
     {
-        return $"Starter part: {metadata.GetPartName(starter.PartId)} ({starter.PartId}){Environment.NewLine}Starter medal: {metadata.GetMedalName(starter.MedalId)} ({starter.MedalId}){Environment.NewLine}Female: {starter.IsFemale}";
+        return $"Starter bot: {metadata.GetBotName(starter.PartId)} ({starter.PartId}){Environment.NewLine}Starter medal: {metadata.GetMedalName(starter.MedalId)} ({starter.MedalId}){Environment.NewLine}Female: {starter.IsFemale}";
     }
 
     private static string FormatEncounter(EncounterDefinition encounter)
@@ -1524,12 +1940,248 @@ public partial class MainWindow : Window
         return $"Encounter {encounter.Id} @ 0x{encounter.DataOffset:X}{Environment.NewLine}Battles: {encounter.Battle1}, {encounter.Battle2}, {encounter.Battle3}, {encounter.Battle4}";
     }
 
+    private void InitializeShopEditorChangeHandlers()
+    {
+        foreach (var comboBox in new[] { ShopSlot1Entry, ShopSlot2Entry, ShopSlot3Entry, ShopSlot4Entry })
+        {
+            comboBox.ItemsSource = _shopSlotOptions;
+            comboBox.DisplayMemberPath = nameof(BrowserItem.Title);
+            comboBox.SelectedValuePath = nameof(BrowserItem.Id);
+            comboBox.SelectionChanged += OnShopSlotSelectionChanged;
+        }
+    }
+
+    private void OnShopSlotSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!TryStageCurrentShopFromEditor(out var errorMessage) && sender is System.Windows.Controls.Control control)
+        {
+            control.Foreground = WpfBrushes.Red;
+            control.BorderBrush = WpfBrushes.Red;
+            ShopSummaryLabel.Text = errorMessage;
+        }
+    }
+
+    private bool TryStageCurrentShopFromEditor(out string errorMessage)
+    {
+        errorMessage = string.Empty;
+        if (!_isWindowFullyInitialized || _isRefreshingShopEditor || _loadedShop is null)
+        {
+            return true;
+        }
+
+        try
+        {
+            var source = GetSourceShopDefinition(_loadedShop.Id);
+            var updated = BuildShopFromEditor(source);
+            var normalizedSourceContents = NormalizeShopContents(source.Contents);
+            if (updated.Contents.SequenceEqual(normalizedSourceContents))
+            {
+                ProjectEditCollection.Remove(_project, ProjectEditAdapters.Shop, source.Id);
+                _loadedShop = source;
+            }
+            else
+            {
+                ProjectEditCollection.Upsert(_project, ProjectEditAdapters.Shop, updated);
+                _loadedShop = updated;
+            }
+
+            _shopCache[source.Id] = _loadedShop;
+            RefreshShopSlotLabels(NormalizeShopContents(_loadedShop.Contents));
+            RefreshShopEditorChangeColors(_loadedShop);
+            RefreshShopBrowserItem(source.Id);
+            UpdateStatus();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            return false;
+        }
+    }
+
+    private void RefreshShopEditorChangeColors(ShopDefinition current)
+    {
+        var source = GetSourceShopDefinition(current.Id);
+        var currentContents = NormalizeShopContents(current.Contents);
+        var sourceContents = NormalizeShopContents(source.Contents);
+        SetBattleControlChanged(ShopSlot1Entry, currentContents[0] != sourceContents[0]);
+        SetBattleControlChanged(ShopSlot2Entry, currentContents[1] != sourceContents[1]);
+        SetBattleControlChanged(ShopSlot3Entry, currentContents[2] != sourceContents[2]);
+        SetBattleControlChanged(ShopSlot4Entry, currentContents[3] != sourceContents[3]);
+        var changed = !currentContents.SequenceEqual(sourceContents);
+        ShopSummaryLabel.Text = $"Shop {current.Id:D3} @ 0x{current.DataOffset:X}. The game reads four Medabot part-set slots and stops at the first empty slot (0xFF).";
+        ShopSummaryLabel.Foreground = changed ? WpfBrushes.Red : WpfBrushes.Black;
+    }
+
+    private ShopDefinition BuildShopFromEditor(ShopDefinition source)
+    {
+        return new ShopDefinition(
+            source.Id,
+            source.DataOffset,
+            [
+                ParseComboBoxByte(ShopSlot1Entry, "Shop slot 1"),
+                ParseComboBoxByte(ShopSlot2Entry, "Shop slot 2"),
+                ParseComboBoxByte(ShopSlot3Entry, "Shop slot 3"),
+                ParseComboBoxByte(ShopSlot4Entry, "Shop slot 4")
+            ]);
+    }
+
+    private static ShopDefinition NormalizeShopDefinition(ShopDefinition shop, ShopDefinition source)
+    {
+        var contents = NormalizeShopContents(shop.Contents);
+        return new ShopDefinition(shop.Id, source.DataOffset, contents);
+    }
+
+    private static byte[] NormalizeShopContents(IReadOnlyList<byte> contents)
+    {
+        var normalized = Enumerable.Repeat(MedabotsRomSchema.EmptyShopSlot, ShopTableReader.ShopEntrySize).ToArray();
+        for (var index = 0; index < Math.Min(contents.Count, normalized.Length); index++)
+        {
+            normalized[index] = contents[index];
+        }
+
+        return normalized;
+    }
+
+    private void RefreshShopSlotLabels(IReadOnlyList<byte> contents)
+    {
+        RefreshShopSlotLabel(0, contents[0], ShopSlot1DetailLabel, isIgnored: false);
+        var slot2Ignored = contents[0] == MedabotsRomSchema.EmptyShopSlot;
+        RefreshShopSlotLabel(1, contents[1], ShopSlot2DetailLabel, slot2Ignored);
+        var slot3Ignored = slot2Ignored || contents[1] == MedabotsRomSchema.EmptyShopSlot;
+        RefreshShopSlotLabel(2, contents[2], ShopSlot3DetailLabel, slot3Ignored);
+        var slot4Ignored = slot3Ignored || contents[2] == MedabotsRomSchema.EmptyShopSlot;
+        RefreshShopSlotLabel(3, contents[3], ShopSlot4DetailLabel, slot4Ignored);
+    }
+
+    private void RefreshShopSlotLabel(int slotIndex, byte itemId, WpfTextBlock label, bool isIgnored)
+    {
+        if (itemId == MedabotsRomSchema.EmptyShopSlot)
+        {
+            label.Text = isIgnored ? "Ignored after an earlier empty slot." : "Empty; later slots are not displayed in-game.";
+            label.Foreground = WpfBrushes.Gray;
+            return;
+        }
+
+        var price = GetShopItemPrice(itemId);
+        var conditionalText = itemId == MedabotsRomSchema.ConditionalShopSlot
+            ? " Hidden unless the game state byte checked by the shop routine equals 3."
+            : string.Empty;
+        label.Text = $"{_metadata.GetBotName(itemId)} part set. Display price: {price:N0}.{conditionalText}{(isIgnored ? " Ignored because an earlier slot is empty." : string.Empty)}";
+        label.Foreground = isIgnored ? WpfBrushes.Gray : WpfBrushes.Black;
+    }
+
+    private int GetShopItemPrice(byte itemId)
+    {
+        var head = _loadedParts.FirstOrDefault(part => part.MedabotId == itemId && part.Kind == PartKind.Head);
+        return (head?.Unknown4 ?? 0) * 100;
+    }
+
+    private string BuildShopSlotOptionTitle(int id)
+    {
+        var conditional = id == MedabotsRomSchema.ConditionalShopSlot ? "  (conditional stock)" : string.Empty;
+        return $"{id:D3}  {_metadata.GetBotName(id)}{conditional}";
+    }
+
+    private void RefreshShopBrowserItem(int shopId)
+    {
+        var item = _allShopItems.FirstOrDefault(candidate => candidate.Id == shopId);
+        if (item is null)
+        {
+            return;
+        }
+
+        item.IsModified = ProjectEditCollection.Find(_project, ProjectEditAdapters.Shop, shopId) is not null;
+    }
+
+    private void RefreshShopBrowserChangeState()
+    {
+        foreach (var item in _allShopItems)
+        {
+            RefreshShopBrowserItem(item.Id);
+        }
+    }
+
+    private void InitializeStarterEditorChangeHandlers()
+    {
+        StarterPartEntry.SelectionChanged += OnStarterSelectionChanged;
+        StarterMedalEntry.SelectionChanged += OnStarterSelectionChanged;
+        StarterIsFemaleSwitch.Checked += OnStarterCheckChanged;
+        StarterIsFemaleSwitch.Unchecked += OnStarterCheckChanged;
+    }
+
+    private void OnStarterSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!TryStageCurrentStarterFromEditor(out var errorMessage) && sender is System.Windows.Controls.Control control)
+        {
+            control.Foreground = WpfBrushes.Red;
+            control.BorderBrush = WpfBrushes.Red;
+            StarterEditor.Text = errorMessage;
+        }
+    }
+
+    private void OnStarterCheckChanged(object? sender, RoutedEventArgs e)
+    {
+        if (!TryStageCurrentStarterFromEditor(out var errorMessage) && sender is System.Windows.Controls.Control control)
+        {
+            control.Foreground = WpfBrushes.Red;
+            control.BorderBrush = WpfBrushes.Red;
+            StarterEditor.Text = errorMessage;
+        }
+    }
+
+    private bool TryStageCurrentStarterFromEditor(out string errorMessage)
+    {
+        errorMessage = string.Empty;
+        if (!_isWindowFullyInitialized || _isRefreshingStarterEditor || _sourceStarterDefinition is null)
+        {
+            return true;
+        }
+
+        try
+        {
+            var updated = new StarterDefinition(
+                _sourceStarterDefinition.PartsOffset,
+                _sourceStarterDefinition.MedalOffset,
+                ParseComboBoxByte(StarterPartEntry, "Starter bot"),
+                ParseComboBoxByte(StarterMedalEntry, "Starter medal"),
+                StarterIsFemaleSwitch.IsChecked == true);
+
+            if (updated.Equals(_sourceStarterDefinition))
+            {
+                ProjectEditCollection.Remove(_project, ProjectEditAdapters.Starter, _sourceStarterDefinition.PartsOffset);
+                _loadedStarter = _sourceStarterDefinition;
+            }
+            else
+            {
+                ProjectEditCollection.Upsert(_project, ProjectEditAdapters.Starter, updated);
+                _loadedStarter = updated;
+            }
+
+            StarterEditor.Text = FormatStarter(_loadedStarter, _metadata);
+            RefreshStarterEditorChangeColors(_loadedStarter, _sourceStarterDefinition);
+            UpdateStatus();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            return false;
+        }
+    }
+
+    private void RefreshStarterEditorChangeColors(StarterDefinition current, StarterDefinition source)
+    {
+        SetBattleControlChanged(StarterPartEntry, current.PartId != source.PartId);
+        SetBattleControlChanged(StarterMedalEntry, current.MedalId != source.MedalId);
+        SetBattleControlChanged(StarterIsFemaleSwitch, current.IsFemale != source.IsFemale);
+    }
 
     private static string FormatBytes(IEnumerable<byte> bytes) => string.Join(" ", bytes.Select(value => value.ToString("X2")));
     private static string GetBattleInitializationModeName(byte value) => value switch
     {
-        0 => "Normal initialization",
-        1 => "Reuse preinitialized battle state",
+        0 => "No",
+        1 => "Yes",
         _ => $"Unknown mode {value}"
     };
 
@@ -1555,6 +2207,7 @@ public partial class MainWindow : Window
             comboBox.ItemsSource = _battleCycleEntryOptions;
             comboBox.DisplayMemberPath = nameof(BrowserItem.Title);
             comboBox.SelectedValuePath = nameof(BrowserItem.Id);
+            comboBox.SelectionChanged += OnBattleLoadoutSelectionChanged;
         }
     }
 

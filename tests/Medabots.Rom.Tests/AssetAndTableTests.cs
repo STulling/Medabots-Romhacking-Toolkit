@@ -38,10 +38,15 @@ public sealed class AssetAndTableTests
     public async Task ShopReader_LocatesShopTable()
     {
         var rom = await RomFile.LoadAsync(TestRomLocator.FindWorkspaceRom());
-        var shop = new ShopTableReader().Read(rom, 0, 4);
+        var reader = new ShopTableReader();
+        var shop = reader.Read(rom, 0);
+        var shops = reader.ReadAll(rom);
 
         Assert.Equal(0, shop.Id);
-        Assert.Equal(4, shop.Contents.Length);
+        Assert.Equal(ShopTableReader.ShopEntrySize, shop.Contents.Length);
+        Assert.Equal([0x13, 0x00, 0xFF, 0xFF], shop.Contents);
+        Assert.Equal(ShopTableReader.ShopCount, shops.Count);
+        Assert.All(shops, entry => Assert.Equal(ShopTableReader.ShopEntrySize, entry.Contents.Length));
     }
 
     [Fact]
